@@ -5,6 +5,14 @@
 
 import { REGEX_PATTERNS, TIER1_KEYWORDS, TIER2_KEYWORDS, TIER3_KEYWORDS, ExtractedDeal, ParsedEmailMessage, EmailThread } from './enhancedMboxParser';
 import logger from '../utils/logger';
+import {
+  extractValueWithContext,
+  extractCompaniesWithContext,
+  extractProducts,
+  detectDealStage,
+  extractTimeline,
+  calculateEnhancedConfidence,
+} from './enhancedExtraction';
 
 // ============================================================================
 // LAYER 2: PATTERN-BASED EXTRACTION WITH REGEX
@@ -173,24 +181,92 @@ export function extractProjectNames(text: string): string[] {
 
 /**
  * Apply Layer 2 Regex-based extraction to a message
+ * ENHANCED with advanced extraction intelligence
  */
 export function applyLayer2Extraction(message: ParsedEmailMessage): Partial<ExtractedDeal> {
   const text = message.cleaned_body;
   const extracted: Partial<ExtractedDeal> = {};
 
-  // Extract financial data
-  const financials = extractFinancialData(text);
-  if (financials.length > 0) {
-    // Use the largest value found (likely the deal value)
-    const largest = financials.reduce((max, curr) => curr.value > max.value ? curr : max);
-    extracted.deal_value = largest.value;
-    extracted.currency = largest.currency;
+  // ENHANCED: Extract financial data with context
+  const valueResults = extractValueWithContext(text);
+  if (valueResults.length > 0) {
+    // Use highest confidence value
+    const best = valueResults[0];
+    extracted.deal_value = best.value;
+    extracted.currency = best.currency;
+
+    logger.info('Enhanced value extraction', {
+      value: best.value,
+      confidence: best.confidence,
+      label: best.label
+    });
+  } else {
+    // Fallback to old method
+    const financials = extractFinancialData(text);
+    if (financials.length > 0) {
+      const largest = financials.reduce((max, curr) => curr.value > max.value ? curr : max);
+      extracted.deal_value = largest.value;
+      extracted.currency = largest.currency;
+    }
   }
 
-  // Extract dates
+  // ENHANCED: Extract companies with context and role identification
+  const companyResults = extractCompaniesWithContext(text);
+  if (companyResults.length > 0) {
+    // Prefer customers over other types
+    const customer = companyResults.find(c => c.type === 'customer') || companyResults[0];
+    extracted.end_user_name = customer.name;
+
+    logger.info('Enhanced company extraction', {
+      name: customer.name,
+      type: customer.type,
+      confidence: customer.confidence
+    });
+  } else {
+    // Fallback to old method
+    const companies = extractCompanyNames(text);
+    if (companies.length > 0) {
+      extracted.end_user_name = companies[0];
+    }
+  }
+
+  // ENHANCED: Extract products/commodities
+  const productResults = extractProducts(text);
+  if (productResults.length > 0) {
+    const products = productResults.map(p => p.product).join(', ');
+    extracted.product_name = products;
+    extracted.solution_category = productResults[0].category;
+
+    logger.info('Product extraction', {
+      products: products,
+      category: productResults[0].category
+    });
+  }
+
+  // ENHANCED: Detect deal stage
+  const stageInfo = detectDealStage(text);
+  if (stageInfo.confidence > 0.7) {
+    extracted.deal_type = stageInfo.stage;
+
+    logger.info('Deal stage detected', {
+      stage: stageInfo.stage,
+      confidence: stageInfo.confidence,
+      indicators: stageInfo.indicators
+    });
+  }
+
+  // ENHANCED: Extract timeline information
+  const timeline = extractTimeline(text);
+  if (timeline.closeDate) {
+    extracted.expected_close_date = timeline.closeDate;
+  }
+  if (timeline.durationDays) {
+    extracted.registration_term_days = timeline.durationDays;
+  }
+
+  // Extract dates (fallback)
   const dates = extractDates(text);
-  if (dates.length > 0) {
-    // Use the first future date as expected close date
+  if (dates.length > 0 && !extracted.expected_close_date) {
     const now = new Date();
     const futureDates = dates.filter(d => d > now);
     if (futureDates.length > 0) {
@@ -208,12 +284,6 @@ export function applyLayer2Extraction(message: ParsedEmailMessage): Partial<Extr
   }
   if (contacts.phones.length > 0) {
     extracted.decision_maker_phone = contacts.phones[0];
-  }
-
-  // Extract company names
-  const companies = extractCompanyNames(text);
-  if (companies.length > 0) {
-    extracted.end_user_name = companies[0];
   }
 
   // Extract project names

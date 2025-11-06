@@ -1,19 +1,22 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Search, FileDown, Loader2, Briefcase, TrendingUp, DollarSign, AlertCircle } from 'lucide-react';
+import { Search, FileDown, Loader2, Briefcase, TrendingUp, DollarSign, AlertCircle, Sparkles } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { dealAPI } from '@/lib/api';
+import { dealAPI, reprocessAPI } from '@/lib/api';
 import { DealRegistration } from '@/types';
+import { toast } from 'sonner';
 
 export default function Deals() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<string>('date-desc');
+  const [isReprocessing, setIsReprocessing] = useState(false);
+  const queryClient = useQueryClient();
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['deals', search, statusFilter, sortBy],
@@ -104,6 +107,32 @@ export default function Deals() {
     });
   };
 
+  const handleDetailedReprocessing = async () => {
+    try {
+      setIsReprocessing(true);
+      toast.info('Starting detailed reprocessing...', {
+        description: 'This may take a few minutes. Analyzing all uploaded files for additional deals and vendor relationships.',
+      });
+
+      await reprocessAPI.detailed();
+
+      toast.success('Detailed reprocessing started!', {
+        description: 'The system is analyzing your files. Refresh in a few minutes to see new deals.',
+      });
+
+      // Refresh deals after a delay to show new results
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['deals'] });
+      }, 5000);
+    } catch (error: any) {
+      toast.error('Reprocessing failed', {
+        description: error.response?.data?.message || 'An error occurred while starting reprocessing.',
+      });
+    } finally {
+      setIsReprocessing(false);
+    }
+  };
+
   if (error) {
     return (
       <div className="container py-8">
@@ -129,10 +158,25 @@ export default function Deals() {
             View and manage all deal registrations in one place
           </p>
         </div>
-        <Button variant="outline" className="gap-2">
-          <FileDown className="h-4 w-4" />
-          Export Deals
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            className="gap-2"
+            onClick={handleDetailedReprocessing}
+            disabled={isReprocessing}
+          >
+            {isReprocessing ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Sparkles className="h-4 w-4" />
+            )}
+            {isReprocessing ? 'Processing...' : 'Deep Analysis'}
+          </Button>
+          <Button variant="outline" className="gap-2">
+            <FileDown className="h-4 w-4" />
+            Export Deals
+          </Button>
+        </div>
       </div>
 
       {/* Summary Statistics */}

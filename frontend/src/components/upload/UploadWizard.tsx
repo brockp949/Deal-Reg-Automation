@@ -1,6 +1,7 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronLeft, ChevronRight, CheckCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CheckCircle, Check } from 'lucide-react';
 import { fileAPI } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -28,6 +29,7 @@ const STEPS: Step[] = [
 ];
 
 export default function UploadWizard() {
+  const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(0);
   const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
 
@@ -67,6 +69,10 @@ export default function UploadWizard() {
     if (stepIndex <= currentStep) {
       setCurrentStep(stepIndex);
     }
+  };
+
+  const handleFinish = () => {
+    navigate('/deals');
   };
 
   const getStepContent = () => {
@@ -157,13 +163,17 @@ export default function UploadWizard() {
               <ChevronLeft className="mr-2 h-4 w-4" />
               Previous
             </Button>
-            <Button
-              onClick={handleNext}
-              disabled={currentStep === STEPS.length - 1}
-            >
-              Next
-              <ChevronRight className="ml-2 h-4 w-4" />
-            </Button>
+            {currentStep === STEPS.length - 1 ? (
+              <Button onClick={handleFinish}>
+                <Check className="mr-2 h-4 w-4" />
+                Finish & View Deals
+              </Button>
+            ) : (
+              <Button onClick={handleNext}>
+                Next
+                <ChevronRight className="ml-2 h-4 w-4" />
+              </Button>
+            )}
           </div>
         </div>
 

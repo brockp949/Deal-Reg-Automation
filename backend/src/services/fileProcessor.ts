@@ -5,7 +5,7 @@ import { parseCSVFile, normalizeVTigerData, parseGenericCSV } from '../parsers/c
 import { parseTextTranscript, extractInfoFromTranscript } from '../parsers/transcriptParser';
 import { parseEnhancedTranscript } from '../parsers/enhancedTranscriptParser';
 import { parsePDFTranscript } from '../parsers/pdfParser';
-import { normalizeVendorName, extractEmailDomains, domainToCompanyName, generateDealName } from '../utils/fileHelpers';
+import { normalizeVendorName, extractEmailDomains, domainToCompanyName, generateDealName, normalizeCompanyName } from '../utils/fileHelpers';
 import logger from '../utils/logger';
 import type { FileType } from '../types';
 import { writeFile, unlink } from 'fs/promises';
@@ -337,13 +337,19 @@ async function processMboxFile(filePath: string, fileId: string) {
       });
     }
 
+    // Normalize customer name
+    const normalizedCustomerName = extractedDeal.end_user_name
+      ? normalizeCompanyName(extractedDeal.end_user_name)
+      : undefined;
+
     // Generate descriptive deal name
     const dealName = generateDealName({
-      customer_name: extractedDeal.end_user_name,
+      customer_name: normalizedCustomerName,
       vendor_name: vendorName,
       project_name: extractedDeal.project_name,
       deal_value: extractedDeal.deal_value,
       registration_date: extractedDeal.registration_date,
+      notes: extractedDeal.pre_sales_efforts,
     });
 
     // Create deal record
@@ -352,7 +358,7 @@ async function processMboxFile(filePath: string, fileId: string) {
       deal_value: extractedDeal.deal_value || 0,
       currency: extractedDeal.currency || 'USD',
       vendor_name: vendorName,
-      customer_name: extractedDeal.end_user_name || null,
+      customer_name: normalizedCustomerName,
       notes: extractedDeal.pre_sales_efforts || null,
       confidence_score: extractedDeal.confidence_score || 0.5,
       extraction_method: 'mbox_email_thread',
@@ -555,20 +561,24 @@ async function processTranscriptFile(filePath: string) {
   const vendorNameForDeal = partnerVendorName || prospectVendorName || 'Unknown';
   const projectNameForDeal = deal.deal_description?.substring(0, 100) || deal.product_service_requirements?.substring(0, 50);
 
+  // Normalize customer name
+  const normalizedCustomerName = customerName ? normalizeCompanyName(customerName) : undefined;
+
   // Generate descriptive deal name
   const dealName = generateDealName({
-    customer_name: customerName,
+    customer_name: normalizedCustomerName,
     vendor_name: vendorNameForDeal,
     project_name: projectNameForDeal,
     deal_value: deal.estimated_deal_value,
     registration_date: new Date(),
+    notes: deal.deal_description || deal.product_service_requirements,
   });
 
   const dealRecord: any = {
     deal_name: dealName,
     deal_value: deal.estimated_deal_value || 0,
     currency: deal.currency || 'USD',
-    customer_name: customerName,
+    customer_name: normalizedCustomerName,
     customer_industry: deal.industry || null,
     registration_date: new Date(),
     expected_close_date: deal.expected_close_date || null,

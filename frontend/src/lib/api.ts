@@ -95,3 +95,8 @@ export const exportAPI = {
       responseType: 'blob',
     }),
 };
+
+// Reprocess API
+export const reprocessAPI = {
+  detailed: () => api.post('/reprocess/detailed'),
+};

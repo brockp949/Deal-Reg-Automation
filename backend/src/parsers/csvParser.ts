@@ -2,6 +2,7 @@ import { createReadStream } from 'fs';
 import csvParser from 'csv-parser';
 import { ParsedCSVRow } from '../types';
 import logger from '../utils/logger';
+import { normalizeCompanyName } from '../utils/fileHelpers';
 
 /**
  * Parse CSV file
@@ -66,14 +67,15 @@ export function normalizeDealsWithVendorsData(rows: ParsedCSVRow[]): {
 
       // Only create deal if deal name exists
       if (dealName && dealName.toString().trim()) {
-        const customerName = row['Deals Organization Name'];
+        const rawCustomerName = row['Deals Organization Name'];
+        const customerName = rawCustomerName ? normalizeCompanyName(String(rawCustomerName)) : null;
 
         const deal = {
           vendor_name: vendorName,
           deal_name: dealName,
           deal_value: parseAmount(row['Deals Amount'] || row['Deals Deal Value']),
           currency: row['Deals Currency'] || 'USD',
-          customer_name: customerName || null, // Organization Name is the CUSTOMER
+          customer_name: customerName, // Normalized customer name
           customer_industry: row['Deals Industry'],
           registration_date: parseDate(row['Deals Registration Date'] || row['Deals Created Date']),
           expected_close_date: parseDate(row['Deals Expected Close Date']),
@@ -157,6 +159,9 @@ export function normalizeVTigerData(rows: ParsedCSVRow[]): {
         row['Subject'];
 
       if (dealName) {
+        const rawCustomerName = row['Customer'] || row['End Customer'] || row['Account'];
+        const customerName = rawCustomerName ? normalizeCompanyName(String(rawCustomerName)) : null;
+
         const deal = {
           vendor_name: vendorName,
           deal_name: dealName,
@@ -167,7 +172,7 @@ export function normalizeVTigerData(rows: ParsedCSVRow[]): {
             row['Deal Value']
           ),
           currency: row['Currency'] || 'USD',
-          customer_name: row['Customer'] || row['End Customer'] || row['Account'],
+          customer_name: customerName, // Normalized customer name
           customer_industry: row['Customer Industry'],
           registration_date: parseDate(row['Registration Date'] || row['Created Date'] || row['Date']),
           expected_close_date: parseDate(

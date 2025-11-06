@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Upload, File, Loader2, Info } from 'lucide-react';
+import { Upload, File, Loader2, Info, AlertCircle } from 'lucide-react';
 import { fileAPI } from '@/lib/api';
 import { formatFileSize } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,11 @@ interface UploadStepProps {
   onUploadSuccess?: () => void;
 }
 
+interface FileWithError {
+  file: File;
+  error?: string;
+}
+
 export default function UploadStep({
   title,
   description,
@@ -23,7 +28,7 @@ export default function UploadStep({
   helpText,
   onUploadSuccess,
 }: UploadStepProps) {
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [selectedFiles, setSelectedFiles] = useState<FileWithError[]>([]);
   const queryClient = useQueryClient();
 
   const uploadMutation = useMutation({
@@ -46,9 +51,50 @@ export default function UploadStep({
     },
   });
 
-  const onDrop = useCallback((acceptedFiles: File[]) => {
-    setSelectedFiles(acceptedFiles);
-  }, []);
+  // Validate if file extension matches accepted formats
+  const validateFileType = (file: File): string | undefined => {
+    const fileName = file.name.toLowerCase();
+    const fileExtension = fileName.substring(fileName.lastIndexOf('.'));
+
+    if (!acceptedFormats.includes(fileExtension)) {
+      return `Invalid file type. Expected: ${acceptedFormats.join(', ')}`;
+    }
+
+    return undefined;
+  };
+
+  const onDrop = useCallback((acceptedFiles: File[], rejectedFiles: any[]) => {
+    // Handle rejected files from react-dropzone
+    if (rejectedFiles.length > 0) {
+      rejectedFiles.forEach((rejection) => {
+        const fileName = rejection.file.name;
+        const error = rejection.errors[0];
+
+        if (error.code === 'file-too-large') {
+          toast.error(`${fileName} is too large. Maximum file size is 5GB.`);
+        } else if (error.code === 'file-invalid-type') {
+          toast.error(`${fileName} has an invalid file type. Expected: ${acceptedFormats.join(', ')}`);
+        } else {
+          toast.error(`${fileName}: ${error.message}`);
+        }
+      });
+    }
+
+    // Validate accepted files against step requirements
+    const validatedFiles: FileWithError[] = acceptedFiles.map((file) => {
+      const error = validateFileType(file);
+      if (error) {
+        toast.error(`${file.name}: ${error}`);
+      }
+      return { file, error };
+    });
+
+    // Only add files without errors
+    const validFiles = validatedFiles.filter((f) => !f.error);
+    if (validFiles.length > 0) {
+      setSelectedFiles((prev) => [...prev, ...validFiles]);
+    }
+  }, [acceptedFormats]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -68,9 +114,21 @@ export default function UploadStep({
   });
 
   const handleUpload = () => {
-    if (selectedFiles.length > 0) {
-      uploadMutation.mutate(selectedFiles);
+    if (selectedFiles.length === 0) {
+      toast.error('Please select files to upload');
+      return;
     }
+
+    // Check if any files have errors
+    const filesWithErrors = selectedFiles.filter((f) => f.error);
+    if (filesWithErrors.length > 0) {
+      toast.error('Please remove invalid files before uploading');
+      return;
+    }
+
+    // Extract the actual File objects
+    const files = selectedFiles.map((f) => f.file);
+    uploadMutation.mutate(files);
   };
 
   const removeFile = (index: number) => {
@@ -125,18 +183,29 @@ export default function UploadStep({
         {selectedFiles.length > 0 && (
           <div className="mt-6 space-y-3">
             <h3 className="font-medium">Selected Files:</h3>
-            {selectedFiles.map((file, index) => (
+            {selectedFiles.map((fileWithError, index) => (
               <div
                 key={index}
-                className="flex items-center justify-between p-3 bg-muted rounded-lg"
+                className={`flex items-center justify-between p-3 rounded-lg ${
+                  fileWithError.error ? 'bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800' : 'bg-muted'
+                }`}
               >
                 <div className="flex items-center gap-3 flex-1 min-w-0">
-                  <File className="w-5 h-5 text-primary flex-shrink-0" />
+                  {fileWithError.error ? (
+                    <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
+                  ) : (
+                    <File className="w-5 h-5 text-primary flex-shrink-0" />
+                  )}
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium truncate">{file.name}</p>
+                    <p className="font-medium truncate">{fileWithError.file.name}</p>
                     <p className="text-sm text-muted-foreground">
-                      {formatFileSize(file.size)}
+                      {formatFileSize(fileWithError.file.size)}
                     </p>
+                    {fileWithError.error && (
+                      <p className="text-sm text-red-600 dark:text-red-400 mt-1">
+                        {fileWithError.error}
+                      </p>
+                    )}
                   </div>
                 </div>
                 <Button
@@ -152,7 +221,7 @@ export default function UploadStep({
 
             <Button
               onClick={handleUpload}
-              disabled={uploadMutation.isPending}
+              disabled={uploadMutation.isPending || selectedFiles.some((f) => f.error)}
               className="w-full"
               size="lg"
             >
