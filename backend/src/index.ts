@@ -11,6 +11,7 @@ import vendorRoutes from './routes/vendors';
 import vendorImportRoutes from './routes/vendorImport';
 import dealRoutes from './routes/deals';
 import fileRoutes from './routes/files';
+import configRoutes from './routes/configs';
 import contactRoutes from './routes/contacts';
 import exportRoutes from './routes/export';
 import queueRoutes from './routes/queue';
@@ -57,6 +58,7 @@ app.use(`${config.apiPrefix}/vendors`, vendorRoutes);
 app.use(`${config.apiPrefix}/vendors`, vendorImportRoutes); // Vendor import endpoints
 app.use(`${config.apiPrefix}/deals`, dealRoutes);
 app.use(`${config.apiPrefix}/files`, fileRoutes);
+app.use(`${config.apiPrefix}/configs`, configRoutes);
 app.use(`${config.apiPrefix}/contacts`, contactRoutes);
 app.use(`${config.apiPrefix}/export`, exportRoutes);
 app.use(`${config.apiPrefix}/queue`, queueRoutes);
