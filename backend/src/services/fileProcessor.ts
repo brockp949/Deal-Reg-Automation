@@ -223,7 +223,7 @@ export async function processFile(fileId: string): Promise<ProcessingResult> {
         }
 
         if (vendorId) {
-          await createContact(contactData, vendorId);
+          await createContact(contactData, vendorId, fileId);
           result.contactsCreated++;
         }
         processedItems++;
@@ -940,7 +940,7 @@ async function createDeal(dealData: any, vendorId: string, sourceFileId: string)
 /**
  * Create a contact
  */
-async function createContact(contactData: any, vendorId: string): Promise<string> {
+async function createContact(contactData: any, vendorId: string, sourceFileId?: string): Promise<string> {
   // Check if contact already exists
   const existingResult = await query(
     'SELECT id FROM contacts WHERE vendor_id = $1 AND email = $2',
@@ -965,5 +965,53 @@ async function createContact(contactData: any, vendorId: string): Promise<string
     ]
   );
 
-  return result.rows[0].id;
+  const contactId = result.rows[0].id;
+
+  // Track provenance for contact fields
+  if (sourceFileId) {
+    try {
+      const fileResult = await query('SELECT filename, file_type FROM source_files WHERE id = $1', [sourceFileId]);
+      const sourceFilename = fileResult.rows[0]?.filename || 'unknown';
+      const fileType = fileResult.rows[0]?.file_type || 'unknown';
+
+      // Determine source type based on file type
+      let sourceType: 'email' | 'transcript' | 'csv' | 'manual' = 'csv';
+      let extractionMethod: 'regex' | 'keyword' | 'ai' | 'manual' = 'regex';
+
+      if (fileType === 'mbox') {
+        sourceType = 'email';
+        extractionMethod = 'regex';
+      } else if (fileType === 'txt' || fileType === 'pdf' || fileType === 'transcript') {
+        sourceType = 'transcript';
+        extractionMethod = 'regex';
+      } else if (fileType === 'csv' || fileType === 'vtiger_csv') {
+        sourceType = 'csv';
+        extractionMethod = 'manual';
+      }
+
+      await trackContactProvenance(
+        contactId,
+        {
+          name: contactData.name,
+          email: contactData.email,
+          phone: contactData.phone,
+          role: contactData.role,
+        },
+        {
+          sourceFileId,
+          sourceType,
+          sourceLocation: `File: ${sourceFilename}`,
+          extractionMethod,
+          confidence: contactData.confidence_score || 0.7,
+        }
+      );
+    } catch (provenanceError: any) {
+      logger.error('Failed to track contact provenance', {
+        contactId,
+        error: provenanceError.message,
+      });
+    }
+  }
+
+  return contactId;
 }
