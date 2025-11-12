@@ -106,7 +106,7 @@ export interface SourceFile {
   duplicate_of_id?: string;
 }
 
-export type FileType = 'mbox' | 'transcript' | 'vtiger_csv' | 'csv' | 'pdf' | 'docx' | 'txt';
+export type FileType = 'mbox' | 'transcript' | 'vtiger_csv' | 'csv' | 'pdf' | 'docx' | 'txt' | 'json';
 
 export type ProcessingStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'blocked';
 
@@ -119,7 +119,8 @@ export type FileSecurityEventType =
   | 'scan_failed'
   | 'scan_error'
   | 'quarantined'
-  | 'duplicate_detected';
+  | 'duplicate_detected'
+  | 'config_stored';
 
 export interface FileSecurityEvent {
   id: string;

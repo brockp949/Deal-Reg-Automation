@@ -303,7 +303,17 @@ export default function FileUploader() {
                             By {file.uploaded_by}
                           </span>
                         )}
+                        {file.metadata?.config && (
+                          <Badge variant="outline">
+                            Config {file.metadata.config.configName}
+                          </Badge>
+                        )}
                       </div>
+                      {file.metadata?.config && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Stored {new Date(file.metadata.config.storedAt).toLocaleString()}  -  {file.metadata.config.topLevelKeys?.slice(0, 3).join(', ')}
+                        </p>
+                      )}
                       {file.quarantine_reason && (
                         <p className="text-xs text-destructive mt-1">
                           Quarantined: {file.quarantine_reason}
