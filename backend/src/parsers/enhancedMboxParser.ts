@@ -13,6 +13,7 @@
 import { simpleParser, ParsedMail, AddressObject } from 'mailparser';
 import { readFileSync } from 'fs';
 import logger from '../utils/logger';
+import { cleanEmailText } from '../services/emailCleanerService';
 
 // ============================================================================
 // TIERED KEYWORD LEXICON
@@ -326,6 +327,7 @@ function normalizeText(text: string): string {
 
 /**
  * Complete pre-processing pipeline
+ * Now uses the centralized emailCleanerService for comprehensive noise removal
  */
 export function preprocessEmail(text: string, isHtml: boolean = false): string {
   let cleaned = text;
@@ -334,10 +336,25 @@ export function preprocessEmail(text: string, isHtml: boolean = false): string {
     cleaned = stripHtml(cleaned);
   }
 
-  cleaned = removeSignatures(cleaned);
-  cleaned = removeQuotedReplies(cleaned);
+  // Use new email cleaner service for comprehensive cleaning
+  const cleaningResult = cleanEmailText(cleaned, {
+    removeSignatures: true,
+    removeDisclaimers: true,
+    removeQuotedText: true,
+    removeForwardedHeaders: true,
+    removeAutoReplyMessages: true,
+    preserveMinLines: 3,
+  });
 
-  return cleaned;
+  logger.debug('Email cleaning complete', {
+    originalLines: cleaningResult.linesRemoved + cleaningResult.linesKept,
+    linesKept: cleaningResult.linesKept,
+    linesRemoved: cleaningResult.linesRemoved,
+    confidence: cleaningResult.confidence,
+    sectionsRemoved: cleaningResult.removedSections.length,
+  });
+
+  return cleaningResult.cleanedText;
 }
 
 // ============================================================================
