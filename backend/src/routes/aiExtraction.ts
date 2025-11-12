@@ -7,7 +7,15 @@ import {
   extractDealValue,
   getAIUsageStats,
   clearAICache,
+  extractAndValidateEntities,
 } from '../services/aiExtraction';
+import {
+  validateDeal,
+  validateDealValue,
+  validateDealDate,
+  validateCustomerName,
+  validateDealStatus,
+} from '../services/validationEngine';
 import { query } from '../db';
 import logger from '../utils/logger';
 
@@ -490,6 +498,278 @@ router.get('/stats/summary', async (req: Request, res: Response) => {
     logger.error('Failed to get stats summary', { error: error.message });
     res.status(500).json({
       error: 'Failed to retrieve statistics summary',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * POST /api/ai/extract-and-validate
+ * Combined System 1 + System 2 pipeline
+ */
+router.post('/extract-and-validate', async (req: Request, res: Response) => {
+  try {
+    const { text, extractionType = 'all', context } = req.body;
+
+    if (!text || typeof text !== 'string') {
+      return res.status(400).json({
+        error: 'Invalid request',
+        message: 'Text field is required',
+      });
+    }
+
+    logger.info('Extract and validate requested', {
+      extractionType,
+      textLength: text.length,
+    });
+
+    const result = await extractAndValidateEntities(text, extractionType, context);
+
+    // Convert Map to object for JSON serialization
+    const validationsObj: Record<string, any> = {};
+    result.validations.forEach((value, key) => {
+      validationsObj[key] = value;
+    });
+
+    res.json({
+      success: true,
+      extraction: result.extraction,
+      validations: validationsObj,
+      summary: {
+        entitiesExtracted: result.extraction.entities.length,
+        entitiesValidated: result.validations.size,
+        allValid: Array.from(result.validations.values()).every(v => v.isValid),
+        criticalErrors: Array.from(result.validations.values())
+          .reduce((sum, v) => sum + v.errors.filter((e: any) => e.severity === 'critical').length, 0),
+      },
+    });
+  } catch (error: any) {
+    logger.error('Extract and validate failed', { error: error.message });
+    res.status(500).json({
+      error: 'Extract and validate failed',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * POST /api/ai/validate/deal
+ * Validate a deal (without extraction)
+ */
+router.post('/validate/deal', async (req: Request, res: Response) => {
+  try {
+    const { dealData, context } = req.body;
+
+    if (!dealData) {
+      return res.status(400).json({
+        error: 'Invalid request',
+        message: 'dealData is required',
+      });
+    }
+
+    const validation = await validateDeal(dealData, context);
+
+    res.json({
+      success: true,
+      validation,
+      summary: {
+        isValid: validation.isValid,
+        errorsCount: validation.errors.length,
+        warningsCount: validation.warnings.length,
+        originalConfidence: dealData.confidence || 0.5,
+        finalConfidence: validation.finalConfidence,
+        confidenceAdjustment: validation.confidenceAdjustment,
+      },
+    });
+  } catch (error: any) {
+    logger.error('Deal validation failed', { error: error.message });
+    res.status(500).json({
+      error: 'Deal validation failed',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * POST /api/ai/validate/deal-value
+ * Validate deal value
+ */
+router.post('/validate/deal-value', async (req: Request, res: Response) => {
+  try {
+    const { value, currency, context } = req.body;
+
+    const validation = validateDealValue(value, currency, context);
+
+    res.json({
+      success: true,
+      validation,
+    });
+  } catch (error: any) {
+    logger.error('Deal value validation failed', { error: error.message });
+    res.status(500).json({
+      error: 'Deal value validation failed',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * POST /api/ai/validate/deal-date
+ * Validate deal date
+ */
+router.post('/validate/deal-date', async (req: Request, res: Response) => {
+  try {
+    const { date, dateType, context } = req.body;
+
+    if (!dateType || !['close_date', 'registration_date'].includes(dateType)) {
+      return res.status(400).json({
+        error: 'Invalid request',
+        message: 'dateType must be "close_date" or "registration_date"',
+      });
+    }
+
+    const validation = validateDealDate(date, dateType, context);
+
+    res.json({
+      success: true,
+      validation,
+    });
+  } catch (error: any) {
+    logger.error('Deal date validation failed', { error: error.message });
+    res.status(500).json({
+      error: 'Deal date validation failed',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * POST /api/ai/validate/customer-name
+ * Validate customer name
+ */
+router.post('/validate/customer-name', async (req: Request, res: Response) => {
+  try {
+    const { name } = req.body;
+
+    if (!name) {
+      return res.status(400).json({
+        error: 'Invalid request',
+        message: 'name is required',
+      });
+    }
+
+    const validation = validateCustomerName(name);
+
+    res.json({
+      success: true,
+      validation,
+    });
+  } catch (error: any) {
+    logger.error('Customer name validation failed', { error: error.message });
+    res.status(500).json({
+      error: 'Customer name validation failed',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * POST /api/ai/validate/deal-status
+ * Validate deal status
+ */
+router.post('/validate/deal-status', async (req: Request, res: Response) => {
+  try {
+    const { status } = req.body;
+
+    if (!status) {
+      return res.status(400).json({
+        error: 'Invalid request',
+        message: 'status is required',
+      });
+    }
+
+    const validation = validateDealStatus(status);
+
+    res.json({
+      success: true,
+      validation,
+    });
+  } catch (error: any) {
+    logger.error('Deal status validation failed', { error: error.message });
+    res.status(500).json({
+      error: 'Deal status validation failed',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/ai/validation/rules
+ * Get all validation rules
+ */
+router.get('/validation/rules', async (req: Request, res: Response) => {
+  try {
+    const { entityType, isActive } = req.query;
+
+    let queryText = 'SELECT * FROM validation_rules WHERE 1=1';
+    const queryParams: any[] = [];
+    let paramCount = 1;
+
+    if (entityType) {
+      queryText += ` AND entity_type = $${paramCount}`;
+      queryParams.push(entityType);
+      paramCount++;
+    }
+
+    if (isActive !== undefined) {
+      queryText += ` AND is_active = $${paramCount}`;
+      queryParams.push(isActive === 'true');
+    }
+
+    queryText += ' ORDER BY entity_type, severity DESC, rule_name';
+
+    const result = await query(queryText, queryParams);
+
+    res.json({
+      success: true,
+      rules: result.rows,
+      count: result.rows.length,
+    });
+  } catch (error: any) {
+    logger.error('Failed to get validation rules', { error: error.message });
+    res.status(500).json({
+      error: 'Failed to retrieve validation rules',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/ai/validation/statistics
+ * Get validation statistics
+ */
+router.get('/validation/statistics', async (req: Request, res: Response) => {
+  try {
+    const { days = '30' } = req.query;
+
+    const stats = await query(
+      'SELECT * FROM get_validation_statistics($1)',
+      [parseInt(days as string, 10)]
+    );
+
+    const failureStats = await query('SELECT * FROM validation_failure_stats');
+    const passRates = await query('SELECT * FROM validation_pass_rates');
+
+    res.json({
+      success: true,
+      overall: stats.rows[0] || {},
+      failureStats: failureStats.rows,
+      passRates: passRates.rows,
+    });
+  } catch (error: any) {
+    logger.error('Failed to get validation statistics', { error: error.message });
+    res.status(500).json({
+      error: 'Failed to retrieve validation statistics',
       message: error.message,
     });
   }

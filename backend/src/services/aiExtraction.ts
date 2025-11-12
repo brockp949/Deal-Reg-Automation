@@ -616,3 +616,79 @@ export async function getAIUsageStats(params?: {
     throw error;
   }
 }
+
+/**
+ * Extract and validate entities with AI (System 1 + System 2 pipeline)
+ * Combines fast AI extraction with logical validation
+ */
+export async function extractAndValidateEntities(
+  text: string,
+  extractionType: 'deal' | 'vendor' | 'contact' | 'all' = 'all',
+  context?: {
+    sourceFileId?: string;
+    sourceType?: string;
+    vendorHints?: string[];
+    existingDeals?: any[];
+    vendors?: any[];
+  }
+): Promise<{
+  extraction: AIExtractionResult;
+  validations: Map<string, any>; // Map of entity ID to validation result
+}> {
+  // Import validation engine (dynamic to avoid circular deps)
+  const { validateDeal } = await import('./validationEngine');
+
+  // Step 1: System 1 - Fast AI extraction
+  logger.info('Starting System 1 + System 2 pipeline', {
+    extractionType,
+    textLength: text.length,
+  });
+
+  const extraction = await extractEntitiesWithAI(text, extractionType, context);
+
+  // Step 2: System 2 - Logical validation
+  const validations = new Map<string, any>();
+
+  for (const entity of extraction.entities) {
+    if (entity.type === 'deal') {
+      try {
+        const validation = await validateDeal(entity.data, {
+          sourceText: text,
+          existingDeals: context?.existingDeals,
+          vendors: context?.vendors,
+        });
+
+        // Store validation result
+        validations.set(entity.data.dealName || 'unknown', validation);
+
+        // Update entity confidence with validated score
+        entity.confidence = validation.finalConfidence;
+
+        logger.info('Deal validated', {
+          dealName: entity.data.dealName,
+          originalConfidence: entity.data.confidence,
+          finalConfidence: validation.finalConfidence,
+          isValid: validation.isValid,
+          errors: validation.errors.length,
+          warnings: validation.warnings.length,
+        });
+      } catch (error: any) {
+        logger.warn('Failed to validate deal', {
+          dealName: entity.data.dealName,
+          error: error.message,
+        });
+      }
+    }
+    // TODO: Add validation for vendors and contacts
+  }
+
+  logger.info('System 1 + System 2 pipeline completed', {
+    entitiesExtracted: extraction.entities.length,
+    entitiesValidated: validations.size,
+  });
+
+  return {
+    extraction,
+    validations,
+  };
+}
