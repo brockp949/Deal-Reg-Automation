@@ -17,6 +17,7 @@ import {
 } from '../types/parsing';
 import { stat } from 'fs/promises';
 import logger from '../utils/logger';
+import NormalizationService from '../services/normalizationService';
 
 export class StandardizedCSVParser extends BaseParser {
   constructor() {
@@ -176,16 +177,21 @@ export class StandardizedCSVParser extends BaseParser {
    * Normalize vendor from CSV parser output
    */
   private normalizeVendor(v: any): NormalizedVendor {
+    const nameResult = NormalizationService.normalizeCompanyName(v.name, { removeSuffixes: true });
+    const emailResult = v.email ? NormalizationService.normalizeEmail(v.email) : null;
+    const phoneResult = v.phone ? NormalizationService.normalizePhone(v.phone) : null;
+    const websiteNormalized = v.website ? v.website.toLowerCase().trim() : undefined;
+
     return {
-      name: v.name,
-      normalized_name: v.name.toLowerCase().replace(/[^\w\s]/g, '').trim(),
-      email_domains: v.email_domain ? [v.email_domain] : undefined,
+      name: v.name, // Keep original name for display
+      normalized_name: nameResult.value.toLowerCase().replace(/[^\w\s]/g, '').trim(),
+      email_domains: v.email_domain ? [v.email_domain.toLowerCase().trim()] : undefined,
       industry: v.industry,
-      website: v.website,
+      website: websiteNormalized,
       notes: v.notes,
       contact_name: v.contact_name,
-      contact_email: v.email,
-      contact_phone: v.phone,
+      contact_email: emailResult?.value,
+      contact_phone: phoneResult?.value,
       origin: 'imported',
       confidence: 1.0, // CSV data is typically manually entered, so high confidence
       source_location: 'CSV import',
@@ -196,16 +202,23 @@ export class StandardizedCSVParser extends BaseParser {
    * Normalize deal from CSV parser output
    */
   private normalizeDeal(d: any): NormalizedDeal {
+    const dealValueResult = NormalizationService.normalizeCurrency(d.deal_value, d.currency);
+    const customerNameResult = d.customer_name ?
+      NormalizationService.normalizeCompanyName(d.customer_name, { removeSuffixes: false }) : null;
+    const registrationDateResult = NormalizationService.normalizeDate(d.registration_date);
+    const expectedCloseDateResult = NormalizationService.normalizeDate(d.expected_close_date);
+    const statusResult = NormalizationService.normalizeStatus(d.status || 'registered', 'deal');
+
     return {
       deal_name: d.deal_name || 'Untitled Deal',
       vendor_name: d.vendor_name || 'Unknown Vendor',
-      deal_value: d.deal_value || 0,
-      currency: d.currency || 'USD',
-      customer_name: d.customer_name,
+      deal_value: dealValueResult.value,
+      currency: dealValueResult.currency,
+      customer_name: customerNameResult?.value,
       customer_industry: d.customer_industry,
-      registration_date: d.registration_date,
-      expected_close_date: d.expected_close_date,
-      status: d.status || 'registered',
+      registration_date: registrationDateResult.value || undefined,
+      expected_close_date: expectedCloseDateResult.value || undefined,
+      status: statusResult.value,
       deal_stage: d.deal_stage,
       probability: d.probability,
       notes: d.notes,
@@ -219,11 +232,14 @@ export class StandardizedCSVParser extends BaseParser {
    * Normalize contact from CSV parser output
    */
   private normalizeContact(c: any): NormalizedContact {
+    const emailResult = c.email ? NormalizationService.normalizeEmail(c.email) : null;
+    const phoneResult = c.phone ? NormalizationService.normalizePhone(c.phone) : null;
+
     return {
-      name: c.name,
+      name: c.name?.trim() || '',
       vendor_name: c.vendor_name,
-      email: c.email,
-      phone: c.phone,
+      email: emailResult?.value,
+      phone: phoneResult?.value,
       role: c.role || 'contact',
       is_primary: c.is_primary,
       source_location: 'CSV import',
