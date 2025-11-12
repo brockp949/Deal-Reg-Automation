@@ -23,7 +23,8 @@ const envSchema = z.object({
   // File Upload
   UPLOAD_DIR: z.string().default('./uploads'),
   MAX_FILE_SIZE: z.string().default('5368709120'), // 5GB (5368709120 bytes)
-  ALLOWED_FILE_TYPES: z.string().default('.mbox,.csv,.txt,.pdf,.docx'),
+  ALLOWED_FILE_TYPES: z.string().default('.mbox,.csv,.txt,.pdf,.docx,.json'),
+  CONFIG_STORAGE_DIR: z.string().default('./config-uploads'),
 
   // AI Services (optional for Phase 1)
   ANTHROPIC_API_KEY: z.string().optional(),
@@ -64,6 +65,9 @@ export const config = {
     directory: env.UPLOAD_DIR,
     maxFileSize: parseInt(env.MAX_FILE_SIZE, 10),
     allowedTypes: env.ALLOWED_FILE_TYPES.split(','),
+  },
+  configStorage: {
+    directory: env.CONFIG_STORAGE_DIR,
   },
 
   ai: {

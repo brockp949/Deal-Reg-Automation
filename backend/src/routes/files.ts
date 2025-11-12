@@ -7,12 +7,17 @@ import { config } from '../config';
 import { getFileType, isValidFileType, isValidFileSize, generateUniqueFilename } from '../utils/fileHelpers';
 import { ApiResponse, SourceFile } from '../types';
 import logger from '../utils/logger';
+import { computeFileChecksum, performVirusScan, recordFileSecurityEvent } from '../services/fileSecurity';
+import { storeConfigFile } from '../services/configStorage';
 
 const router = Router();
 
 // Ensure upload directory exists
 mkdir(config.upload.directory, { recursive: true }).catch((err) =>
   logger.error('Failed to create upload directory', err)
+);
+mkdir(config.configStorage.directory, { recursive: true }).catch((err) =>
+  logger.error('Failed to create config storage directory', err)
 );
 
 // Configure multer storage
@@ -40,6 +45,41 @@ const upload = multer({
   },
 });
 
+function resolveOperatorId(req: Request): string {
+  return (
+    (req.header('x-operator-id') as string) ||
+    (req.header('x-user-id') as string) ||
+    (req.header('x-requested-by') as string) ||
+    'anonymous'
+  );
+}
+
+function buildUploadMetadata(req: Request, originalName: string, extras?: Record<string, any>) {
+  return {
+    ip: req.ip,
+    userAgent: req.get('user-agent'),
+    source: req.body?.source || 'upload_wizard',
+    intent: req.body?.intent,
+    configName: req.body?.configName,
+    requestId: req.get('x-request-id'),
+    originalFilename: originalName,
+    ...extras,
+  };
+}
+
+async function findDuplicateByChecksum(checksum: string): Promise<SourceFile | null> {
+  const existing = await query(
+    `SELECT * FROM source_files
+     WHERE checksum_sha256 = $1
+       AND scan_status = 'passed'
+       AND duplicate_of_id IS NULL
+     ORDER BY upload_date ASC
+     LIMIT 1`,
+    [checksum]
+  );
+  return existing.rows[0] ?? null;
+}
+
 /**
  * POST /api/files/upload
  * Upload a single file
@@ -53,38 +93,213 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
       });
     }
 
+    const operatorId = resolveOperatorId(req);
     const fileType = getFileType(req.file.originalname);
     const storagePath = join(config.upload.directory, req.file.filename);
+    const uploadMetadata = buildUploadMetadata(req, req.file.originalname);
 
-    // Save file metadata to database
+    const { checksum, verifiedAt } = await computeFileChecksum(storagePath);
+
+    const duplicateFile = await findDuplicateByChecksum(checksum);
+    if (duplicateFile) {
+      await unlink(storagePath).catch((err) =>
+        logger.warn('Failed to delete duplicate upload temp file', {
+          filename: req.file?.filename,
+          error: err.message,
+        })
+      );
+
+      await recordFileSecurityEvent({
+        fileId: duplicateFile.id,
+        eventType: 'duplicate_detected',
+        actor: operatorId,
+        details: {
+          attemptedFilename: req.file.originalname,
+          duplicateOf: duplicateFile.id,
+          checksum,
+          uploadMetadata,
+        },
+      });
+
+      logger.info('Duplicate upload detected; reusing existing file', {
+        duplicateOf: duplicateFile.id,
+        attemptedFilename: req.file.originalname,
+      });
+
+      return res.status(200).json({
+        success: true,
+        data: duplicateFile,
+        duplicate: true,
+        duplicateOf: duplicateFile.id,
+        message: `Duplicate upload detected. Reusing ${duplicateFile.filename}`,
+      });
+    }
+
+    const scanResult = await performVirusScan(storagePath);
+
+    const processingStatus = scanResult.status === 'passed' ? 'pending' : 'blocked';
+    const quarantineInfo =
+      scanResult.status === 'passed'
+        ? { at: null, reason: null }
+        : { at: new Date(), reason: scanResult.message || 'File failed automated scan' };
+
     const result = await query(
-      `INSERT INTO source_files (filename, file_type, file_size, storage_path, processing_status)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO source_files (
+        filename,
+        file_type,
+        file_size,
+        storage_path,
+        processing_status,
+        checksum_sha256,
+        checksum_verified_at,
+        scan_status,
+        scan_engine,
+        scan_details,
+        scan_completed_at,
+        quarantined_at,
+        quarantine_reason,
+        uploaded_by,
+        upload_metadata
+      )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14, $15::jsonb)
        RETURNING *`,
-      [req.file.originalname, fileType, req.file.size, storagePath, 'pending']
+      [
+        req.file.originalname,
+        fileType,
+        req.file.size,
+        storagePath,
+        processingStatus,
+        checksum,
+        verifiedAt,
+        scanResult.status,
+        scanResult.engine,
+        JSON.stringify({
+          signatureVersion: scanResult.signatureVersion,
+          message: scanResult.message,
+          findings: scanResult.findings,
+        }),
+        scanResult.completedAt,
+        quarantineInfo.at,
+        quarantineInfo.reason,
+        operatorId,
+        JSON.stringify(uploadMetadata),
+      ]
     );
 
-    const sourceFile: SourceFile = result.rows[0];
+    let sourceFile: SourceFile = result.rows[0];
+    const shouldStoreConfig = (fileType === 'json' || uploadMetadata.intent === 'update-config') && scanResult.status === 'passed';
+
+    await recordFileSecurityEvent({
+      fileId: sourceFile.id,
+      eventType: 'upload_received',
+      actor: operatorId,
+      details: uploadMetadata,
+    });
+    await recordFileSecurityEvent({
+      fileId: sourceFile.id,
+      eventType: 'checksum_recorded',
+      actor: operatorId,
+      details: { checksum },
+    });
+    await recordFileSecurityEvent({
+      fileId: sourceFile.id,
+      eventType:
+        scanResult.status === 'passed'
+          ? 'scan_passed'
+          : scanResult.status === 'failed'
+            ? 'scan_failed'
+            : 'scan_error',
+      actor: operatorId,
+      details: {
+        engine: scanResult.engine,
+        signatureVersion: scanResult.signatureVersion,
+        findings: scanResult.findings,
+        message: scanResult.message,
+      },
+    });
+
+    if (quarantineInfo.at) {
+      await recordFileSecurityEvent({
+        fileId: sourceFile.id,
+        eventType: 'quarantined',
+        actor: operatorId,
+        details: { reason: quarantineInfo.reason },
+      });
+    }
+
+    if (shouldStoreConfig) {
+      const configDetails = await storeConfigFile({
+        sourceFileId: sourceFile.id,
+        tempPath: storagePath,
+        originalFilename: req.file.originalname,
+        checksum,
+        operatorId,
+        intent: uploadMetadata.intent,
+        configName: uploadMetadata.configName,
+      });
+
+      await recordFileSecurityEvent({
+        fileId: sourceFile.id,
+        eventType: 'config_stored',
+        actor: operatorId,
+        details: configDetails,
+      });
+
+      const updated = await query(
+        `UPDATE source_files
+         SET storage_path = $1,
+             metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{config}', $2::jsonb),
+             processing_status = 'completed',
+             processing_completed_at = CURRENT_TIMESTAMP
+         WHERE id = $3
+         RETURNING *`,
+        [configDetails.storedPath, JSON.stringify(configDetails), sourceFile.id]
+      );
+
+      sourceFile = updated.rows[0];
+
+      logger.info('Configuration file stored', {
+        fileId: sourceFile.id,
+        snapshotId: configDetails.snapshotId,
+        configName: configDetails.configName,
+      });
+
+      return res.status(201).json({
+        success: true,
+        data: sourceFile,
+        message: `Configuration ${configDetails.configName} stored`,
+      });
+    }
 
     logger.info('File uploaded successfully', {
       fileId: sourceFile.id,
       filename: sourceFile.filename,
       size: sourceFile.file_size,
+      checksum,
+      scanStatus: scanResult.status,
     });
 
-    // Automatically queue the file for processing
-    const { addFileProcessingJob } = await import('../queues/fileProcessingQueue');
-    const job = await addFileProcessingJob(sourceFile.id);
-
-    logger.info('File queued for processing', {
-      fileId: sourceFile.id,
-      jobId: job.id,
-    });
+    if (scanResult.status === 'passed') {
+      const { addFileProcessingJob } = await import('../queues/fileProcessingQueue');
+      const job = await addFileProcessingJob(sourceFile.id);
+      logger.info('File queued for processing', {
+        fileId: sourceFile.id,
+        jobId: job.id,
+      });
+    } else {
+      logger.warn('File not queued due to scan status', {
+        fileId: sourceFile.id,
+        scanStatus: scanResult.status,
+      });
+    }
 
     const response: ApiResponse<SourceFile> = {
       success: true,
       data: sourceFile,
-      message: 'File uploaded and queued for processing',
+      message:
+        scanResult.status === 'passed'
+          ? 'File uploaded and queued for processing'
+          : 'File uploaded but quarantined pending review',
     };
 
     res.status(201).json(response);
@@ -114,35 +329,205 @@ router.post('/batch-upload', upload.array('files', 10), async (req: Request, res
 
     const uploadedFiles: SourceFile[] = [];
     const { addFileProcessingJob } = await import('../queues/fileProcessingQueue');
+    const operatorId = resolveOperatorId(req);
+    let queuedCount = 0;
+    let quarantinedCount = 0;
+    let duplicateCount = 0;
+    let configsStored = 0;
 
-    for (const file of files) {
+    for (const [index, file] of files.entries()) {
       const fileType = getFileType(file.originalname);
       const storagePath = join(config.upload.directory, file.filename);
+      const uploadMetadata = buildUploadMetadata(req, file.originalname, {
+        batchSize: files.length,
+        batchIndex: index,
+      });
+
+      const { checksum, verifiedAt } = await computeFileChecksum(storagePath);
+      const duplicateFile = await findDuplicateByChecksum(checksum);
+
+      if (duplicateFile) {
+        duplicateCount++;
+        await unlink(storagePath).catch((err) =>
+          logger.warn('Failed to delete duplicate upload temp file (batch)', {
+            filename: file.filename,
+            error: err.message,
+          })
+        );
+        await recordFileSecurityEvent({
+          fileId: duplicateFile.id,
+          eventType: 'duplicate_detected',
+          actor: operatorId,
+          details: {
+            attemptedFilename: file.originalname,
+            duplicateOf: duplicateFile.id,
+            checksum,
+            uploadMetadata,
+          },
+        });
+        logger.info('Duplicate upload skipped in batch', {
+          duplicateOf: duplicateFile.id,
+          attemptedFilename: file.originalname,
+        });
+        continue;
+      }
+
+      const scanResult = await performVirusScan(storagePath);
+      const processingStatus = scanResult.status === 'passed' ? 'pending' : 'blocked';
+      const quarantineInfo =
+        scanResult.status === 'passed'
+          ? { at: null, reason: null }
+          : { at: new Date(), reason: scanResult.message || 'File failed automated scan' };
 
       const result = await query(
-        `INSERT INTO source_files (filename, file_type, file_size, storage_path, processing_status)
-         VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO source_files (
+          filename,
+          file_type,
+          file_size,
+          storage_path,
+          processing_status,
+          checksum_sha256,
+          checksum_verified_at,
+          scan_status,
+          scan_engine,
+          scan_details,
+          scan_completed_at,
+          quarantined_at,
+          quarantine_reason,
+          uploaded_by,
+          upload_metadata
+        )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14, $15::jsonb)
          RETURNING *`,
-        [file.originalname, fileType, file.size, storagePath, 'pending']
+        [
+          file.originalname,
+          fileType,
+          file.size,
+          storagePath,
+          processingStatus,
+          checksum,
+          verifiedAt,
+          scanResult.status,
+          scanResult.engine,
+          JSON.stringify({
+            signatureVersion: scanResult.signatureVersion,
+            message: scanResult.message,
+            findings: scanResult.findings,
+          }),
+          scanResult.completedAt,
+          quarantineInfo.at,
+          quarantineInfo.reason,
+          operatorId,
+          JSON.stringify(uploadMetadata),
+        ]
       );
 
-      const sourceFile: SourceFile = result.rows[0];
+      let sourceFile: SourceFile = result.rows[0];
+      const shouldStoreConfig = (fileType === 'json' || uploadMetadata.intent === 'update-config') && scanResult.status === 'passed';
+
+      await recordFileSecurityEvent({
+        fileId: sourceFile.id,
+        eventType: 'upload_received',
+        actor: operatorId,
+        details: uploadMetadata,
+      });
+      await recordFileSecurityEvent({
+        fileId: sourceFile.id,
+        eventType: 'checksum_recorded',
+        actor: operatorId,
+        details: { checksum },
+      });
+      await recordFileSecurityEvent({
+        fileId: sourceFile.id,
+        eventType:
+          scanResult.status === 'passed'
+            ? 'scan_passed'
+            : scanResult.status === 'failed'
+              ? 'scan_failed'
+              : 'scan_error',
+        actor: operatorId,
+        details: {
+          engine: scanResult.engine,
+          signatureVersion: scanResult.signatureVersion,
+          findings: scanResult.findings,
+          message: scanResult.message,
+        },
+      });
+      if (quarantineInfo.at) {
+        await recordFileSecurityEvent({
+          fileId: sourceFile.id,
+          eventType: 'quarantined',
+          actor: operatorId,
+          details: { reason: quarantineInfo.reason },
+        });
+      }
+
+      if (shouldStoreConfig) {
+        const configDetails = await storeConfigFile({
+          sourceFileId: sourceFile.id,
+          tempPath: storagePath,
+          originalFilename: file.originalname,
+          checksum,
+          operatorId,
+          intent: uploadMetadata.intent,
+          configName: uploadMetadata.configName,
+        });
+
+        await recordFileSecurityEvent({
+          fileId: sourceFile.id,
+          eventType: 'config_stored',
+          actor: operatorId,
+          details: configDetails,
+        });
+
+        const updated = await query(
+          `UPDATE source_files
+           SET storage_path = $1,
+               metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{config}', $2::jsonb),
+               processing_status = 'completed',
+               processing_completed_at = CURRENT_TIMESTAMP
+           WHERE id = $3
+           RETURNING *`,
+          [configDetails.storedPath, JSON.stringify(configDetails), sourceFile.id]
+        );
+
+        sourceFile = updated.rows[0];
+        configsStored++;
+        uploadedFiles.push(sourceFile);
+        continue;
+      }
+
       uploadedFiles.push(sourceFile);
 
-      // Automatically queue each file for processing
-      const job = await addFileProcessingJob(sourceFile.id);
-      logger.info('File queued for processing', {
-        fileId: sourceFile.id,
-        jobId: job.id,
-      });
+      if (scanResult.status === 'passed') {
+        const job = await addFileProcessingJob(sourceFile.id);
+        queuedCount++;
+        logger.info('File queued for processing', {
+          fileId: sourceFile.id,
+          jobId: job.id,
+        });
+      } else {
+        quarantinedCount++;
+        logger.warn('File quarantined from batch upload', {
+          fileId: sourceFile.id,
+          scanStatus: scanResult.status,
+        });
+      }
     }
 
-    logger.info('Batch upload completed and queued', { count: uploadedFiles.length });
+    logger.info('Batch upload completed', {
+      total: uploadedFiles.length,
+      queued: queuedCount,
+      quarantined: quarantinedCount,
+      duplicates: duplicateCount,
+      configsStored,
+    });
 
     res.status(201).json({
       success: true,
       data: uploadedFiles,
-      message: `${uploadedFiles.length} files uploaded and queued for processing`,
+      message: `${uploadedFiles.length} files uploaded (${queuedCount} queued, ${quarantinedCount} quarantined, ${duplicateCount} duplicates reused, ${configsStored} configs stored)`,
+      duplicate: duplicateCount > 0,
     });
   } catch (error: any) {
     logger.error('Error in batch upload', { error: error.message });
@@ -159,7 +544,7 @@ router.post('/batch-upload', upload.array('files', 10), async (req: Request, res
  */
 router.get('/', async (req: Request, res: Response) => {
   try {
-    const { status, file_type, limit = '50' } = req.query;
+    const { status, file_type, limit = '50', scan_status, uploaded_by } = req.query;
 
     const conditions: string[] = [];
     const params: any[] = [];
@@ -168,6 +553,16 @@ router.get('/', async (req: Request, res: Response) => {
     if (status) {
       conditions.push(`processing_status = $${paramCount++}`);
       params.push(status);
+    }
+
+    if (scan_status) {
+      conditions.push(`scan_status = $${paramCount++}`);
+      params.push(scan_status);
+    }
+
+    if (uploaded_by) {
+      conditions.push(`uploaded_by = $${paramCount++}`);
+      params.push(uploaded_by);
     }
 
     if (file_type) {
@@ -194,6 +589,57 @@ router.get('/', async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch files',
+    });
+  }
+});
+
+/**
+ * GET /api/files/metrics/security
+ * Aggregate security metrics for telemetry dashboards
+ */
+router.get('/metrics/security', async (_req: Request, res: Response) => {
+  try {
+    const scanStatsResult = await query(
+      `SELECT scan_status, COUNT(*)::int AS count
+       FROM source_files
+       GROUP BY scan_status`
+    );
+    const blockedCountResult = await query(
+      `SELECT COUNT(*)::int AS count
+       FROM source_files
+       WHERE processing_status = 'blocked'`
+    );
+    const quarantineCountResult = await query(
+      `SELECT COUNT(*)::int AS count
+       FROM source_files
+       WHERE quarantined_at IS NOT NULL`
+    );
+    const duplicate30dResult = await query(
+      `SELECT COUNT(*)::int AS count
+       FROM file_security_events
+       WHERE event_type = 'duplicate_detected'
+         AND created_at >= NOW() - INTERVAL '30 days'`
+    );
+
+    const scanStats = scanStatsResult.rows.reduce<Record<string, number>>((acc, row) => {
+      acc[row.scan_status || 'unknown'] = row.count;
+      return acc;
+    }, {});
+
+    res.json({
+      success: true,
+      data: {
+        scanStatus: scanStats,
+        blockedCount: blockedCountResult.rows[0]?.count ?? 0,
+        quarantinedCount: quarantineCountResult.rows[0]?.count ?? 0,
+        duplicateEventsLast30Days: duplicate30dResult.rows[0]?.count ?? 0,
+      },
+    });
+  } catch (error: any) {
+    logger.error('Error fetching security metrics', { error: error.message });
+    res.status(500).json({
+      success: false,
+      error: 'Failed to load security metrics',
     });
   }
 });

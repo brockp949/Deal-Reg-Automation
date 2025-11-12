@@ -68,11 +68,41 @@ CREATE TABLE IF NOT EXISTS source_files (
   processing_started_at TIMESTAMP,
   processing_completed_at TIMESTAMP,
   error_message TEXT,
-  metadata JSONB DEFAULT '{}'::jsonb
+  metadata JSONB DEFAULT '{}'::jsonb,
+  checksum_sha256 CHAR(64),
+  checksum_verified_at TIMESTAMP,
+  scan_status VARCHAR(20) DEFAULT 'not_scanned',
+  scan_engine VARCHAR(100),
+  scan_details JSONB DEFAULT '{}'::jsonb,
+  scan_completed_at TIMESTAMP,
+  quarantined_at TIMESTAMP,
+  quarantine_reason TEXT,
+  uploaded_by VARCHAR(255),
+  upload_metadata JSONB DEFAULT '{}'::jsonb,
+  duplicate_of_id UUID REFERENCES source_files(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_files_status ON source_files(processing_status);
 CREATE INDEX IF NOT EXISTS idx_files_upload_date ON source_files(upload_date);
+CREATE INDEX IF NOT EXISTS idx_files_checksum ON source_files(checksum_sha256);
+CREATE INDEX IF NOT EXISTS idx_files_scan_status ON source_files(scan_status);
+CREATE INDEX IF NOT EXISTS idx_files_uploaded_by ON source_files(uploaded_by);
+CREATE INDEX IF NOT EXISTS idx_files_duplicate_of ON source_files(duplicate_of_id);
+
+CREATE TABLE IF NOT EXISTS file_security_events (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  source_file_id UUID REFERENCES source_files(id) ON DELETE CASCADE,
+  event_type VARCHAR(50) NOT NULL,
+  actor VARCHAR(255),
+  details JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_file_security_events_file_id
+  ON file_security_events(source_file_id);
+
+CREATE INDEX IF NOT EXISTS idx_file_security_events_type
+  ON file_security_events(event_type);
 
 -- Extracted Entities Table
 CREATE TABLE IF NOT EXISTS extracted_entities (

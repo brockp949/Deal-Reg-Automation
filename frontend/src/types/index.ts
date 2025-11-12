@@ -51,11 +51,24 @@ export interface SourceFile {
   processing_completed_at?: string;
   error_message?: string;
   metadata: Record<string, any>;
+  checksum_sha256?: string;
+  checksum_verified_at?: string;
+  scan_status?: FileScanStatus;
+  scan_engine?: string;
+  scan_details?: Record<string, any>;
+  scan_completed_at?: string;
+  quarantined_at?: string;
+  quarantine_reason?: string;
+  uploaded_by?: string;
+  upload_metadata?: Record<string, any>;
+  duplicate_of_id?: string;
 }
 
-export type FileType = 'mbox' | 'transcript' | 'vtiger_csv' | 'csv' | 'pdf' | 'docx' | 'txt';
+export type FileType = 'mbox' | 'transcript' | 'vtiger_csv' | 'csv' | 'pdf' | 'docx' | 'txt' | 'json';
 
-export type ProcessingStatus = 'pending' | 'processing' | 'completed' | 'failed';
+export type ProcessingStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'blocked';
+
+export type FileScanStatus = 'not_scanned' | 'pending' | 'passed' | 'failed' | 'error';
 
 export interface Contact {
   id: string;
@@ -75,6 +88,8 @@ export interface ApiResponse<T = any> {
   data?: T;
   error?: string;
   message?: string;
+  duplicate?: boolean;
+  duplicateOf?: string;
 }
 
 export interface PaginatedResponse<T> {
