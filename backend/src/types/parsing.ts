@@ -288,7 +288,7 @@ export interface CSVParserOptions extends BaseParserOptions {
   autoDetectFormat?: boolean;            // Default: true
 
   // Specific format to use
-  format?: 'vtiger' | 'salesforce' | 'hubspot' | 'generic';
+  format?: 'vtiger' | 'salesforce' | 'hubspot' | 'zoho' | 'pipedrive' | 'deals_with_vendors' | 'generic' | 'auto';
 
   // Custom column mappings
   columnMappings?: Record<string, string>;

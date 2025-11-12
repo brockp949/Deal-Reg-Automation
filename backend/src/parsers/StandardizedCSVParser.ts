@@ -82,21 +82,44 @@ export class StandardizedCSVParser extends BaseParser {
       let extractedData: any;
       switch (format) {
         case 'vtiger':
+          logger.info('Using vTiger parser');
           extractedData = normalizeVTigerData(rows);
           break;
-        case 'generic':
+
+        case 'deals_with_vendors':
+          logger.info('Using Deals with Vendors parser');
+          extractedData = normalizeDealsWithVendorsData(rows);
+          break;
+
+        case 'salesforce':
+          logger.info('Detected Salesforce format, using generic parser (specific parser TODO)');
+          this.addWarning(output, 'Salesforce format detected but using generic parser', undefined, 'Implement Salesforce-specific parser for better extraction');
           extractedData = parseGenericCSV(rows);
           break;
+
+        case 'hubspot':
+          logger.info('Detected HubSpot format, using generic parser (specific parser TODO)');
+          this.addWarning(output, 'HubSpot format detected but using generic parser', undefined, 'Implement HubSpot-specific parser for better extraction');
+          extractedData = parseGenericCSV(rows);
+          break;
+
+        case 'zoho':
+          logger.info('Detected Zoho format, using generic parser (specific parser TODO)');
+          this.addWarning(output, 'Zoho format detected but using generic parser', undefined, 'Implement Zoho-specific parser for better extraction');
+          extractedData = parseGenericCSV(rows);
+          break;
+
+        case 'pipedrive':
+          logger.info('Detected Pipedrive format, using generic parser (specific parser TODO)');
+          this.addWarning(output, 'Pipedrive format detected but using generic parser', undefined, 'Implement Pipedrive-specific parser for better extraction');
+          extractedData = parseGenericCSV(rows);
+          break;
+
+        case 'generic':
         default:
-          // Try deals with vendors format first
-          const headers = Object.keys(rows[0]);
-          if (headers.some((h) => h.startsWith('Vendors ')) && headers.some((h) => h.startsWith('Deals '))) {
-            extractedData = normalizeDealsWithVendorsData(rows);
-          } else if (this.looksLikeVTiger(rows)) {
-            extractedData = normalizeVTigerData(rows);
-          } else {
-            extractedData = parseGenericCSV(rows);
-          }
+          logger.info('Using generic CSV parser');
+          extractedData = parseGenericCSV(rows);
+          break;
       }
 
       // Convert to standardized format
@@ -146,22 +169,85 @@ export class StandardizedCSVParser extends BaseParser {
   }
 
   /**
-   * Detect CSV format based on headers
+   * Detect CSV format based on headers with confidence scoring
+   * Now supports multiple CRM formats: vTiger, Salesforce, HubSpot, Zoho, Pipedrive
    */
-  private detectFormat(rows: any[]): 'vtiger' | 'generic' {
+  private detectFormat(rows: any[]): 'vtiger' | 'salesforce' | 'hubspot' | 'zoho' | 'pipedrive' | 'deals_with_vendors' | 'generic' {
     if (rows.length === 0) return 'generic';
 
     const headers = Object.keys(rows[0]).map((h) => h.toLowerCase());
+    const scores: Record<string, number> = {};
 
-    // vTiger detection
-    const vtigerHeaders = ['account_no', 'accountname', 'cf_'];
-    const vtigerMatches = vtigerHeaders.filter((h) => headers.some((header) => header.includes(h)));
+    // vTiger detection (CRM platform)
+    const vtigerSignatures = ['account_no', 'accountname', 'cf_', 'potentialname', 'related_to'];
+    scores.vtiger = this.calculateFormatScore(headers, vtigerSignatures);
 
-    if (vtigerMatches.length >= 2) {
-      return 'vtiger';
+    // Salesforce detection
+    const salesforceSignatures = ['opportunity id', 'account id', 'opportunity name', 'stage', 'close date', 'amount', 'probability'];
+    scores.salesforce = this.calculateFormatScore(headers, salesforceSignatures);
+
+    // HubSpot detection
+    const hubspotSignatures = ['deal name', 'deal stage', 'pipeline', 'close date', 'amount', 'deal owner', 'company name'];
+    scores.hubspot = this.calculateFormatScore(headers, hubspotSignatures);
+
+    // Zoho detection
+    const zohoSignatures = ['deal name', 'account name', 'closing date', 'amount', 'stage', 'deal owner', 'contact name'];
+    scores.zoho = this.calculateFormatScore(headers, zohoSignatures);
+
+    // Pipedrive detection
+    const pipedriveSignatures = ['deal title', 'organization name', 'person name', 'value', 'status', 'expected close date', 'pipeline'];
+    scores.pipedrive = this.calculateFormatScore(headers, pipedriveSignatures);
+
+    // Deals with Vendors format detection (custom format with "Vendors ...", "Deals ..." prefixes)
+    const hasVendorsPrefix = headers.some(h => h.startsWith('vendors '));
+    const hasDealsPrefix = headers.some(h => h.startsWith('deals '));
+    scores.deals_with_vendors = (hasVendorsPrefix && hasDealsPrefix) ? 0.95 : 0.0;
+
+    // Find best match (require minimum 0.5 confidence)
+    let bestFormat: string = 'generic';
+    let bestScore = 0.5;
+
+    for (const [format, score] of Object.entries(scores)) {
+      if (score > bestScore) {
+        bestScore = score;
+        bestFormat = format;
+      }
     }
 
-    return 'generic';
+    logger.info('CSV format detected', {
+      format: bestFormat,
+      confidence: bestScore.toFixed(2),
+      scores: Object.fromEntries(
+        Object.entries(scores)
+          .filter(([_, score]) => score > 0.3)
+          .map(([format, score]) => [format, score.toFixed(2)])
+      ),
+    });
+
+    return bestFormat as any;
+  }
+
+  /**
+   * Calculate confidence score for a format based on header matches
+   */
+  private calculateFormatScore(headers: string[], signatures: string[]): number {
+    let matchCount = 0;
+    let partialMatchCount = 0;
+
+    for (const signature of signatures) {
+      // Exact match
+      if (headers.includes(signature)) {
+        matchCount++;
+      }
+      // Partial match (header contains signature or vice versa)
+      else if (headers.some(h => h.includes(signature) || signature.includes(h))) {
+        partialMatchCount++;
+      }
+    }
+
+    // Score: full points for exact matches, half points for partial matches
+    const score = (matchCount + partialMatchCount * 0.5) / signatures.length;
+    return Math.min(score, 1.0);
   }
 
   /**
