@@ -2,6 +2,7 @@ import { query } from '../db';
 import { normalizeVendorName } from '../utils/fileHelpers';
 import logger from '../utils/logger';
 import { VendorApprovalPendingError, VendorApprovalDeniedError } from '../errors/vendorApprovalErrors';
+import { trackVendorProvenance } from './provenanceTracker';
 
 export type VendorApprovalStatus = 'approved' | 'pending' | 'denied';
 
@@ -220,7 +221,43 @@ async function createVendorFromAlias(alias: VendorReviewItem, vendorInput: Resol
     ]
   );
 
-  return result.rows[0].id;
+  const vendorId = result.rows[0].id;
+
+  // Track provenance for vendor fields
+  try {
+    const sourceFileId = alias.metadata?.source_file_id;
+    const detectionSource = alias.metadata?.detection_source || 'vendor_review_queue';
+
+    await trackVendorProvenance(
+      vendorId,
+      {
+        name: vendorInput.name,
+        normalized_name: normalizedName,
+        email_domains: vendorInput.email_domains,
+        website: vendorInput.website,
+        industry: vendorInput.industry,
+      },
+      {
+        sourceFileId,
+        sourceType: 'manual', // Created through approval process
+        sourceLocation: `Vendor Review Queue: ${alias.alias_name}`,
+        extractionMethod: 'manual',
+        confidence: 1.0, // Manual approval = high confidence
+        extractionContext: {
+          created_from_alias: alias.id,
+          detection_source: detectionSource,
+          approval_status: 'approved',
+        },
+      }
+    );
+  } catch (provenanceError: any) {
+    logger.error('Failed to track vendor provenance', {
+      vendorId,
+      error: provenanceError.message,
+    });
+  }
+
+  return vendorId;
 }
 
 export async function resolveVendorReviewItem(
