@@ -18,9 +18,18 @@ CREATE TABLE IF NOT EXISTS vendors (
   metadata JSONB DEFAULT '{}'::jsonb
 );
 
+ALTER TABLE vendors
+  ADD COLUMN IF NOT EXISTS origin VARCHAR(50) DEFAULT 'user_upload',
+  ADD COLUMN IF NOT EXISTS approval_status VARCHAR(20) DEFAULT 'approved',
+  ADD COLUMN IF NOT EXISTS approval_notes TEXT,
+  ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP,
+  ADD COLUMN IF NOT EXISTS approval_metadata JSONB DEFAULT '{}'::jsonb;
+
 CREATE INDEX IF NOT EXISTS idx_vendors_normalized_name ON vendors(normalized_name);
 CREATE INDEX IF NOT EXISTS idx_vendors_email_domains ON vendors USING GIN(email_domains);
 CREATE INDEX IF NOT EXISTS idx_vendors_status ON vendors(status);
+CREATE INDEX IF NOT EXISTS idx_vendors_origin ON vendors(origin);
+CREATE INDEX IF NOT EXISTS idx_vendors_approval_status ON vendors(approval_status);
 
 -- Deal Registrations Table
 CREATE TABLE IF NOT EXISTS deal_registrations (
@@ -125,6 +134,29 @@ CREATE TABLE IF NOT EXISTS processing_jobs (
 
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON processing_jobs(status);
 CREATE INDEX IF NOT EXISTS idx_jobs_source_file ON processing_jobs(source_file_id);
+
+-- Vendor Review Queue Table
+CREATE TABLE IF NOT EXISTS vendor_review_queue (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  alias_name VARCHAR(255) NOT NULL,
+  normalized_alias VARCHAR(255) NOT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'pending',
+  detection_count INTEGER NOT NULL DEFAULT 1,
+  first_detected_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_detected_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  latest_context JSONB DEFAULT '{}'::jsonb,
+  metadata JSONB DEFAULT '{}'::jsonb,
+  approved_vendor_id UUID REFERENCES vendors(id) ON DELETE SET NULL,
+  decision_notes TEXT,
+  resolved_at TIMESTAMP,
+  resolved_by VARCHAR(255)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_vendor_review_normalized_alias
+  ON vendor_review_queue(normalized_alias);
+
+CREATE INDEX IF NOT EXISTS idx_vendor_review_status
+  ON vendor_review_queue(status);
 
 -- Function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()

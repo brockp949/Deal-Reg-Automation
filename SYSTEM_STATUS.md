@@ -6,10 +6,10 @@
 ## Application Access
 
 ### 🌐 Frontend (Web UI)
-- **URL**: http://localhost:3000
+- **URL**: http://localhost:3200
 - **Status**: ✅ Running
 - **Container**: dealreg-frontend
-- **Port**: 3000 → 80
+- **Port**: 3200 → 80
 
 ### 🔧 Backend API
 - **URL**: http://localhost:4000
@@ -152,7 +152,7 @@ result.extractedDeals.forEach(deal => {
 ```
 
 ### Option 2: File Upload (Web UI)
-1. Go to http://localhost:3000
+1. Go to http://localhost:3200
 2. Navigate to "Upload" page
 3. Upload .mbox file
 4. Click "Process"
@@ -174,7 +174,7 @@ result.extractedDeals.forEach(deal => {
 curl http://localhost:4000/health
 
 # View frontend
-open http://localhost:3000
+open http://localhost:3200
 
 # Check database
 docker exec dealreg-db psql -U dealreg_user -d dealreg -c "SELECT COUNT(*) FROM email_threads;"
@@ -290,7 +290,7 @@ docker-compose logs --tail=50 worker
 ## System Health Verification
 
 ### ✅ All Checks Passed
-- [x] Frontend accessible at http://localhost:3000
+- [x] Frontend accessible at http://localhost:3200
 - [x] Backend healthy at http://localhost:4000/health
 - [x] Database running with new schema
 - [x] Enhanced parser files in container
@@ -310,10 +310,11 @@ The Enhanced MBOX Parser is fully implemented, tested, and operational. The syst
 - **Multi-layered** intelligent extraction
 - **Confidence-scored** for prioritized review
 
-Access your application at **http://localhost:3000** and start processing deal registration emails!
+Access your application at **http://localhost:3200** and start processing deal registration emails!
 
 ---
 
 **Last Updated**: November 3, 2025
 **System Version**: Enhanced MBOX Parser v2.0
 **Status**: ✅ Fully Operational
+

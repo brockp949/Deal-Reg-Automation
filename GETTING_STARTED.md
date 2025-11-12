@@ -84,7 +84,7 @@ This will start:
 - PostgreSQL database on port 5432
 - Redis on port 6379
 - Backend API on port 4000
-- Frontend on port 3000
+- Frontend on port 3200
 
 **First time setup**: Wait 30 seconds for containers to initialize, then run migrations:
 
@@ -93,7 +93,7 @@ docker-compose exec backend npm run db:migrate
 ```
 
 Access the application:
-- **Frontend**: http://localhost:3000
+- **Frontend**: http://localhost:3200
 - **Backend API**: http://localhost:4000
 - **Health Check**: http://localhost:4000/health
 
@@ -126,7 +126,7 @@ npm install
 npm run dev
 ```
 
-The frontend will start on http://localhost:3000
+The frontend will start on http://localhost:3200
 
 ---
 
@@ -342,8 +342,8 @@ npm run preview      # Preview production build
 
 ### Port already in use
 ```bash
-# Find process using port 3000 or 4000
-netstat -ano | findstr :3000
+# Find process using port 3200 or 4000
+netstat -ano | findstr :3200
 
 # Kill the process (Windows)
 taskkill /PID <PID> /F
@@ -412,3 +412,4 @@ Common next requests:
 - "Create the vendors list page with filtering"
 - "Add AI-powered data extraction"
 - "Implement the dashboard with real data"
+

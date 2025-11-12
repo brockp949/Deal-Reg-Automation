@@ -5,7 +5,7 @@
 
 ## Your Application URLs
 
-- **🌐 Web UI**: [http://localhost:3000](http://localhost:3000)
+- **🌐 Web UI**: [http://localhost:3200](http://localhost:3200)
 - **🔧 API Backend**: [http://localhost:4000](http://localhost:4000)
 - **💚 Health Check**: [http://localhost:4000/health](http://localhost:4000/health)
 
@@ -81,7 +81,7 @@ curl -X POST http://localhost:4000/api/vendors/import \
 ```
 
 **Option B: Using the Web UI** (Coming Soon)
-1. Go to [http://localhost:3000](http://localhost:3000)
+1. Go to [http://localhost:3200](http://localhost:3200)
 2. Navigate to Vendors page
 3. Click "Import Vendors" button
 4. Upload your Excel file
@@ -304,7 +304,7 @@ All APIs functional ✅
      -F "file=@C:\Users\brock\Downloads\Vendors - July 25_2025-08-11_1403.xlsx"
    ```
 
-2. ✅ **Upload an MBOX file** via [http://localhost:3000](http://localhost:3000)
+2. ✅ **Upload an MBOX file** via [http://localhost:3200](http://localhost:3200)
 
 3. ✅ **Process and review** extracted deals
 
@@ -462,4 +462,5 @@ Your Deal Registration Automation Tool is **production-ready** with:
 **Status**: ✅ All systems operational and tested
 
 **Next Step**: Import your vendor list and start processing MBOX files! 🚀
+
 

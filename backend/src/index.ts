@@ -15,6 +15,7 @@ import contactRoutes from './routes/contacts';
 import exportRoutes from './routes/export';
 import queueRoutes from './routes/queue';
 import reprocessRoutes from './routes/reprocess';
+import vendorReviewRoutes from './routes/vendorReview';
 
 const app = express();
 
@@ -58,6 +59,7 @@ app.use(`${config.apiPrefix}/contacts`, contactRoutes);
 app.use(`${config.apiPrefix}/export`, exportRoutes);
 app.use(`${config.apiPrefix}/queue`, queueRoutes);
 app.use(`${config.apiPrefix}/reprocess`, reprocessRoutes);
+app.use(`${config.apiPrefix}/vendor-review`, vendorReviewRoutes);
 
 // 404 handler
 app.use((req: Request, res: Response) => {

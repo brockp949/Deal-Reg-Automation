@@ -6,7 +6,7 @@
 
 ```
 1. Export deals from vTiger as CSV
-2. Open http://localhost:3000
+2. Open http://localhost:3200
 3. Upload CSV file
 4. Click "Process"
 5. Wait for "Completed" status
@@ -139,3 +139,4 @@ Optional: `Website`, `Contact Name`, `Email`, `Phone`
 - Process full monthly MBOX archive
 - Sync vTiger baseline
 - Clean up duplicate deals
+

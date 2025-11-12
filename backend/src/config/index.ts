@@ -37,7 +37,7 @@ const envSchema = z.object({
   EMAIL_FROM: z.string().optional(),
 
   // CORS
-  CORS_ORIGIN: z.string().default('http://localhost:3000'),
+  CORS_ORIGIN: z.string().default('http://localhost:3200'),
 
   // Logging
   LOG_LEVEL: z.enum(['error', 'warn', 'info', 'debug']).default('info'),

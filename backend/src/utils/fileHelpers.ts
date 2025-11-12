@@ -176,32 +176,44 @@ export function extractCommodityType(dealData: {
   deal_name?: string;
   project_name?: string;
   notes?: string;
+  product_name?: string;
+  product_service_requirements?: string;
 }): string | null {
   const commodityKeywords = [
     'cable', 'cables', 'cabling',
+    'fiber', 'fibre', 'ftth', 'fttx',
     'transformer', 'transformers',
     'switch', 'switches', 'switching',
     'router', 'routers', 'routing',
-    'fiber', 'fibre',
     'copper',
     'power', 'electrical',
-    'network', 'networking',
+    'battery', 'batteries',
+    'solar', 'photovoltaic', 'pv',
+    'inverter', 'inverters',
+    'ups', 'backup power', 'generator', 'generators',
+    'network', 'networking', 'sd-wan', 'firewall',
     'server', 'servers',
-    'storage',
-    'wireless',
-    'antenna', 'antennas',
+    'storage', 'san', 'nas',
+    'compute', 'datacenter', 'data center',
+    'wireless', 'wi-fi', 'wifi', '5g',
+    'antenna', 'antennas', 'tower', 'towers',
     'conduit',
     'panel', 'panels',
     'equipment',
     'hardware',
-    'software',
+    'software', 'platform',
     'license', 'licenses', 'licensing',
+    'security', 'surveillance', 'camera', 'cameras',
+    'sensing', 'scada', 'automation',
+    'hvac', 'cooling',
   ];
 
   const searchText = [
     dealData.deal_name,
     dealData.project_name,
     dealData.notes,
+    dealData.product_name,
+    dealData.product_service_requirements,
   ]
     .filter(Boolean)
     .join(' ')
@@ -300,6 +312,189 @@ export async function enrichCustomerName(customerName: string, email?: string, w
   return enriched;
 }
 
+type DealNameContext = {
+  customer_name?: string;
+  vendor_name?: string;
+  project_name?: string;
+  deal_value?: number;
+  registration_date?: Date;
+  end_user_name?: string;
+  deal_name?: string;
+  notes?: string;
+  product_name?: string;
+  product_service_requirements?: string;
+};
+
+const SPEC_PATTERNS: Array<{ regex: RegExp; formatter: (match: RegExpMatchArray) => string }> = [
+  {
+    regex: /(\d+(?:\.\d+)?)\s*(mw|gw|kw|kva|kv)\b/i,
+    formatter: (match) => `${formatNumericToken(match[1])}${match[2].toUpperCase()}`,
+  },
+  {
+    regex: /(\d+(?:\.\d+)?)\s*(gbps|tbps|mbps|gbit|gbe)\b/i,
+    formatter: (match) => `${formatNumericToken(match[1])}${match[2].toUpperCase()}`,
+  },
+  {
+    regex: /(\d+)\s*(strand|fiber|pair)s?\b/i,
+    formatter: (match) => `${match[1]}-${capitalizeWord(singularize(match[2]))}`,
+  },
+  {
+    regex: /(\d+)\s*(port|ports|lane|lanes)\b/i,
+    formatter: (match) => `${match[1]}-Port`,
+  },
+  {
+    regex: /(\d+)\s*(rack|racks|cabinet|cabinets|panel|panels)\b/i,
+    formatter: (match) => `${match[1]} ${capitalizeWord(singularize(match[2]))}`,
+  },
+  {
+    regex: /(\d+(?:\.\d+)?)\s*(mile|mi|km|kilometer|meter|m)\b.*?(fiber|conduit|cable)/i,
+    formatter: (match) => `${formatNumericToken(match[1])}${match[2].toUpperCase()} ${capitalizeWord(match[4])}`,
+  },
+];
+
+const SCOPE_PATTERNS: Array<{ regex: RegExp; formatter: (match: RegExpMatchArray) => string }> = [
+  {
+    regex: /(\d+)\s*(site|sites|location|locations|store|stores|branch|branches|facility|facilities|tower|towers|campus|campuses)\b/i,
+    formatter: (match) => `${match[1]}-${capitalizeWord(singularize(match[2]))}`,
+  },
+  {
+    regex: /phase\s*(\d+)/i,
+    formatter: (match) => `Phase ${match[1]}`,
+  },
+  {
+    regex: /(wave\s*[1-9])/i,
+    formatter: (match) => match[1].replace(/\s+/g, ' ').toUpperCase(),
+  },
+];
+
+function formatNumericToken(value: string): string {
+  const parsed = parseFloat(value);
+  if (Number.isNaN(parsed)) {
+    return value.trim();
+  }
+
+  if (Number.isInteger(parsed)) {
+    return parsed.toString();
+  }
+
+  const rounded = parsed < 10 ? parsed.toFixed(1) : parsed.toFixed(0);
+  return rounded.replace(/\.0+$/, '');
+}
+
+function capitalizeWord(value: string): string {
+  if (!value) return value;
+  const lower = value.toLowerCase();
+  return lower.charAt(0).toUpperCase() + lower.slice(1);
+}
+
+function singularize(value: string): string {
+  if (!value) return value;
+  return value.replace(/(?:es|s)$/i, '');
+}
+
+function buildContextText(dealData: DealNameContext): string {
+  return [
+    dealData.deal_name,
+    dealData.project_name,
+    dealData.product_name,
+    dealData.product_service_requirements,
+    dealData.notes,
+  ]
+    .filter((fragment): fragment is string => Boolean(fragment))
+    .join(' ');
+}
+
+function extractSpecDetail(dealData: DealNameContext): string | null {
+  const text = buildContextText(dealData);
+  if (!text) return null;
+
+  for (const pattern of SPEC_PATTERNS) {
+    const match = text.match(pattern.regex);
+    if (match) {
+      return pattern.formatter(match);
+    }
+  }
+
+  return null;
+}
+
+function extractScopeDescriptor(dealData: DealNameContext): string | null {
+  const text = buildContextText(dealData);
+  if (!text) return null;
+
+  for (const pattern of SCOPE_PATTERNS) {
+    const match = text.match(pattern.regex);
+    if (match) {
+      return pattern.formatter(match);
+    }
+  }
+
+  return null;
+}
+
+function formatDealValue(value?: number): string | null {
+  if (!value || value <= 0) {
+    return null;
+  }
+
+  if (value >= 1_000_000) {
+    const millions = value / 1_000_000;
+    const decimals = millions >= 10 ? 0 : 1;
+    return `$${millions.toFixed(decimals)}M`;
+  }
+
+  if (value >= 1_000) {
+    const thousands = value / 1_000;
+    const decimals = thousands >= 10 ? 0 : 1;
+    return `$${thousands.toFixed(decimals)}K`;
+  }
+
+  return `$${value.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+}
+
+function deriveDealSizeDescriptor(value?: number): string | null {
+  if (!value || value <= 0) {
+    return null;
+  }
+
+  let label = 'Micro Engagement';
+  if (value >= 5_000_000) {
+    label = 'Mega Program';
+  } else if (value >= 1_000_000) {
+    label = 'Large Build';
+  } else if (value >= 250_000) {
+    label = 'Expansion Scope';
+  } else if (value >= 75_000) {
+    label = 'Pilot Rollout';
+  }
+
+  const formatted = formatDealValue(value);
+  return formatted ? `${label} (${formatted})` : label;
+}
+
+function shortenDescriptor(value?: string | null, maxLength = 60): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (trimmed.length <= maxLength) {
+    return trimmed;
+  }
+  return `${trimmed.slice(0, maxLength - 3).trim()}...`;
+}
+
+function combineUniqueParts(parts: Array<string | null | undefined>): string {
+  const unique: string[] = [];
+  parts.forEach((part) => {
+    const normalized = part?.trim();
+    if (!normalized) return;
+    const exists = unique.some(existing => existing.toLowerCase() === normalized.toLowerCase());
+    if (!exists) {
+      unique.push(normalized);
+    }
+  });
+  return unique.join(' - ');
+}
+
 /**
  * Generate a descriptive deal name from deal data
  * Priority order:
@@ -312,87 +507,85 @@ export async function enrichCustomerName(customerName: string, email?: string, w
  * 7. "{Vendor} - {Commodity}" if both available
  * 8. "{Vendor} Opportunity - {Date}" as fallback
  */
-export function generateDealName(dealData: {
-  customer_name?: string;
-  vendor_name?: string;
-  project_name?: string;
-  deal_value?: number;
-  registration_date?: Date;
-  end_user_name?: string;
-  deal_name?: string;
-  notes?: string;
-}): string {
+export function generateDealName(dealData: DealNameContext): string {
   const customer = dealData.customer_name || dealData.end_user_name;
   const vendor = dealData.vendor_name;
   const project = dealData.project_name;
   const value = dealData.deal_value;
   const date = dealData.registration_date || new Date();
 
-  // Extract commodity type from deal data
-  const commodity = extractCommodityType(dealData);
+  const commodity = extractCommodityType({
+    deal_name: dealData.deal_name,
+    project_name: dealData.project_name,
+    notes: dealData.notes,
+    product_name: dealData.product_name,
+    product_service_requirements: dealData.product_service_requirements,
+  });
 
-  // Format value for display
-  const formattedValue = value && value > 0
-    ? `$${value.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
-    : null;
+  const specDetail = extractSpecDetail(dealData);
+  const scopeDescriptor = extractScopeDescriptor(dealData);
+  const sizeDescriptor = deriveDealSizeDescriptor(value);
+  const formattedValue = formatDealValue(value);
 
-  // Priority 1: Customer + Commodity (NEW - prioritize commodity)
+  const commodityHeadline = [commodity, specDetail].filter(Boolean).join(' ').trim() || null;
+
+  const advancedName = combineUniqueParts([
+    commodityHeadline || scopeDescriptor,
+    sizeDescriptor,
+    scopeDescriptor && scopeDescriptor !== commodityHeadline ? scopeDescriptor : null,
+    shortenDescriptor(project, 60),
+    shortenDescriptor(customer || vendor, 40),
+  ]);
+
+  if (advancedName) {
+    return advancedName;
+  }
+
   if (customer && commodity) {
     return `${customer} - ${commodity}`;
   }
 
-  // Priority 2: Customer + Vendor + Value
   if (customer && vendor && formattedValue) {
     return `${customer} - ${vendor} - ${formattedValue}`;
   }
 
-  // Priority 3: Customer + Vendor
   if (customer && vendor) {
     return `${customer} - ${vendor}`;
   }
 
-  // Priority 4: Commodity + Value
   if (commodity && formattedValue) {
     return `${commodity} - ${formattedValue}`;
   }
 
-  // Priority 5: Project Name (if descriptive enough)
   if (project && project.length > 5 && project !== 'Unknown') {
     return project;
   }
 
-  // Priority 6: Customer + Value
   if (customer && formattedValue) {
     return `${customer} - ${formattedValue}`;
   }
 
-  // Priority 7: Vendor + Commodity
   if (vendor && commodity) {
     return `${vendor} - ${commodity}`;
   }
 
-  // Priority 8: Vendor + Customer
   if (vendor && customer) {
     return `${vendor} - ${customer}`;
   }
 
-  // Priority 9: Just Customer
   if (customer && customer !== 'Unknown') {
     return `${customer} Deal`;
   }
 
-  // Priority 10: Commodity only
   if (commodity) {
     return `${commodity} Deal`;
   }
 
-  // Priority 11: Just Vendor
   if (vendor && vendor !== 'Unknown') {
     const monthYear = date.toLocaleString('en-US', { month: 'short', year: 'numeric' });
     return `${vendor} - ${monthYear}`;
   }
 
-  // Fallback: Generic with date
   const monthDay = date.toLocaleString('en-US', { month: 'short', day: 'numeric' });
   return `Deal Registration - ${monthDay}`;
 }

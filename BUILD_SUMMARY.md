@@ -210,7 +210,7 @@ docker-compose up -d
 docker-compose exec backend npm run db:migrate
 
 # 4. Access the application
-# Frontend: http://localhost:3000
+# Frontend: http://localhost:3200
 # Backend API: http://localhost:4000
 # Health check: http://localhost:4000/health
 ```
@@ -253,7 +253,7 @@ curl -X POST http://localhost:4000/api/vendors \
 
 **Expected**: Returns vendor object with ID
 
-**UI Test**: Go to http://localhost:3000/vendors and see the new vendor
+**UI Test**: Go to http://localhost:3200/vendors and see the new vendor
 
 ### Test 2: Create a Deal
 
@@ -287,7 +287,7 @@ GlobalSys Inc,Infrastructure Modernization,100000,Approved,2025-02-28
 ```
 
 Upload via UI:
-1. Go to http://localhost:3000/upload
+1. Go to http://localhost:3200/upload
 2. Drag and drop the file
 3. Click "Upload"
 4. Watch the file appear in the uploaded files list
@@ -319,7 +319,7 @@ curl -X POST http://localhost:4000/api/export/excel \
 
 ### Test 5: View Dashboard
 
-1. Open http://localhost:3000
+1. Open http://localhost:3200
 2. You should see:
    - KPI cards with totals
    - Recent files
@@ -439,8 +439,8 @@ docker-compose exec backend npm run db:migrate
 
 ### Port already in use
 ```bash
-# Windows: Find process using port 3000
-netstat -ano | findstr :3000
+# Windows: Find process using port 3200
+netstat -ano | findstr :3200
 
 # Kill the process
 taskkill /PID <PID> /F
@@ -522,3 +522,4 @@ Common requests:
 - "Create vendor/deal creation forms"
 - "Add charts to the dashboard"
 - "Set up CI/CD pipeline"
+

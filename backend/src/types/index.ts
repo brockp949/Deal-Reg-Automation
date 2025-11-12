@@ -1,4 +1,7 @@
 // Vendor Types
+export type VendorApprovalStatus = 'approved' | 'pending' | 'denied';
+export type VendorOrigin = 'user_upload' | 'manual' | 'system_inferred' | 'approved_from_queue';
+
 export interface Vendor {
   id: string;
   name: string;
@@ -8,6 +11,10 @@ export interface Vendor {
   website?: string;
   notes?: string;
   status: 'active' | 'inactive' | 'merged';
+  origin: VendorOrigin;
+  approval_status: VendorApprovalStatus;
+  approval_notes?: string;
+  approved_at?: Date;
   created_at: Date;
   updated_at: Date;
   metadata: Record<string, any>;
@@ -19,10 +26,14 @@ export interface CreateVendorInput {
   industry?: string;
   website?: string;
   notes?: string;
+  origin?: VendorOrigin;
+  approval_status?: VendorApprovalStatus;
+  status?: 'active' | 'inactive' | 'merged';
 }
 
 export interface UpdateVendorInput extends Partial<CreateVendorInput> {
   status?: 'active' | 'inactive' | 'merged';
+  approval_notes?: string;
 }
 
 // Deal Registration Types
@@ -205,6 +216,22 @@ export interface PaginationParams {
   limit?: number;
   sort_by?: string;
   sort_order?: 'asc' | 'desc';
+}
+
+export interface VendorReviewItem {
+  id: string;
+  alias_name: string;
+  normalized_alias: string;
+  status: VendorApprovalStatus;
+  detection_count: number;
+  first_detected_at: Date;
+  last_detected_at: Date;
+  latest_context: Record<string, any>;
+  metadata: Record<string, any>;
+  approved_vendor_id?: string;
+  decision_notes?: string;
+  resolved_at?: Date;
+  resolved_by?: string;
 }
 
 // Export Report Types

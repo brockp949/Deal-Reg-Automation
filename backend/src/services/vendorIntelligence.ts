@@ -456,8 +456,8 @@ export async function importAndMergeVendors(
           `INSERT INTO vendors (
             name, normalized_name, email_domains, website, industry,
             partner_contact_name, partner_contact_email, partner_contact_phone,
-            notes, status, metadata
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+            notes, status, metadata, origin, approval_status, approved_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
           [
             vendor.name,
             vendor.normalized_name,
@@ -473,6 +473,9 @@ export async function importAndMergeVendors(
               imported: true,
               ...vendor.metadata,
             }),
+            'user_upload',
+            'approved',
+            new Date(),
           ]
         );
         result.imported++;

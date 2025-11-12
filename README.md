@@ -7,6 +7,7 @@ A comprehensive web-based platform for automating vendor deal registration track
 - **Intelligent File Processing**: Upload and parse .mbox emails, transcripts, and vTiger CSV exports
 - **Automated Data Extraction**: AI-powered extraction of vendor and deal information
 - **Vendor Management**: Track vendors and their associated deals in one place
+- **Vendor Approval Guardrails**: Auto-detected vendors are quarantined until you explicitly approve them
 - **Export & Email**: Generate Excel reports and email them to partners
 - **Scalable Architecture**: Handle large files efficiently with background processing
 
@@ -68,9 +69,18 @@ docker-compose up -d
 ```
 
 4. Access the application
-- Frontend: http://localhost:3000
+- Frontend: http://localhost:3200
 - Backend API: http://localhost:4000
 - API Docs: http://localhost:4000/api-docs
+
+### Vendor Approval Workflow
+
+1. Upload your official vendor roster first (CSV/Excel import or manual add). These vendors are automatically marked as `approved`.
+2. When file processing discovers a vendor that isn't in your list, the system records it in the review queue instead of creating it.
+   - API: `GET /api/vendor-review` (pending suggestions)
+   - API: `POST /api/vendor-review/:id/decision` with `{ "action": "approve", ... }` or `{ "action": "deny" }`
+3. Approving a suggestion either maps it to an existing vendor or creates a new approved vendor entry. Denying it teaches the system to ignore that alias going forward.
+4. Deals, contacts, and relationships tied to unapproved vendors are skipped until the vendor is approved, preventing rogue data from entering your pipeline.
 
 ### Development Setup (Without Docker)
 
@@ -123,3 +133,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details
+

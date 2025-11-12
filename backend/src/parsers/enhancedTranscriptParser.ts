@@ -140,12 +140,14 @@ export interface EnhancedDealData {
   prospect_job_title?: string;
 
   // Opportunity Specifics
+  deal_name?: string;
   deal_description?: string;
   estimated_deal_value?: number;
   currency?: string;
   expected_close_date?: Date;
   deal_expiration_date?: Date;
   product_service_requirements?: string;
+  product_line?: string;
   new_or_existing_customer?: boolean;
 
   // Contextual Sales Intelligence

@@ -5,11 +5,13 @@ import { parseCSVFile, normalizeVTigerData, parseGenericCSV } from '../parsers/c
 import { parseTextTranscript, extractInfoFromTranscript } from '../parsers/transcriptParser';
 import { parseEnhancedTranscript } from '../parsers/enhancedTranscriptParser';
 import { parsePDFTranscript } from '../parsers/pdfParser';
-import { normalizeVendorName, extractEmailDomains, domainToCompanyName, generateDealName, normalizeCompanyName } from '../utils/fileHelpers';
+import { domainToCompanyName, generateDealName, normalizeCompanyName } from '../utils/fileHelpers';
 import logger from '../utils/logger';
 import type { FileType } from '../types';
 import { writeFile, unlink } from 'fs/promises';
 import { join } from 'path';
+import { ensureVendorApproved } from './vendorApprovalService';
+import { VendorApprovalPendingError, VendorApprovalDeniedError } from '../errors/vendorApprovalErrors';
 
 interface ProcessingResult {
   vendorsCreated: number;
@@ -119,8 +121,18 @@ export async function processFile(fileId: string): Promise<ProcessingResult> {
         const progress = 50 + Math.round((processedItems / totalItems) * 20);
         await updateFileProgress(fileId, progress);
       } catch (error: any) {
-        result.errors.push(`Vendor error (${vendorData.name}): ${error.message}`);
-        logger.error('Error creating vendor', { vendor: vendorData.name, error });
+        if (error instanceof VendorApprovalPendingError) {
+          const message = `Vendor "${vendorData.name}" pending approval (review ${error.aliasId})`;
+          result.errors.push(message);
+          logger.warn(message, { vendor: vendorData.name, reviewId: error.aliasId });
+        } else if (error instanceof VendorApprovalDeniedError) {
+          const message = `Vendor "${vendorData.name}" denied by user policy; skipping`;
+          result.errors.push(message);
+          logger.warn(message, { vendor: vendorData.name });
+        } else {
+          result.errors.push(`Vendor error (${vendorData.name}): ${error.message}`);
+          logger.error('Error creating vendor', { vendor: vendorData.name, error });
+        }
       }
     }
 
@@ -130,13 +142,32 @@ export async function processFile(fileId: string): Promise<ProcessingResult> {
     // Process deals
     for (const dealData of deals) {
       try {
-        // Find vendor ID for this deal
         let vendorId = vendorMap.get(dealData.vendor_name);
 
         if (!vendorId && dealData.vendor_name) {
-          // Try to find existing vendor
-          vendorId = await findOrCreateVendor({ name: dealData.vendor_name }, fileId);
-          vendorMap.set(dealData.vendor_name, vendorId);
+          try {
+            vendorId = await findOrCreateVendor({ name: dealData.vendor_name }, fileId);
+            vendorMap.set(dealData.vendor_name, vendorId);
+          } catch (error: any) {
+            if (error instanceof VendorApprovalPendingError) {
+              result.errors.push(`Deal "${dealData.deal_name}" skipped: vendor "${dealData.vendor_name}" pending approval (review ${error.aliasId})`);
+              logger.warn('Skipping deal because vendor pending approval', {
+                deal: dealData.deal_name,
+                vendor: dealData.vendor_name,
+                reviewId: error.aliasId,
+              });
+              continue;
+            }
+            if (error instanceof VendorApprovalDeniedError) {
+              result.errors.push(`Deal "${dealData.deal_name}" skipped: vendor "${dealData.vendor_name}" denied`);
+              logger.warn('Skipping deal because vendor denied', {
+                deal: dealData.deal_name,
+                vendor: dealData.vendor_name,
+              });
+              continue;
+            }
+            throw error;
+          }
         }
 
         if (vendorId) {
@@ -147,7 +178,6 @@ export async function processFile(fileId: string): Promise<ProcessingResult> {
         }
         processedItems++;
 
-        // Update progress: 70% to 85%
         const progress = 70 + Math.round((processedItems / totalItems) * 15);
         await updateFileProgress(fileId, progress);
       } catch (error: any) {
@@ -165,8 +195,28 @@ export async function processFile(fileId: string): Promise<ProcessingResult> {
         let vendorId = vendorMap.get(contactData.vendor_name);
 
         if (!vendorId && contactData.vendor_name) {
-          vendorId = await findOrCreateVendor({ name: contactData.vendor_name }, fileId);
-          vendorMap.set(contactData.vendor_name, vendorId);
+          try {
+            vendorId = await findOrCreateVendor({ name: contactData.vendor_name }, fileId);
+            vendorMap.set(contactData.vendor_name, vendorId);
+          } catch (error: any) {
+            if (error instanceof VendorApprovalPendingError) {
+              result.errors.push(`Contact "${contactData.name}" skipped: vendor "${contactData.vendor_name}" pending approval`);
+              logger.warn('Skipping contact because vendor pending approval', {
+                contact: contactData.name,
+                vendor: contactData.vendor_name,
+              });
+              continue;
+            }
+            if (error instanceof VendorApprovalDeniedError) {
+              result.errors.push(`Contact "${contactData.name}" skipped: vendor "${contactData.vendor_name}" denied`);
+              logger.warn('Skipping contact because vendor denied', {
+                contact: contactData.name,
+                vendor: contactData.vendor_name,
+              });
+              continue;
+            }
+            throw error;
+          }
         }
 
         if (vendorId) {
@@ -175,7 +225,6 @@ export async function processFile(fileId: string): Promise<ProcessingResult> {
         }
         processedItems++;
 
-        // Update progress: 85% to 95%
         const progress = 85 + Math.round((processedItems / totalItems) * 10);
         await updateFileProgress(fileId, progress);
       } catch (error: any) {
@@ -347,9 +396,12 @@ async function processMboxFile(filePath: string, fileId: string) {
       customer_name: normalizedCustomerName,
       vendor_name: vendorName,
       project_name: extractedDeal.project_name,
+      deal_name: extractedDeal.deal_name,
       deal_value: extractedDeal.deal_value,
       registration_date: extractedDeal.registration_date,
       notes: extractedDeal.pre_sales_efforts,
+      product_name: extractedDeal.product_name,
+      product_service_requirements: extractedDeal.product_service_requirements,
     });
 
     // Create deal record
@@ -569,9 +621,12 @@ async function processTranscriptFile(filePath: string) {
     customer_name: normalizedCustomerName,
     vendor_name: vendorNameForDeal,
     project_name: projectNameForDeal,
+    deal_name: deal.deal_name || deal.deal_description,
     deal_value: deal.estimated_deal_value,
     registration_date: new Date(),
     notes: deal.deal_description || deal.product_service_requirements,
+    product_name: deal.product_line || deal.product_service_requirements,
+    product_service_requirements: deal.product_service_requirements,
   });
 
   const dealRecord: any = {
@@ -699,38 +754,17 @@ async function processPDFTranscriptFile(filePath: string) {
  * Find or create a vendor
  */
 async function findOrCreateVendor(vendorData: any, sourceFileId: string): Promise<string> {
-  const normalizedName = normalizeVendorName(vendorData.name);
-
-  // Try to find existing vendor
-  const existingResult = await query(
-    'SELECT id FROM vendors WHERE normalized_name = $1',
-    [normalizedName]
-  );
-
-  if (existingResult.rows.length > 0) {
-    return existingResult.rows[0].id;
+  if (!vendorData?.name) {
+    throw new Error('Vendor name is required');
   }
 
-  // Create new vendor
-  const emailDomains = vendorData.email_domain
-    ? [vendorData.email_domain]
-    : extractEmailDomains(vendorData);
-
-  const result = await query(
-    `INSERT INTO vendors (name, normalized_name, email_domains, industry, website, metadata)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     RETURNING id`,
-    [
-      vendorData.name,
-      normalizedName,
-      emailDomains,
-      vendorData.industry || null,
-      vendorData.website || null,
-      JSON.stringify({ source_file_id: sourceFileId, ...vendorData }),
-    ]
-  );
-
-  return result.rows[0].id;
+  return ensureVendorApproved(vendorData.name, {
+    source_file_id: sourceFileId,
+    detection_source: 'file_processor',
+    metadata: {
+      vendor: vendorData,
+    },
+  });
 }
 
 /**

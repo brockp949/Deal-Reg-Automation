@@ -192,7 +192,7 @@ File Upload → Validate → Store → Add to Queue → Worker Processes → Upd
 
 ### Prerequisites
 - Docker Desktop installed and running
-- Ports available: 3000, 4000, 5432, 6379
+- Ports available: 3200, 4000, 5432, 6379
 
 ### Start Everything (1 command!)
 
@@ -208,7 +208,7 @@ docker-compose exec backend npm run db:migrate
 ```
 
 ### Access Your Application
-- **Frontend**: http://localhost:3000
+- **Frontend**: http://localhost:3200
 - **Backend API**: http://localhost:4000/health
 - **Queue Stats**: http://localhost:4000/api/queue/stats
 
@@ -219,7 +219,7 @@ docker-compose exec backend npm run db:migrate
 ### Test 1: Manual Vendor & Deal Creation
 
 ```
-1. Go to http://localhost:3000/vendors
+1. Go to http://localhost:3200/vendors
 2. Click "Add Vendor"
 3. Create:
    - Name: "Acme Corporation"
@@ -255,7 +255,7 @@ GlobalSoft,Enterprise Software Licensing,145000,Approved,2025-03-15
 
 **Process:**
 ```
-1. Go to http://localhost:3000/upload
+1. Go to http://localhost:3200/upload
 2. Drag and drop test_deals.csv
 3. Click "Upload 1 file"
 4. Wait for upload to complete (green checkmark)
@@ -398,7 +398,7 @@ Your `docker-compose.yml` runs:
    - Background job execution
    - Automatic retry logic
 
-5. **Frontend** (port 3000)
+5. **Frontend** (port 3200)
    - Vite dev server
    - React application
    - Hot module replacement
@@ -601,3 +601,4 @@ Common requests:
 - "Add user authentication"
 - "Create analytics dashboard with charts"
 - "Set up CI/CD pipeline"
+

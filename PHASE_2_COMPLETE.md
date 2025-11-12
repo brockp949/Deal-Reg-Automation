@@ -86,7 +86,7 @@ This is the BIG one - files now actually get processed!
 ### Create a Vendor Manually
 
 ```
-1. Go to http://localhost:3000/vendors
+1. Go to http://localhost:3200/vendors
 2. Click "Add Vendor" (top right)
 3. Fill in the form:
    - Name: "Acme Corporation"
@@ -126,13 +126,13 @@ Acme Corp,Cloud Migration Project,150000,Approved,2025-03-31
 TechPro Solutions,Security Platform Upgrade,85000,Registered,2025-02-15
 GlobalSys Inc,Infrastructure Modernization,220000,Approved,2025-04-30
 
-2. Go to http://localhost:3000/upload
+2. Go to http://localhost:3200/upload
 3. Drag and drop test_deals.csv
 4. Click "Upload 1 file"
 5. Wait for upload to complete
 6. Click "Process" button
 7. Watch the status change to "Processing" → "Completed"
-8. Go to http://localhost:3000/vendors
+8. Go to http://localhost:3200/vendors
 9. See 3 new vendors created!
 10. Click on any vendor to see the deal!
 ```
@@ -388,7 +388,8 @@ Upload files, process them, and watch vendors and deals appear automatically. Or
 **Ready to try it?**
 ```bash
 docker-compose up -d
-# Visit http://localhost:3000 and start automating!
+# Visit http://localhost:3200 and start automating!
 ```
 
 **Want to add more features?** Just tell me what you'd like next!
+

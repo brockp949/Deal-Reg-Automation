@@ -186,7 +186,9 @@ export interface ExtractedDeal {
   decision_maker_phone?: string;
 
   // Product/Service
+  deal_name?: string;
   product_name?: string;
+  product_service_requirements?: string;
   solution_category?: string;
   deployment_environment?: string;
 

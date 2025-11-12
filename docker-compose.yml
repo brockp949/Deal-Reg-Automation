@@ -91,7 +91,7 @@ services:
       dockerfile: Dockerfile
     container_name: dealreg-frontend
     ports:
-      - "3000:80"
+      - "3200:80"
     depends_on:
       - backend
 

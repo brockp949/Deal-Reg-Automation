@@ -27,6 +27,8 @@ import {
   calculateEnhancedConfidence,
 } from '../parsers/enhancedExtraction';
 import { normalizeCompanyName, generateDealName } from '../utils/fileHelpers';
+import { ensureVendorApproved, VendorDetectionContext } from './vendorApprovalService';
+import { VendorApprovalPendingError, VendorApprovalDeniedError } from '../errors/vendorApprovalErrors';
 
 interface ReprocessingResult {
   filesProcessed: number;
@@ -272,8 +274,32 @@ async function updateDealWithVendors(
   result: ReprocessingResult
 ): Promise<void> {
   for (const vendorMention of vendors) {
-    // Find or create vendor
-    const vendor = await findOrCreateVendor(vendorMention.vendorName);
+    let vendor: any;
+    try {
+      vendor = await findOrCreateVendor(vendorMention.vendorName, {
+        detection_source: 'detailed_reprocessor',
+        sample_text: vendorMention.context,
+        metadata: {
+          role: vendorMention.role,
+          source: vendorMention.source,
+          deal_id: dealId,
+        },
+      });
+    } catch (error: any) {
+      if (error instanceof VendorApprovalPendingError) {
+        const message = `Vendor "${vendorMention.vendorName}" pending approval (review ${error.aliasId})`;
+        logger.warn(message, { dealId, reviewId: error.aliasId });
+        result.errors.push(message);
+        continue;
+      }
+      if (error instanceof VendorApprovalDeniedError) {
+        const message = `Vendor "${vendorMention.vendorName}" denied; skipping relationship`;
+        logger.warn(message, { dealId });
+        result.errors.push(message);
+        continue;
+      }
+      throw error;
+    }
 
     // Check if relationship already exists
     const existing = await query(
@@ -316,7 +342,31 @@ async function createDealWithVendors(
     return;
   }
 
-  const vendor = await findOrCreateVendor(primaryVendor.vendorName);
+  let vendor: any;
+  try {
+    vendor = await findOrCreateVendor(primaryVendor.vendorName, {
+      detection_source: 'detailed_reprocessor',
+      sample_text: primaryVendor.context,
+      metadata: {
+        role: primaryVendor.role,
+        source: primaryVendor.source,
+      },
+    });
+  } catch (error: any) {
+    if (error instanceof VendorApprovalPendingError) {
+      const message = `Primary vendor "${primaryVendor.vendorName}" pending approval (review ${error.aliasId})`;
+      logger.warn(message, { deal });
+      result.errors.push(message);
+      return;
+    }
+    if (error instanceof VendorApprovalDeniedError) {
+      const message = `Primary vendor "${primaryVendor.vendorName}" denied; skipping deal creation`;
+      logger.warn(message, { deal });
+      result.errors.push(message);
+      return;
+    }
+    throw error;
+  }
 
   // Generate deal name
   const dealName = generateDealName({
@@ -324,7 +374,10 @@ async function createDealWithVendors(
     vendor_name: vendor.name,
     deal_value: deal.deal_value,
     project_name: deal.project_name,
+    deal_name: deal.deal_name,
     notes: deal.pre_sales_efforts || deal.notes,
+    product_name: deal.product_name,
+    product_service_requirements: deal.product_service_requirements,
   });
 
   // Create deal
@@ -350,16 +403,40 @@ async function createDealWithVendors(
 
   // Create vendor relationships for all mentioned vendors
   for (const vendorMention of vendors) {
-    const v = await findOrCreateVendor(vendorMention.vendorName);
+    try {
+      const v = await findOrCreateVendor(vendorMention.vendorName, {
+        detection_source: 'detailed_reprocessor',
+        sample_text: vendorMention.context,
+        metadata: {
+          role: vendorMention.role,
+          source: vendorMention.source,
+          deal_id: dealId,
+        },
+      });
 
-    await query(
-      `INSERT INTO deal_vendors (deal_id, vendor_id, role, notes)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (deal_id, vendor_id) DO NOTHING`,
-      [dealId, v.id, vendorMention.role, vendorMention.context.substring(0, 500)]
-    );
+      await query(
+        `INSERT INTO deal_vendors (deal_id, vendor_id, role, notes)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (deal_id, vendor_id) DO NOTHING`,
+        [dealId, v.id, vendorMention.role, vendorMention.context.substring(0, 500)]
+      );
 
-    result.vendorRelationshipsCreated++;
+      result.vendorRelationshipsCreated++;
+    } catch (error: any) {
+      if (error instanceof VendorApprovalPendingError) {
+        const message = `Vendor "${vendorMention.vendorName}" pending approval (review ${error.aliasId}); skipping relationship`;
+        logger.warn(message, { dealId, reviewId: error.aliasId });
+        result.errors.push(message);
+        continue;
+      }
+      if (error instanceof VendorApprovalDeniedError) {
+        const message = `Vendor "${vendorMention.vendorName}" denied; skipping relationship`;
+        logger.warn(message, { dealId });
+        result.errors.push(message);
+        continue;
+      }
+      throw error;
+    }
   }
 
   logger.info('Created new deal with vendors', {
@@ -372,28 +449,14 @@ async function createDealWithVendors(
 /**
  * Find or create vendor by name
  */
-async function findOrCreateVendor(name: string): Promise<any> {
-  const normalizedName = normalizeCompanyName(name);
+async function findOrCreateVendor(name: string, context: VendorDetectionContext): Promise<any> {
+  const vendorId = await ensureVendorApproved(name, context);
 
-  // Try to find existing vendor (case-insensitive)
-  let result = await query(
-    `SELECT id, name FROM vendors WHERE LOWER(name) = LOWER($1)`,
-    [normalizedName]
+  const result = await query(
+    `SELECT id, name FROM vendors WHERE id = $1`,
+    [vendorId]
   );
 
-  if (result.rows.length > 0) {
-    return result.rows[0];
-  }
-
-  // Create new vendor
-  result = await query(
-    `INSERT INTO vendors (name, status, created_at)
-     VALUES ($1, 'active', NOW())
-     RETURNING id, name`,
-    [normalizedName]
-  );
-
-  logger.info('Created new vendor during reprocessing', { name: normalizedName });
   return result.rows[0];
 }
 

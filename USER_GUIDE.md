@@ -35,7 +35,7 @@ This tool automates deal registration discovery from multiple sources:
 
 #### B. Upload vTiger Export to the Tool
 
-1. **Access the application**: Open `http://localhost:3000` in your browser
+1. **Access the application**: Open `http://localhost:3200` in your browser
 2. **Navigate to File Upload** section
 3. **Upload your CSV**:
    - Click "Choose File" or drag-and-drop
@@ -79,7 +79,7 @@ TechVendor Inc,techvendor.com,Jane Doe,jane@techvendor.com,555-0200
 
 #### B. Upload Vendor List
 
-1. **Access application**: `http://localhost:3000`
+1. **Access application**: `http://localhost:3200`
 2. **Navigate to Vendors** section
 3. **Click "Import Vendors"** button
 4. **Select your CSV file**
@@ -121,7 +121,7 @@ TechVendor Inc,techvendor.com,Jane Doe,jane@techvendor.com,555-0200
 
 #### B. Upload MBOX File
 
-1. **Access application**: `http://localhost:3000`
+1. **Access application**: `http://localhost:3200`
 2. **Navigate to File Upload** section
 3. **Upload MBOX**:
    - Supports files up to **5GB**
@@ -183,7 +183,7 @@ They're looking at a $500K deployment starting Q2.
 
 #### B. Upload Transcript
 
-1. **Access application**: `http://localhost:3000`
+1. **Access application**: `http://localhost:3200`
 2. **Upload transcript file** (`.txt` format)
 3. **Click Process** button
 4. **System applies 5-stage NLP pipeline**:
@@ -361,3 +361,4 @@ Sort/filter by:
 
 **Version**: 1.0.0
 **Last Updated**: November 2025
+

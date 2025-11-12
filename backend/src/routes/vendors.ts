@@ -18,6 +18,7 @@ router.get('/', async (req: Request, res: Response) => {
       status,
       industry,
       search,
+      approval_status,
       sort_by = 'created_at',
       sort_order = 'desc',
     } = req.query;
@@ -39,6 +40,11 @@ router.get('/', async (req: Request, res: Response) => {
     if (industry) {
       conditions.push(`industry = $${paramCount++}`);
       params.push(industry);
+    }
+
+    if (approval_status) {
+      conditions.push(`approval_status = $${paramCount++}`);
+      params.push(approval_status);
     }
 
     if (search) {
@@ -141,9 +147,16 @@ router.post('/', async (req: Request, res: Response) => {
     const normalizedName = normalizeVendorName(input.name);
     const emailDomains = input.email_domains || extractEmailDomains(input);
 
+    const origin = input.origin || 'manual';
+    const approvalStatus = input.approval_status || 'approved';
+    const approvedAt = approvalStatus === 'approved' ? new Date() : null;
+
     const result = await query(
-      `INSERT INTO vendors (name, normalized_name, email_domains, industry, website, notes)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO vendors (
+        name, normalized_name, email_domains, industry, website, notes,
+        status, origin, approval_status, approved_at
+      )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *`,
       [
         input.name,
@@ -152,6 +165,10 @@ router.post('/', async (req: Request, res: Response) => {
         input.industry || null,
         input.website || null,
         input.notes || null,
+        input.status || 'active',
+        origin,
+        approvalStatus,
+        approvedAt,
       ]
     );
 
@@ -225,6 +242,27 @@ router.put('/:id', async (req: Request, res: Response) => {
     if (input.status !== undefined) {
       updates.push(`status = $${paramCount++}`);
       params.push(input.status);
+    }
+
+    if (input.origin !== undefined) {
+      updates.push(`origin = $${paramCount++}`);
+      params.push(input.origin);
+    }
+
+    if (input.approval_status !== undefined) {
+      updates.push(`approval_status = $${paramCount++}`);
+      params.push(input.approval_status);
+
+      if (input.approval_status === 'approved') {
+        updates.push(`approved_at = CURRENT_TIMESTAMP`);
+      } else if (input.approval_status === 'pending' || input.approval_status === 'denied') {
+        updates.push(`approved_at = NULL`);
+      }
+    }
+
+    if (input.approval_notes !== undefined) {
+      updates.push(`approval_notes = $${paramCount++}`);
+      params.push(input.approval_notes);
     }
 
     if (updates.length === 0) {

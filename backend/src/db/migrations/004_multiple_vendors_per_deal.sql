@@ -16,9 +16,9 @@ CREATE TABLE IF NOT EXISTS deal_vendors (
 );
 
 -- Create indexes for performance
-CREATE INDEX idx_deal_vendors_deal_id ON deal_vendors(deal_id);
-CREATE INDEX idx_deal_vendors_vendor_id ON deal_vendors(vendor_id);
-CREATE INDEX idx_deal_vendors_role ON deal_vendors(role);
+CREATE INDEX IF NOT EXISTS idx_deal_vendors_deal_id ON deal_vendors(deal_id);
+CREATE INDEX IF NOT EXISTS idx_deal_vendors_vendor_id ON deal_vendors(vendor_id);
+CREATE INDEX IF NOT EXISTS idx_deal_vendors_role ON deal_vendors(role);
 
 -- Migrate existing vendor_id relationships to junction table
 -- Only migrate where vendor_id is not null
@@ -55,6 +55,8 @@ BEGIN
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trigger_update_deal_vendors_updated_at ON deal_vendors;
 
 CREATE TRIGGER trigger_update_deal_vendors_updated_at
   BEFORE UPDATE ON deal_vendors
