@@ -11,8 +11,8 @@
 Phase 3.5 addresses critical gaps in the existing foundation before proceeding with AI integration in Phase 4. This ensures better data quality, full transparency, and a solid architectural foundation.
 
 **Total Estimated Time**: 2-3 weeks
-**Time Elapsed**: Day 2
-**Completed**: 2 of 6 improvements (33% - both CRITICAL items done!)
+**Time Elapsed**: Day 2-3
+**Completed**: 3 of 6 improvements (50% - both CRITICAL + 1 HIGH priority done!)
 
 ---
 
@@ -187,33 +187,118 @@ This is deferred to future work to avoid blocking Phase 4 AI integration.
 
 ---
 
-## 🚧 In Progress
+## ✅ Completed Improvements (Continued)
 
-### **3. Centralized Normalization Service** ⏳ NEXT
+### **3. Centralized Normalization Service** ✅ COMPLETE
 **Priority**: HIGH
 **Estimated Time**: 1-2 days
-**Status**: Ready to start
+**Actual Time**: 0.5 days
+**Commit**: `2535d07`
+
+#### What Was Built:
+
+**Normalization Service (`normalizationService.ts` - ~800 lines):**
+
+**Date Normalization**:
+- Handles 5+ date formats (ISO 8601, US M/D/Y, UK D/M/Y, text dates, quarters)
+- Pattern matching with confidence scoring
+- Returns normalized Date object or null
+- Sanity checking (year 1900-2100)
+- Confidence: 0.95 for pattern match, 0.8 for native parse
+
+**Currency Normalization**:
+- Recognizes symbols: $, €, £, ¥, ₹, and currency codes (USD, EUR, etc.)
+- Handles multipliers: K, M, B, T (e.g., "$100K" → 100000)
+- Removes commas and whitespace
+- Returns numeric value + currency code + formatted string
+- Confidence: 0.9 for successful parse
+
+**Phone Number Normalization**:
+- Produces E.164 format when possible (+1234567890)
+- Handles US/Canada 10-digit numbers
+- International format support
+- Validation (isValid flag)
+- Default country code configurable (default: +1)
+- Confidence: 0.95 for E.164, 0.85 for US format
+
+**Email Normalization**:
+- Lowercase + trim
+- Basic regex validation
+- Confidence: 1.0 for valid, 0.3 for invalid
+
+**Company Name Normalization**:
+- Removes common suffixes (Inc, LLC, Ltd, Corp, etc.) - 20+ patterns
+- Standardizes whitespace
+- Optional title case
+- Configurable suffix removal
+- Confidence: 0.9 when normalized, 1.0 when unchanged
+
+**Status Normalization**:
+- Maps status variants to standard values
+- Deal statuses: "new"→"registered", "won"→"closed_won", etc.
+- Configurable for different entity types
+- Confidence: 0.95 for mapped, 0.7 for passthrough
+
+**Batch Normalizers**:
+- `normalizeVendorData()` - Apply all vendor field normalizations
+- `normalizeDealData()` - Apply all deal field normalizations
+- `normalizeContactData()` - Apply all contact field normalizations
+
+**All Functions Return NormalizationResult**:
+```typescript
+interface NormalizationResult<T> {
+  value: T;              // Normalized value
+  original: string;      // Original input
+  confidence: number;    // 0.0-1.0
+  method: string;        // Normalization method used
+  warnings?: string[];   // Issues encountered
+}
+```
+
+**Integration:**
+- ✅ StandardizedCSVParser uses normalization for all fields
+- ✅ Dates, currencies, phones, emails, company names, statuses
+- ✅ Maintains confidence tracking
+- ⏳ Future: Integrate into transcript and mbox parsers
+
+#### Features:
+- ✅ Consistent data cleaning across parsers
+- ✅ Confidence scoring for quality tracking
+- ✅ Warning messages for invalid data
+- ✅ Multiple date format support
+- ✅ International currency support
+- ✅ E.164 phone format
+- ✅ Company name standardization
+- ✅ Pure functions (no side effects)
+
+#### Example Usage:
+```typescript
+// Date normalization
+const dateResult = normalizeDate("01/15/2024");
+// { value: Date(2024-01-15), original: "01/15/2024",
+//   confidence: 0.95, method: "pattern_match", format: "US_MDY" }
+
+// Currency normalization
+const currencyResult = normalizeCurrency("$100K USD");
+// { value: 100000, original: "$100K USD", currency: "USD",
+//   formatted: "100000.00", confidence: 0.9, method: "with_multiplier" }
+
+// Phone normalization
+const phoneResult = normalizePhone("(555) 123-4567");
+// { value: "+15551234567", original: "(555) 123-4567",
+//   confidence: 0.85, method: "us_format", isValid: true }
+```
+
+#### Testing:
+- Integrated into StandardizedCSVParser
+- Handles edge cases (null, empty, invalid input)
+- Unit tests recommended for future work
 
 ---
 
 ## 📋 Pending Improvements
 
-### **3. Centralized Normalization Service**
-**Priority**: HIGH
-**Estimated Time**: 1-2 days
-**Status**: PENDING
-
-**Goal**: Consistent data cleaning across all parsers
-
-**Tasks**:
-- [ ] Create `normalizationService.ts`
-- [ ] Add date format normalization
-- [ ] Add currency normalization
-- [ ] Add phone number normalization
-- [ ] Add email address normalization
-- [ ] Integrate into all parsers
-
----
+###
 
 ### **4. Email Noise Reduction**
 **Priority**: HIGH
@@ -270,23 +355,24 @@ This is deferred to future work to avoid blocking Phase 4 AI integration.
 
 ### Code Added:
 - **Database Migrations**: 1 (96 lines SQL)
-- **Services**: 1 provenance tracker (368 lines TypeScript)
+- **Services**: 2 (provenance: 368 lines, normalization: 800 lines TypeScript)
 - **API Routes**: 1 provenance API (237 lines TypeScript)
 - **Types**: 1 parsing types (400 lines TypeScript)
 - **Base Classes**: 1 BaseParser (300 lines TypeScript)
 - **Parsers**: 3 standardized parsers (550 lines TypeScript)
-- **Integrations**: 1 (fileProcessor updates)
-- **Total**: ~2,200 lines of production code
+- **Integrations**: 2 (fileProcessor updates, CSV parser normalization)
+- **Total**: ~3,000 lines of production code
 
 ### Files Created (Phase 3.5):
 1. `backend/src/db/migrations/006_field_provenance.sql`
 2. `backend/src/services/provenanceTracker.ts`
 3. `backend/src/routes/provenance.ts`
-4. `backend/src/types/parsing.ts`
-5. `backend/src/parsers/BaseParser.ts`
-6. `backend/src/parsers/StandardizedCSVParser.ts`
-7. `backend/src/parsers/StandardizedMboxParser.ts`
-8. `backend/src/parsers/StandardizedTranscriptParser.ts`
+4. `backend/src/services/normalizationService.ts`
+5. `backend/src/types/parsing.ts`
+6. `backend/src/parsers/BaseParser.ts`
+7. `backend/src/parsers/StandardizedCSVParser.ts`
+8. `backend/src/parsers/StandardizedMboxParser.ts`
+9. `backend/src/parsers/StandardizedTranscriptParser.ts`
 
 ### Files Modified:
 1. `backend/src/index.ts` (added provenance routes)
@@ -308,25 +394,29 @@ This is deferred to future work to avoid blocking Phase 4 AI integration.
 
 ## Next Steps
 
-### Completed (Day 1-2):
+### Completed (Day 1-3):
 1. ✅ Complete provenance tracking (Day 1)
 2. ✅ Start parser output standardization (Day 2)
 3. ✅ Create `StandardizedParserOutput` interface (Day 2)
 4. ✅ Create BaseParser abstract class (Day 2)
 5. ✅ Create standardized parser wrappers (Day 2)
 6. ✅ Integrate CSV parser (Day 2)
+7. ✅ Complete vendor/contact provenance tracking (Day 2)
+8. ✅ Create normalization service (Day 3)
+9. ✅ Integrate normalization into CSV parser (Day 3)
 
 ### Immediate (Today/Tomorrow):
-1. ⏳ Start centralized normalization service
-2. ⏳ Implement date format normalization
-3. ⏳ Implement currency normalization
-4. ⏳ Implement phone/email normalization
+1. ⏳ Start email noise reduction
+2. ⏳ Implement signature detection
+3. ⏳ Implement disclaimer removal
+4. ⏳ Integrate into mbox parser
 
 ### This Week:
-1. Complete normalization service
-2. Implement email noise reduction
-3. Implement error tracking system
-4. Consider: Complete mbox/transcript parser integration (if time allows)
+1. ✅ Complete normalization service
+2. ⏳ Implement email noise reduction
+3. ⏳ Implement error tracking system
+4. ⏳ Consider: CSV format auto-detection improvements
+5. Consider: Complete mbox/transcript parser integration (if time allows)
 
 ### Next Week:
 1. Complete CSV auto-detection
@@ -426,5 +516,5 @@ When ready to deploy Phase 3.5:
 
 ---
 
-**Document Last Updated**: November 12, 2025 - End of Day 2
-**Next Update**: End of Day 3 (Normalization Service)
+**Document Last Updated**: November 12, 2025 - Day 3
+**Next Update**: End of Day 4 (Email Noise Reduction)
