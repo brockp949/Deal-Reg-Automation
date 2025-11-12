@@ -19,6 +19,7 @@ import vendorReviewRoutes from './routes/vendorReview';
 import provenanceRoutes from './routes/provenance';
 import errorTrackingRoutes from './routes/errorTracking';
 import aiExtractionRoutes from './routes/aiExtraction';
+import vendorMatchingRoutes from './routes/vendorMatching';
 
 const app = express();
 
@@ -66,6 +67,7 @@ app.use(`${config.apiPrefix}/vendor-review`, vendorReviewRoutes);
 app.use(`${config.apiPrefix}/provenance`, provenanceRoutes);
 app.use(`${config.apiPrefix}/errors`, errorTrackingRoutes);
 app.use(`${config.apiPrefix}/ai`, aiExtractionRoutes);
+app.use(`${config.apiPrefix}/vendor-matching`, vendorMatchingRoutes);
 
 // 404 handler
 app.use((req: Request, res: Response) => {
