@@ -8,10 +8,12 @@ import { parsePDFTranscript } from '../parsers/pdfParser';
 import { domainToCompanyName, generateDealName, normalizeCompanyName } from '../utils/fileHelpers';
 import logger from '../utils/logger';
 import type { FileType } from '../types';
-import { writeFile, unlink } from 'fs/promises';
+import { writeFile, unlink, readFile } from 'fs/promises';
 import { join } from 'path';
 import { ensureVendorApproved } from './vendorApprovalService';
 import { VendorApprovalPendingError, VendorApprovalDeniedError } from '../errors/vendorApprovalErrors';
+import { extractEntitiesWithAI } from './aiExtractor';
+import { validateAndEnrichDealData } from './validationService';
 
 interface ProcessingResult {
   vendorsCreated: number;
@@ -332,6 +334,27 @@ async function processMboxFile(filePath: string, fileId: string) {
   }
 
   for (const extractedDeal of result.extractedDeals) {
+    // Phase 1: AI-powered extraction and validation
+    if (extractedDeal.pre_sales_efforts) {
+      try {
+        const aiResult = await extractEntitiesWithAI(extractedDeal.pre_sales_efforts);
+        if (aiResult) {
+          logger.info('AI extraction from MBOX successful', { 
+            dealName: aiResult.dealName, 
+            customerName: aiResult.customerName,
+            confidence: aiResult.confidenceScore 
+          });
+          
+          const validatedDeal = await validateAndEnrichDealData(aiResult);
+          logger.info('AI MBOX deal data validated', { dealName: validatedDeal.dealName, customerName: validatedDeal.customerName });
+          // TODO: In the next step, merge validatedDeal with the extractedDeal object
+        }
+      } catch (error: any) {
+        logger.error('AI extraction from MBOX failed', { error: error.message });
+        // Continue with non-AI-enhanced data
+      }
+    }
+
     // Extract vendor from email sender domain
     let extractedVendorName: string | null = null;
     let emailDomain: string | null = null;
@@ -462,6 +485,26 @@ async function processCSVFile(filePath: string) {
  */
 async function processTranscriptFile(filePath: string) {
   logger.info('Processing transcript with enhanced NLP pipeline', { filePath });
+
+  // Phase 1: AI-powered extraction and validation
+  try {
+    const fileContent = await readFile(filePath, 'utf-8');
+    const aiResult = await extractEntitiesWithAI(fileContent);
+    if (aiResult) {
+      logger.info('AI extraction successful', { 
+        dealName: aiResult.dealName, 
+        customerName: aiResult.customerName,
+        confidence: aiResult.confidenceScore 
+      });
+      
+      const validatedDeal = await validateAndEnrichDealData(aiResult);
+      logger.info('AI deal data validated', { dealName: validatedDeal.dealName, customerName: validatedDeal.customerName });
+      // TODO: In the next step, merge validatedDeal with the 'deal' object below
+    }
+  } catch (error: any) {
+    logger.error('AI extraction and validation step failed', { error: error.message });
+    // We continue with the old logic as a fallback
+  }
 
   // Load all existing vendors from database to use as knowledge base
   const existingVendorsResult = await query(
