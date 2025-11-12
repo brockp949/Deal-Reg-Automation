@@ -12,6 +12,9 @@ import { writeFile, unlink } from 'fs/promises';
 import { join } from 'path';
 import { ensureVendorApproved } from './vendorApprovalService';
 import { VendorApprovalPendingError, VendorApprovalDeniedError } from '../errors/vendorApprovalErrors';
+import { trackDealProvenance, trackVendorProvenance, trackContactProvenance } from './provenanceTracker';
+import { StandardizedCSVParser } from '../parsers/StandardizedCSVParser';
+import { StandardizedTranscriptParser } from '../parsers/StandardizedTranscriptParser';
 
 interface ProcessingResult {
   vendorsCreated: number;
@@ -440,21 +443,43 @@ async function processMboxFile(filePath: string, fileId: string) {
 }
 
 /**
- * Process CSV file
+ * Process CSV file using standardized parser
  */
 async function processCSVFile(filePath: string) {
-  const rows = await parseCSVFile(filePath);
+  logger.info('Processing CSV with standardized parser', { filePath });
 
-  // Try vTiger format first
-  const extracted = normalizeVTigerData(rows);
+  const parser = new StandardizedCSVParser();
+  const result = await parser.parse(filePath, {
+    format: 'auto', // Auto-detect format
+    confidenceThreshold: 0.3,
+  });
 
-  if (extracted.vendors.length === 0 && extracted.deals.length === 0) {
-    // Fallback to generic CSV parsing
-    const genericExtracted = parseGenericCSV(rows);
-    return genericExtracted;
+  // Log any parsing errors or warnings
+  if (result.errors.length > 0) {
+    logger.warn('CSV parsing errors', {
+      errors: result.errors.map(e => `${e.severity}: ${e.message}`),
+    });
   }
 
-  return extracted;
+  if (result.warnings.length > 0) {
+    logger.info('CSV parsing warnings', {
+      warnings: result.warnings.map(w => w.message),
+    });
+  }
+
+  logger.info('CSV parsing complete', {
+    vendors: result.entities.vendors.length,
+    deals: result.entities.deals.length,
+    contacts: result.entities.contacts.length,
+    confidence: result.statistics.confidence.avgConfidence.toFixed(2),
+  });
+
+  // Convert standardized format to legacy format expected by fileProcessor
+  return {
+    vendors: result.entities.vendors,
+    deals: result.entities.deals,
+    contacts: result.entities.contacts,
+  };
 }
 
 /**
@@ -849,7 +874,67 @@ async function createDeal(dealData: any, vendorId: string, sourceFileId: string)
     ]
   );
 
-  return result.rows[0].id;
+  const dealId = result.rows[0].id;
+
+  // Track provenance for all deal fields
+  try {
+    // Get file details for better source information
+    const fileResult = await query('SELECT filename, file_type FROM source_files WHERE id = $1', [sourceFileId]);
+    const sourceFilename = fileResult.rows[0]?.filename || 'unknown';
+    const fileType = fileResult.rows[0]?.file_type || 'unknown';
+
+    // Determine source type and extraction method based on file type
+    let sourceType: 'email' | 'transcript' | 'csv' | 'manual' = 'csv';
+    let extractionMethod: 'regex' | 'keyword' | 'ai' | 'manual' = 'regex';
+
+    if (fileType === 'mbox') {
+      sourceType = 'email';
+      extractionMethod = cleanDealData.extraction_method === 'enhanced_mbox' ? 'keyword' : 'regex';
+    } else if (fileType === 'txt' || fileType === 'pdf' || fileType === 'transcript') {
+      sourceType = 'transcript';
+      extractionMethod = 'regex';
+    } else if (fileType === 'csv' || fileType === 'vtiger_csv') {
+      sourceType = 'csv';
+      extractionMethod = 'manual'; // CSV is usually manual entry
+    }
+
+    // Track provenance for each field
+    await trackDealProvenance(
+      dealId,
+      {
+        deal_name: cleanDealData.deal_name,
+        deal_value: cleanDealData.deal_value,
+        currency: cleanDealData.currency,
+        customer_name: cleanDealData.customer_name,
+        customer_industry: cleanDealData.customer_industry,
+        expected_close_date: cleanDealData.expected_close_date,
+        status: cleanDealData.status,
+        deal_stage: cleanDealData.deal_stage,
+        probability: cleanDealData.probability,
+        decision_maker_contact: cleanDealData.decision_maker_contact,
+        decision_maker_email: cleanDealData.decision_maker_email,
+        decision_maker_phone: cleanDealData.decision_maker_phone,
+        end_user_address: cleanDealData.end_user_address,
+      },
+      {
+        sourceFileId,
+        sourceType,
+        sourceLocation: `File: ${sourceFilename}`,
+        extractionMethod,
+        confidence: cleanDealData.confidence_score || 0.5,
+      }
+    );
+
+    logger.debug('Deal provenance tracked', { dealId, sourceFileId });
+  } catch (provenanceError: any) {
+    // Log error but don't fail the deal creation
+    logger.error('Failed to track deal provenance', {
+      dealId,
+      error: provenanceError.message,
+    });
+  }
+
+  return dealId;
 }
 
 /**
