@@ -50,9 +50,12 @@ Phase 3.5 addresses critical gaps in the existing foundation before proceeding w
 
 **Integration:**
 - Updated `fileProcessor.ts` to track provenance for all deal fields
+- Updated `vendorApprovalService.ts` to track provenance when creating vendors
+- Updated `fileProcessor.ts` to track provenance when creating contacts
 - Automatically determines source type based on file type
 - Non-blocking (errors logged but don't fail main flow)
 - Tracks confidence scores from extraction
+- **Now tracks all three entity types: deals, vendors, and contacts** ✅
 
 #### Features:
 - ✅ Full transparency - see where each value came from
@@ -179,6 +182,8 @@ The transcript and mbox processors have significant business logic (vendor match
 - Maintaining backward compatibility during refactoring
 
 This is deferred to future work to avoid blocking Phase 4 AI integration.
+
+**See detailed analysis**: [PARSER_INTEGRATION_TECHNICAL_DEBT.md](./PARSER_INTEGRATION_TECHNICAL_DEBT.md) - explains rationale, impact, and path to completion (6-9 days estimated).
 
 ---
 
