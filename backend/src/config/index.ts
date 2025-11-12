@@ -26,9 +26,16 @@ const envSchema = z.object({
   ALLOWED_FILE_TYPES: z.string().default('.mbox,.csv,.txt,.pdf,.docx,.json'),
   CONFIG_STORAGE_DIR: z.string().default('./config-uploads'),
 
-  // AI Services (optional for Phase 1)
+  // AI Services
   ANTHROPIC_API_KEY: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
+  AI_MODEL: z.string().default('claude-3-5-sonnet-20241022'),
+  AI_MAX_TOKENS: z.string().default('4000'),
+  AI_TEMPERATURE: z.string().default('0.0'),
+  AI_TIMEOUT: z.string().default('30000'),
+  AI_RETRY_ATTEMPTS: z.string().default('3'),
+  AI_CACHE_ENABLED: z.string().default('true'),
+  AI_CACHE_TTL_DAYS: z.string().default('30'),
 
   // Email (optional for Phase 1)
   SMTP_HOST: z.string().optional(),
@@ -74,6 +81,18 @@ export const config = {
     anthropicApiKey: env.ANTHROPIC_API_KEY,
     openaiApiKey: env.OPENAI_API_KEY,
   },
+
+  // AI Extraction Configuration
+  aiModel: env.AI_MODEL,
+  aiMaxTokens: parseInt(env.AI_MAX_TOKENS, 10),
+  aiTemperature: parseFloat(env.AI_TEMPERATURE),
+  aiTimeout: parseInt(env.AI_TIMEOUT, 10),
+  aiRetryAttempts: parseInt(env.AI_RETRY_ATTEMPTS, 10),
+  aiCacheEnabled: env.AI_CACHE_ENABLED === 'true',
+  aiCacheTTLDays: parseInt(env.AI_CACHE_TTL_DAYS, 10),
+
+  // Expose anthropic key at root level for backward compat
+  anthropicApiKey: env.ANTHROPIC_API_KEY,
 
   email: {
     host: env.SMTP_HOST,
