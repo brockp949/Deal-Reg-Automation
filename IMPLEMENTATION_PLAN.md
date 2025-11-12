@@ -20,6 +20,25 @@ This document outlines a comprehensive, phased implementation plan to transform 
 
 ---
 
+## ⚠️ IMPORTANT: Read Phase 1-3 Improvements First
+
+**Before proceeding with this implementation plan**, please review:
+
+📄 **[PHASE_1-3_IMPROVEMENTS.md](./PHASE_1-3_IMPROVEMENTS.md)**
+
+This document contains a comprehensive audit of the existing Phases 1-3 against the design document requirements. It identifies:
+- ✅ What's working well (90% of design requirements already met!)
+- 🟡 Gaps and required improvements (field provenance, parser standardization, etc.)
+- 📋 Recommended fixes before Phase 4 (2-3 weeks of targeted improvements)
+
+**Key Finding**: The current foundation is solid, but requires **4-6 days of critical improvements** (field provenance + parser standardization) before Phase 4 AI integration.
+
+**Recommended Path**:
+1. Complete Phase 1-3 improvements (2-3 weeks) - See PHASE_1-3_IMPROVEMENTS.md
+2. Then proceed with this plan starting at Phase 4
+
+---
+
 ## Current System Status
 
 ### ✅ **Phase 1-3 Complete** (Production-Ready MVP)
@@ -68,6 +87,55 @@ This document outlines a comprehensive, phased implementation plan to transform 
 ---
 
 ## Implementation Phases
+
+### **Phase 3.5: Foundation Improvements** (Priority: CRITICAL) ⚠️
+**Duration**: 2-3 weeks
+**Goal**: Address gaps in Phases 1-3 before AI integration
+
+**See**: [PHASE_1-3_IMPROVEMENTS.md](./PHASE_1-3_IMPROVEMENTS.md) for full details
+
+#### Quick Summary of Critical Improvements:
+
+**Critical Path (Must Complete Before Phase 4):**
+1. **Field-Level Provenance Tracking** (2-3 days)
+   - Track which source file/location provided each field value
+   - Required for Phase 9 explainability
+   - Migration: `006_field_provenance.sql`
+
+2. **Parser Output Standardization** (2-3 days)
+   - Create `StandardizedParserOutput` interface
+   - Refactor all parsers to use common format
+   - Required for Phase 4 AI integration
+
+**High Priority (Recommended Before Phase 4):**
+3. **Centralized Normalization Service** (1-2 days)
+   - Consistent data cleaning across all parsers
+   - Improves AI extraction accuracy
+
+4. **Email Noise Reduction** (1-2 days)
+   - Remove signatures, disclaimers, quoted text
+   - Cleaner data for AI processing
+
+5. **CSV Format Auto-Detection** (2 days)
+   - Automatically detect CRM format
+   - Better user experience
+
+6. **Error Tracking System** (2 days)
+   - Structured error logging
+   - Better debugging and monitoring
+
+**Deliverables:**
+- 4 new database migrations
+- 5 new service modules
+- Updated parser architecture
+- Better data quality foundation
+
+**Why This Matters:**
+- Better data quality = Better AI results
+- Standardized parsers = Easier AI integration
+- Field provenance = User trust and transparency
+
+---
 
 ### **Phase 4: AI-Powered Entity Extraction Engine** (Priority: HIGH)
 **Duration**: 3-4 weeks
@@ -895,15 +963,18 @@ CREATE TABLE audit_log (
 ## Implementation Priority Matrix
 
 ### **Critical Path (Must-Have)**
-1. **Phase 4**: AI Entity Extraction (4.1, 4.2)
-2. **Phase 5**: Vendor Matching (5.1, 5.2)
-3. **Phase 6**: Duplicate Detection (6.1, 6.2)
-4. **Phase 9**: Feedback Loops (9.2)
+1. **Phase 3.5**: Foundation Improvements ⚠️ **START HERE**
+   - Items 1.2, 2.1 (field provenance, parser standardization)
+2. **Phase 4**: AI Entity Extraction (4.1, 4.2)
+3. **Phase 5**: Vendor Matching (5.1, 5.2)
+4. **Phase 6**: Duplicate Detection (6.1, 6.2)
+5. **Phase 9**: Feedback Loops (9.2)
 
 ### **High Priority (Should-Have)**
-1. **Phase 7**: Automation Enhancement (7.1, 7.2)
-2. **Phase 8**: Data Quality (8.1, 8.2)
-3. **Phase 9**: Explainability (9.1, 9.3)
+1. **Phase 3.5**: High-priority improvements (items 1.1, 2.2, 2.3, 1.4)
+2. **Phase 7**: Automation Enhancement (7.1, 7.2)
+3. **Phase 8**: Data Quality (8.1, 8.2)
+4. **Phase 9**: Explainability (9.1, 9.3)
 
 ### **Medium Priority (Nice-to-Have)**
 1. **Phase 7**: Vendor Submission (7.2)
@@ -1011,27 +1082,59 @@ CREATE TABLE audit_log (
 
 ## Next Steps
 
-### **Immediate Actions (Week 1)**
-1. ✅ Review and approve this implementation plan
-2. [ ] Set up Anthropic API account and obtain API key
-3. [ ] Create feature branch: `feature/ai-extraction-engine`
-4. [ ] Set up development environment for Phase 4
-5. [ ] Design initial AI extraction prompts
-6. [ ] Create database migration `006_ai_extraction.sql`
+### **⚠️ UPDATED: Phase 3.5 Must Be Completed First**
 
-### **Week 2-3**
-1. [ ] Implement AI extraction service (Phase 4.1)
-2. [ ] Build System 2 validation layer (Phase 4.2)
-3. [ ] Write comprehensive tests
-4. [ ] Initial accuracy benchmarking
+### **Week 1: Critical Path Improvements**
+1. ✅ Review and approve implementation plans (this doc + PHASE_1-3_IMPROVEMENTS.md)
+2. [ ] Create feature branch: `feature/phase3.5-improvements`
+3. [ ] **Implement field provenance tracking**
+   - Create migration `006_field_provenance.sql`
+   - Create `provenanceTracker.ts` service
+   - Update all parsers to log provenance
+4. [ ] **Implement parser standardization**
+   - Create `StandardizedParserOutput` interface
+   - Refactor `mboxParser.ts`, `csvParser.ts`, `transcriptParser.ts`
 
-### **Week 4-5**
+### **Week 2-3: High Priority Improvements**
+1. [ ] **Implement normalization service**
+   - Create `normalizationService.ts`
+   - Add date, currency, phone, email normalization
+   - Integrate into all parsers
+2. [ ] **Implement email noise reduction**
+   - Create `emailCleaner.ts`
+   - Remove signatures, disclaimers, quoted text
+   - Integrate into mbox parsers
+3. [ ] **Implement CSV auto-detection**
+   - Add format detection to `csvParser.ts`
+   - Add support for Salesforce, HubSpot formats
+4. [ ] **Implement error tracking**
+   - Create migration `008_error_tracking.sql`
+   - Create `errorTracker.ts` service
+   - Update all parsers to use error tracker
+
+### **Week 4: Testing, Documentation, Deploy**
+1. [ ] Write comprehensive tests for all new services
+2. [ ] Update API documentation
+3. [ ] Create admin UI for error dashboard
+4. [ ] Deploy Phase 3.5 improvements
+5. [ ] Verify data quality improvements
+
+### **Week 5+: Begin Phase 4 (AI Integration)**
+1. [ ] Set up Anthropic API account and obtain API key
+2. [ ] Create feature branch: `feature/ai-extraction-engine`
+3. [ ] Design initial AI extraction prompts
+4. [ ] Implement AI extraction service (Phase 4.1)
+5. [ ] Build System 2 validation layer (Phase 4.2)
+6. [ ] Write comprehensive tests
+7. [ ] Initial accuracy benchmarking
+
+### **Week 7-8: Phase 5 (Vendor Matching)**
 1. [ ] Implement vendor matching engine (Phase 5.1)
 2. [ ] Create vendor alias management
 3. [ ] Test matching accuracy
 4. [ ] UI for vendor alias management
 
-### **Week 6-7**
+### **Week 9-10: Phase 6 (Duplicate Detection)**
 1. [ ] Build duplicate detection (Phase 6.1)
 2. [ ] Implement cross-source correlation (Phase 6.2)
 3. [ ] Create merge/conflict resolution UI
