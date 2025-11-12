@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Upload, File, X, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
-import { fileAPI } from '@/lib/api';
+import { fileAPI, configAPI } from '@/lib/api';
 import { formatFileSize, getFileIcon } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -19,6 +19,19 @@ const ALLOWED_TYPES = {
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
   'application/json': ['.json'],
 };
+
+interface SecurityMetrics {
+  scanStatus: Record<string, number>;
+  blockedCount: number;
+  quarantinedCount: number;
+  duplicateEventsLast30Days: number;
+}
+
+interface ConfigMetrics {
+  totalSnapshots: number;
+  appliedSnapshots: number;
+  pendingSnapshots: number;
+}
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024 * 1024; // 5GB (5368709120 bytes)
 
@@ -41,6 +54,24 @@ export default function FileUploader() {
       );
       return hasProcessing ? 2000 : false;
     },
+  });
+
+  const { data: securityMetrics } = useQuery({
+    queryKey: ['files', 'metrics', 'security'],
+    queryFn: async () => {
+      const response = await fileAPI.getSecurityMetrics();
+      return response.data.data as SecurityMetrics;
+    },
+    refetchInterval: 15000,
+  });
+
+  const { data: configMetrics } = useQuery({
+    queryKey: ['configs', 'metrics'],
+    queryFn: async () => {
+      const response = await configAPI.getMetrics();
+      return response.data.data as ConfigMetrics;
+    },
+    refetchInterval: 30000,
   });
 
   // Upload mutation
@@ -252,8 +283,34 @@ export default function FileUploader() {
         )}
       </Card>
 
-      {/* Uploaded Files List */}
-      <div>
+     {/* Uploaded Files List */}
+     <div>
+        {(securityMetrics || configMetrics) && (
+          <div className="grid gap-4 md:grid-cols-2 mb-4">
+            {securityMetrics && (
+              <Card className="p-4">
+                <h3 className="text-sm font-semibold mb-2">Security Snapshot</h3>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <Metric label="Passed" value={securityMetrics.scanStatus?.passed ?? 0} />
+                  <Metric label="Failed" value={securityMetrics.scanStatus?.failed ?? 0} />
+                  <Metric label="Blocked" value={securityMetrics.blockedCount} />
+                  <Metric label="Quarantined" value={securityMetrics.quarantinedCount} />
+                  <Metric label="Duplicates (30d)" value={securityMetrics.duplicateEventsLast30Days} />
+                </div>
+              </Card>
+            )}
+            {configMetrics && (
+              <Card className="p-4">
+                <h3 className="text-sm font-semibold mb-2">Config Uploads</h3>
+                <div className="grid grid-cols-3 gap-3 text-sm">
+                  <Metric label="Total" value={configMetrics.totalSnapshots} />
+                  <Metric label="Applied" value={configMetrics.appliedSnapshots} />
+                  <Metric label="Pending" value={configMetrics.pendingSnapshots} />
+                </div>
+              </Card>
+            )}
+          </div>
+        )}
         <h2 className="text-2xl font-bold mb-4">Uploaded Files</h2>
         <Card className="p-6">
           {isLoading ? (
@@ -311,7 +368,8 @@ export default function FileUploader() {
                       </div>
                       {file.metadata?.config && (
                         <p className="text-xs text-muted-foreground mt-1">
-                          Stored {new Date(file.metadata.config.storedAt).toLocaleString()}  -  {file.metadata.config.topLevelKeys?.slice(0, 3).join(', ')}
+                          Stored {new Date(file.metadata.config.storedAt).toLocaleString()} ·{' '}
+                          {file.metadata.config.topLevelKeys?.slice(0, 3).join(', ')}
                         </p>
                       )}
                       {file.quarantine_reason && (
@@ -355,6 +413,15 @@ export default function FileUploader() {
           )}
         </Card>
       </div>
+    </div>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: number }) {
+  return (
+    <div>
+      <p className="text-xs uppercase text-muted-foreground">{label}</p>
+      <p className="text-lg font-semibold">{value}</p>
     </div>
   );
 }

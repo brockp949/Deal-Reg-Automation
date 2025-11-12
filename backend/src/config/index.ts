@@ -25,6 +25,10 @@ const envSchema = z.object({
   MAX_FILE_SIZE: z.string().default('5368709120'), // 5GB (5368709120 bytes)
   ALLOWED_FILE_TYPES: z.string().default('.mbox,.csv,.txt,.pdf,.docx,.json'),
   CONFIG_STORAGE_DIR: z.string().default('./config-uploads'),
+  VIRUS_SCAN_PROVIDER: z.enum(['stub', 'clamd']).default('stub'),
+  CLAMAV_HOST: z.string().default('127.0.0.1'),
+  CLAMAV_PORT: z.string().default('3310'),
+  VIRUS_SCAN_FAIL_OPEN: z.string().default('true'),
 
   // AI Services (optional for Phase 1)
   ANTHROPIC_API_KEY: z.string().optional(),
@@ -68,6 +72,16 @@ export const config = {
   },
   configStorage: {
     directory: env.CONFIG_STORAGE_DIR,
+  },
+  security: {
+    virusScan: {
+      provider: env.VIRUS_SCAN_PROVIDER,
+      failOpen: env.VIRUS_SCAN_FAIL_OPEN === 'true',
+      clamav: {
+        host: env.CLAMAV_HOST,
+        port: parseInt(env.CLAMAV_PORT, 10),
+      },
+    },
   },
 
   ai: {

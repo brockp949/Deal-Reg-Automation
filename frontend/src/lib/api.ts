@@ -74,6 +74,14 @@ export const fileAPI = {
   delete: (id: string) => api.delete(`/files/${id}`),
   process: (id: string) => api.post(`/files/${id}/process`),
   clearAll: () => api.delete('/files/clear-all'),
+  getSecurityMetrics: () => api.get('/files/metrics/security'),
+};
+
+export const configAPI = {
+  getSnapshots: (params?: any) => api.get('/configs/snapshots', { params }),
+  getMetrics: () => api.get('/configs/metrics'),
+  applySnapshot: (id: string, data: { appliedBy?: string; notes?: string }) =>
+    api.post(`/configs/snapshots/${id}/apply`, data),
 };
 
 // Contact API

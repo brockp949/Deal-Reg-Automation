@@ -120,7 +120,8 @@ export type FileSecurityEventType =
   | 'scan_error'
   | 'quarantined'
   | 'duplicate_detected'
-  | 'config_stored';
+  | 'config_stored'
+  | 'config_applied';
 
 export interface FileSecurityEvent {
   id: string;
