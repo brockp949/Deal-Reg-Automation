@@ -13,6 +13,8 @@ import { join } from 'path';
 import { ensureVendorApproved } from './vendorApprovalService';
 import { VendorApprovalPendingError, VendorApprovalDeniedError } from '../errors/vendorApprovalErrors';
 import { trackDealProvenance, trackVendorProvenance, trackContactProvenance } from './provenanceTracker';
+import { StandardizedCSVParser } from '../parsers/StandardizedCSVParser';
+import { StandardizedTranscriptParser } from '../parsers/StandardizedTranscriptParser';
 
 interface ProcessingResult {
   vendorsCreated: number;
@@ -441,21 +443,43 @@ async function processMboxFile(filePath: string, fileId: string) {
 }
 
 /**
- * Process CSV file
+ * Process CSV file using standardized parser
  */
 async function processCSVFile(filePath: string) {
-  const rows = await parseCSVFile(filePath);
+  logger.info('Processing CSV with standardized parser', { filePath });
 
-  // Try vTiger format first
-  const extracted = normalizeVTigerData(rows);
+  const parser = new StandardizedCSVParser();
+  const result = await parser.parse(filePath, {
+    format: 'auto', // Auto-detect format
+    confidenceThreshold: 0.3,
+  });
 
-  if (extracted.vendors.length === 0 && extracted.deals.length === 0) {
-    // Fallback to generic CSV parsing
-    const genericExtracted = parseGenericCSV(rows);
-    return genericExtracted;
+  // Log any parsing errors or warnings
+  if (result.errors.length > 0) {
+    logger.warn('CSV parsing errors', {
+      errors: result.errors.map(e => `${e.severity}: ${e.message}`),
+    });
   }
 
-  return extracted;
+  if (result.warnings.length > 0) {
+    logger.info('CSV parsing warnings', {
+      warnings: result.warnings.map(w => w.message),
+    });
+  }
+
+  logger.info('CSV parsing complete', {
+    vendors: result.entities.vendors.length,
+    deals: result.entities.deals.length,
+    contacts: result.entities.contacts.length,
+    confidence: result.statistics.confidence.avgConfidence.toFixed(2),
+  });
+
+  // Convert standardized format to legacy format expected by fileProcessor
+  return {
+    vendors: result.entities.vendors,
+    deals: result.entities.deals,
+    contacts: result.entities.contacts,
+  };
 }
 
 /**
