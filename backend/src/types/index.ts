@@ -93,11 +93,43 @@ export interface SourceFile {
   processing_completed_at?: Date;
   error_message?: string;
   metadata: Record<string, any>;
+  checksum_sha256?: string;
+  checksum_verified_at?: Date;
+  scan_status?: FileScanStatus;
+  scan_engine?: string;
+  scan_details?: Record<string, any>;
+  scan_completed_at?: Date;
+  quarantined_at?: Date;
+  quarantine_reason?: string;
+  uploaded_by?: string;
+  upload_metadata?: Record<string, any>;
+  duplicate_of_id?: string;
 }
 
-export type FileType = 'mbox' | 'transcript' | 'vtiger_csv' | 'csv' | 'pdf' | 'docx' | 'txt';
+export type FileType = 'mbox' | 'transcript' | 'vtiger_csv' | 'csv' | 'pdf' | 'docx' | 'txt' | 'json';
 
-export type ProcessingStatus = 'pending' | 'processing' | 'completed' | 'failed';
+export type ProcessingStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'blocked';
+
+export type FileScanStatus = 'not_scanned' | 'pending' | 'passed' | 'failed' | 'error';
+
+export type FileSecurityEventType =
+  | 'upload_received'
+  | 'checksum_recorded'
+  | 'scan_passed'
+  | 'scan_failed'
+  | 'scan_error'
+  | 'quarantined'
+  | 'duplicate_detected'
+  | 'config_stored';
+
+export interface FileSecurityEvent {
+  id: string;
+  source_file_id: string;
+  event_type: FileSecurityEventType;
+  actor?: string;
+  details: Record<string, any>;
+  created_at: Date;
+}
 
 // Extracted Entity Types
 export interface ExtractedEntity {
@@ -182,6 +214,8 @@ export interface ApiResponse<T = any> {
   data?: T;
   error?: string;
   message?: string;
+  duplicate?: boolean;
+  duplicateOf?: string;
 }
 
 export interface PaginatedResponse<T> {

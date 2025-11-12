@@ -17,6 +17,7 @@ const ALLOWED_TYPES = {
   'text/plain': ['.txt'],
   'application/pdf': ['.pdf'],
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+  'application/json': ['.json'],
 };
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024 * 1024; // 5GB (5368709120 bytes)
@@ -51,8 +52,9 @@ export default function FileUploader() {
         return await fileAPI.batchUpload(files);
       }
     },
-    onSuccess: () => {
-      toast.success('Files uploaded successfully');
+    onSuccess: (response: any) => {
+      const message = response?.data?.message || 'Files uploaded successfully';
+      toast.success(message);
       setSelectedFiles([]);
       queryClient.invalidateQueries({ queryKey: ['files'] });
     },
@@ -121,6 +123,8 @@ export default function FileUploader() {
         return <Badge variant="warning">Processing</Badge>;
       case 'failed':
         return <Badge variant="destructive">Failed</Badge>;
+      case 'blocked':
+        return <Badge variant="outline">Blocked</Badge>;
       default:
         return <Badge variant="secondary">Pending</Badge>;
     }
@@ -134,9 +138,33 @@ export default function FileUploader() {
         return <Loader2 className="h-5 w-5 text-amber-500 animate-spin" />;
       case 'failed':
         return <AlertCircle className="h-5 w-5 text-red-500" />;
+      case 'blocked':
+        return <AlertCircle className="h-5 w-5 text-amber-500" />;
       default:
         return <File className="h-5 w-5 text-muted-foreground" />;
     }
+  };
+
+  const getScanBadge = (scanStatus?: string) => {
+    if (!scanStatus || scanStatus === 'not_scanned') return null;
+
+    switch (scanStatus) {
+      case 'passed':
+        return <Badge variant="success">Scan Passed</Badge>;
+      case 'failed':
+        return <Badge variant="destructive">Scan Failed</Badge>;
+      case 'error':
+        return <Badge variant="destructive">Scan Error</Badge>;
+      case 'pending':
+        return <Badge variant="warning">Scan Pending</Badge>;
+      default:
+        return <Badge variant="secondary">Scan Unknown</Badge>;
+    }
+  };
+
+  const formatChecksum = (value?: string) => {
+    if (!value) return null;
+    return `${value.slice(0, 12)}…${value.slice(-4)}`;
   };
 
   return (
@@ -158,7 +186,7 @@ export default function FileUploader() {
           </h2>
           <p className="text-muted-foreground mb-4">or click to browse</p>
           <p className="text-sm text-muted-foreground">
-            Supported: .mbox, .txt, .pdf, .docx, .csv
+            Supported: .mbox, .txt, .pdf, .docx, .csv, .json
           </p>
           <p className="text-sm text-muted-foreground">Max size: 500MB per file</p>
         </div>
@@ -258,6 +286,39 @@ export default function FileUploader() {
                         <span>•</span>
                         <span className="capitalize">{file.file_type}</span>
                       </div>
+                      <div className="flex flex-wrap items-center gap-3 mt-2 text-xs">
+                        {getScanBadge(file.scan_status)}
+                        {file.checksum_sha256 && (
+                          <span className="font-mono text-muted-foreground">
+                            SHA-256 {formatChecksum(file.checksum_sha256)}
+                          </span>
+                        )}
+                        {file.upload_metadata?.intent && (
+                          <span className="text-muted-foreground">
+                            Intent: {file.upload_metadata.intent}
+                          </span>
+                        )}
+                        {file.uploaded_by && (
+                          <span className="text-muted-foreground">
+                            By {file.uploaded_by}
+                          </span>
+                        )}
+                        {file.metadata?.config && (
+                          <Badge variant="outline">
+                            Config {file.metadata.config.configName}
+                          </Badge>
+                        )}
+                      </div>
+                      {file.metadata?.config && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Stored {new Date(file.metadata.config.storedAt).toLocaleString()}  -  {file.metadata.config.topLevelKeys?.slice(0, 3).join(', ')}
+                        </p>
+                      )}
+                      {file.quarantine_reason && (
+                        <p className="text-xs text-destructive mt-1">
+                          Quarantined: {file.quarantine_reason}
+                        </p>
+                      )}
                       {(file.processing_status === 'processing' || file.processing_status === 'pending') && (
                         <div className="mt-2">
                           <div className="flex items-center gap-2 mb-1">

@@ -212,6 +212,9 @@ export default function UploadWizard() {
                       <p className="font-medium truncate">{file.filename}</p>
                       <p className="text-muted-foreground capitalize">
                         {file.processing_status}
+                        {file.scan_status && (
+                          <> - scan {file.scan_status}</>
+                        )}
                       </p>
                     </div>
                   ))}

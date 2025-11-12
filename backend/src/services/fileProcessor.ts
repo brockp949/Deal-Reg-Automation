@@ -57,6 +57,22 @@ export async function processFile(fileId: string): Promise<ProcessingResult> {
 
     const file = fileResult.rows[0];
 
+    if (file.scan_status && file.scan_status !== 'passed') {
+      logger.warn('Attempted to process file blocked by security scan', {
+        fileId,
+        scanStatus: file.scan_status,
+      });
+      await query(
+        'UPDATE source_files SET processing_status = $1, error_message = $2 WHERE id = $3',
+        [
+          'blocked',
+          `File blocked pending security review (scan status: ${file.scan_status})`,
+          fileId,
+        ]
+      );
+      throw new Error(`File ${fileId} blocked pending security review`);
+    }
+
     // Update status to processing with 0% progress
     await query(
       'UPDATE source_files SET processing_status = $1, processing_started_at = CURRENT_TIMESTAMP, metadata = jsonb_set(COALESCE(metadata, \'{}\'), \'{progress}\', \'0\') WHERE id = $2',
