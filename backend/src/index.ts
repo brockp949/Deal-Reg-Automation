@@ -21,6 +21,7 @@ import provenanceRoutes from './routes/provenance';
 import errorTrackingRoutes from './routes/errorTracking';
 import aiExtractionRoutes from './routes/aiExtraction';
 import vendorMatchingRoutes from './routes/vendorMatching';
+import duplicateDetectionRoutes from './routes/duplicateDetection';
 
 const app = express();
 
@@ -70,6 +71,7 @@ app.use(`${config.apiPrefix}/provenance`, provenanceRoutes);
 app.use(`${config.apiPrefix}/errors`, errorTrackingRoutes);
 app.use(`${config.apiPrefix}/ai`, aiExtractionRoutes);
 app.use(`${config.apiPrefix}/vendor-matching`, vendorMatchingRoutes);
+app.use(`${config.apiPrefix}/duplicates`, duplicateDetectionRoutes);
 
 // 404 handler
 app.use((req: Request, res: Response) => {
