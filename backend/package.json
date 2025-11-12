@@ -30,6 +30,7 @@
     "exceljs": "^4.4.0",
     "express": "^4.18.2",
     "express-validator": "^7.0.1",
+    "fuzzball": "^2.2.3",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
     "mailparser": "^3.7.1",
@@ -39,6 +40,7 @@
     "pdf-parse": "^1.1.1",
     "pg": "^8.11.3",
     "redis": "^4.6.12",
+    "string-similarity": "^4.0.4",
     "uuid": "^9.0.1",
     "winston": "^3.11.0",
     "zod": "^3.22.4"
@@ -56,6 +58,7 @@
     "@types/node": "^20.10.6",
     "@types/nodemailer": "^6.4.14",
     "@types/pg": "^8.10.9",
+    "@types/string-similarity": "^4.0.2",
     "@types/uuid": "^9.0.7",
     "@typescript-eslint/eslint-plugin": "^6.16.0",
     "@typescript-eslint/parser": "^6.16.0",
