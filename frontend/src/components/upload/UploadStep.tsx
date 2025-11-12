@@ -39,9 +39,11 @@ export default function UploadStep({
         return await fileAPI.batchUpload(files);
       }
     },
-    onSuccess: () => {
-      const count = selectedFiles.length;
-      toast.success(`Successfully uploaded ${count} file${count > 1 ? 's' : ''}`);
+    onSuccess: (response: any) => {
+      const message =
+        response?.data?.message ||
+        `Successfully uploaded ${selectedFiles.length} file${selectedFiles.length > 1 ? 's' : ''}`;
+      toast.success(message);
       setSelectedFiles([]);
       queryClient.invalidateQueries({ queryKey: ['files'] });
       onUploadSuccess?.();
