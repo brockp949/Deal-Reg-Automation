@@ -678,6 +678,10 @@ export async function mergeCluster(
       targetId = master.id;
     }
 
+    if (!targetId) {
+      throw new Error('Unable to determine master entity for cluster merge');
+    }
+
     // Source entities are all others
     const sourceIds = entityIds.filter(id => id !== targetId);
 
