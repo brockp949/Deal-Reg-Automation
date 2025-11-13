@@ -9,7 +9,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
-import type { SourceFile } from '@/types';
+import type { SourceFile, ConfigSnapshot } from '@/types';
 
 const ALLOWED_TYPES = {
   'application/mbox': ['.mbox'],
@@ -73,6 +73,34 @@ export default function FileUploader() {
     },
     refetchInterval: 30000,
   });
+
+  const { data: configSnapshots, isLoading: snapshotsLoading } = useQuery({
+    queryKey: ['configs', 'snapshots'],
+    queryFn: async () => {
+      const response = await configAPI.getSnapshots({ limit: 5 });
+      return response.data.data as ConfigSnapshot[];
+    },
+    refetchInterval: 15000,
+  });
+
+  const applySnapshotMutation = useMutation({
+    mutationFn: async ({ id, notes }: { id: string; notes?: string }) => {
+      return await configAPI.applySnapshot(id, { appliedBy: 'Skip Ops UI', notes });
+    },
+    onSuccess: () => {
+      toast.success('Config snapshot applied');
+      queryClient.invalidateQueries({ queryKey: ['configs', 'snapshots'] });
+      queryClient.invalidateQueries({ queryKey: ['configs', 'metrics'] });
+      queryClient.invalidateQueries({ queryKey: ['files'] });
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.error || 'Failed to apply snapshot');
+    },
+  });
+
+  const handleApplySnapshot = (snapshotId: string) => {
+    applySnapshotMutation.mutate({ id: snapshotId });
+  };
 
   // Upload mutation
   const uploadMutation = useMutation({
@@ -311,6 +339,66 @@ export default function FileUploader() {
             )}
           </div>
         )}
+        {configSnapshots && configSnapshots.length > 0 && (
+          <Card className="p-4 mb-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold">Recent Config Snapshots</h3>
+              {snapshotsLoading && (
+                <span className="text-xs text-muted-foreground">Refreshing…</span>
+              )}
+            </div>
+            <div className="space-y-3">
+              {configSnapshots.map((snapshot) => (
+                <div
+                  key={snapshot.id}
+                  className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 border rounded-md p-3"
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium">{snapshot.config_name}</p>
+                      {snapshot.applied_at ? (
+                        <Badge variant="success">Applied</Badge>
+                      ) : (
+                        <Badge variant="secondary">Pending</Badge>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Stored {new Date(snapshot.created_at).toLocaleString()} ·{' '}
+                      {snapshot.metadata?.keyCount ?? 0} keys
+                    </p>
+                    {snapshot.metadata?.topLevelKeys?.length ? (
+                      <p className="text-xs text-muted-foreground">
+                        Keys: {snapshot.metadata.topLevelKeys.slice(0, 4).join(', ')}
+                      </p>
+                    ) : null}
+                    {snapshot.metadata?.intent && (
+                      <p className="text-xs text-muted-foreground">
+                        Intent: {snapshot.metadata.intent}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {snapshot.applied_at ? (
+                      <p className="text-xs text-muted-foreground">
+                        Applied {new Date(snapshot.applied_at).toLocaleString()}
+                      </p>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleApplySnapshot(snapshot.id)}
+                        disabled={applySnapshotMutation.isPending}
+                      >
+                        {applySnapshotMutation.isPending ? 'Applying…' : 'Mark Applied'}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+
         <h2 className="text-2xl font-bold mb-4">Uploaded Files</h2>
         <Card className="p-6">
           {isLoading ? (

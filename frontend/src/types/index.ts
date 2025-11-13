@@ -70,6 +70,23 @@ export type ProcessingStatus = 'pending' | 'processing' | 'completed' | 'failed'
 
 export type FileScanStatus = 'not_scanned' | 'pending' | 'passed' | 'failed' | 'error';
 
+export interface ConfigSnapshot {
+  id: string;
+  source_file_id?: string;
+  config_name: string;
+  checksum_sha256: string;
+  stored_path: string;
+  applied_by?: string;
+  applied_at?: string;
+  applied_notes?: string;
+  metadata?: {
+    keyCount?: number;
+    topLevelKeys?: string[];
+    intent?: string;
+  };
+  created_at: string;
+}
+
 export interface Contact {
   id: string;
   vendor_id: string;
