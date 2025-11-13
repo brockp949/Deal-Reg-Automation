@@ -41,7 +41,10 @@ deal-reg-automation/
 └── README.md
 ```
 
-- See docs/PHASES_1-7_COMBINED.md for the consolidated Phase 1–7 documentation (combined from all phase files).
+## Project Plan
+
+- See `docs/INTELLIGENT_AUTOMATED_DEAL_REGISTRATION_PLAN.md` for the full phased implementation plan, epics/stories with estimates, rollout timeline, risks, and milestones.
+- See `docs/PHASES_1-7_COMBINED.md` for the consolidated Phase 1–7 documentation (combined from all phase files).
 
 ## Getting Started
 
