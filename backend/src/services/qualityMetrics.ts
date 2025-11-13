@@ -196,20 +196,23 @@ async function calculateAccuracy(entityType: 'deal' | 'vendor' | 'contact' = 'de
     const passedValidations = parseInt(stats.passed_validations) || 0;
     const failedValidations = parseInt(stats.failed_validations) || 0;
 
-    // Get common validation errors
+    // Get common validation errors from JSONB validation_failures column
     const errorsResult = await query(
-      `SELECT rule_name, COUNT(*) as error_count
-       FROM validation_failures vf
-       JOIN extracted_entities ee ON vf.extraction_log_id = ee.extraction_log_id
-       WHERE ee.entity_type = $1
-       GROUP BY rule_name
+      `SELECT
+         jsonb_array_elements(validation_failures)->>'rule' as rule_name,
+         COUNT(*) as error_count
+       FROM extracted_entities
+       WHERE entity_type = $1
+         AND validation_status = 'failed'
+         AND jsonb_array_length(validation_failures) > 0
+       GROUP BY jsonb_array_elements(validation_failures)->>'rule'
        ORDER BY error_count DESC
        LIMIT 10`,
       [entityType]
     );
 
     const commonErrors = errorsResult.rows.map(row => ({
-      rule: row.rule_name,
+      rule: row.rule_name || 'unknown',
       count: parseInt(row.error_count)
     }));
 
@@ -257,9 +260,9 @@ async function calculateConsistency(entityType: 'deal' | 'vendor' | 'contact' = 
     const clusterCount = parseInt(duplicatesResult.rows[0].cluster_count) || 0;
     const totalDuplicates = parseInt(duplicatesResult.rows[0].total_duplicates) || 0;
 
-    // Count entities with inconsistent fields
+    // Count entities with inconsistent fields (from merge conflicts)
     const inconsistentResult = await query(
-      `SELECT COUNT(DISTINCT entity_id) as inconsistent_count
+      `SELECT COUNT(DISTINCT mh.target_entity_id) as inconsistent_count
        FROM field_conflicts fc
        JOIN merge_history mh ON fc.merge_history_id = mh.id
        WHERE mh.entity_type = $1 AND fc.manual_override = false`,
@@ -533,27 +536,34 @@ export async function identifyQualityIssues(
 
     // 3. Validation failures (MEDIUM)
     const validationResult = await query(
-      `SELECT DISTINCT ee.entity_id, ee.raw_value, vf.rule_name, vf.failure_reason
-       FROM extracted_entities ee
-       JOIN validation_failures vf ON ee.extraction_log_id = vf.extraction_log_id
-       WHERE ee.entity_type = $1
-         AND ee.validation_status = 'failed'
+      `SELECT DISTINCT
+         id as entity_id,
+         raw_text as raw_value,
+         validation_failures
+       FROM extracted_entities
+       WHERE entity_type = $1
+         AND validation_status = 'failed'
+         AND jsonb_array_length(validation_failures) > 0
        LIMIT $2`,
       [entityType, Math.floor(limit / 5)]
     );
 
     validationResult.rows.forEach(row => {
-      issues.push({
-        id: row.entity_id,
-        issueType: 'validation_failure',
-        severity: 'medium',
-        entityId: row.entity_id,
-        entityType,
-        description: `Validation rule failed: ${row.rule_name}`,
-        affectedField: row.rule_name,
-        suggestedFix: row.failure_reason || 'Review validation rules',
-        detectedAt: new Date(),
-        priority: 3
+      // Parse validation failures from JSONB
+      const failures = row.validation_failures || [];
+      failures.forEach((failure: any) => {
+        issues.push({
+          id: row.entity_id,
+          issueType: 'validation_failure',
+          severity: 'medium',
+          entityId: row.entity_id,
+          entityType,
+          description: `Validation rule failed: ${failure.rule || 'unknown'}`,
+          affectedField: failure.field || failure.rule || 'unknown',
+          suggestedFix: failure.message || 'Review validation rules',
+          detectedAt: new Date(),
+          priority: 3
+        });
       });
     });
 
