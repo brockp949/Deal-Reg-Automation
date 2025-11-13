@@ -197,7 +197,7 @@ describe('TextNormalizer', () => {
 
   describe('normalizeQuotes', () => {
     it('should convert smart quotes to straight quotes', () => {
-      const text = '"Smart quotes" and 'single smart quotes'';
+      const text = '\u201CSmart quotes\u201D and \u2018single smart quotes\u2019';
       const normalized = normalizer.normalizeQuotes(text);
 
       expect(normalized).toBe('"Smart quotes" and \'single smart quotes\'');
