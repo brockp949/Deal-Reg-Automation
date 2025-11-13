@@ -16,12 +16,12 @@
 ✅ **Database**: HEALTHY (14 migrations applied)
 ✅ **Backend API**: RUNNING (port 4000)
 ✅ **Test Data**: 8 deals, 3 vendors inserted
-⚠️ **API Tests**: 10/15 smoke tests passing (67%)
-⚠️ **Quality Endpoints**: 5 endpoints failing due to schema mismatch
+✅ **API Tests**: 15/15 smoke tests passing (100%)
+✅ **Quality Endpoints**: All endpoints working after schema fix
 
-### Overall Status: **PARTIAL SUCCESS**
+### Overall Status: **SUCCESS**
 
-Phase 6 duplicate detection, merge management, and correlation endpoints are working correctly. Quality metrics endpoints have a schema compatibility issue that needs to be fixed.
+Phase 6 duplicate detection, merge management, correlation, and quality metrics endpoints are all working correctly. Initial schema compatibility issues were identified and fixed.
 
 ---
 
@@ -122,7 +122,7 @@ Phase 6 duplicate detection, merge management, and correlation endpoints are wor
 
 ## API Testing Results
 
-### Smoke Test Results: 10/15 PASSING (67%)
+### Initial Smoke Test Results: 10/15 PASSING (67%)
 
 ```
 ================================
@@ -477,16 +477,16 @@ AND jsonb_array_length(ee.validation_failures) > 0
 
 ### Immediate Actions (Priority 1)
 
-1. **Fix Quality Metrics Schema Issue** ⚠️
-   - Update `qualityMetrics.ts` to work with actual schema
-   - Modify queries to use `validation_failures` JSONB column instead of separate table
-   - Test all 5 quality endpoints after fix
-   - **Estimated Time**: 2-3 hours
+1. **Fix Quality Metrics Schema Issue** ✅ **COMPLETED**
+   - ✅ Updated `qualityMetrics.ts` to work with actual schema
+   - ✅ Modified queries to use `validation_failures` JSONB column instead of separate table
+   - ✅ Tested all 5 quality endpoints after fix - all passing
+   - **Time Taken**: ~2 hours
 
-2. **Rerun Smoke Test** ⚠️
-   - After fix, rerun all 15 endpoints
-   - Verify 15/15 passing
-   - **Estimated Time**: 15 minutes
+2. **Rerun Smoke Test** ✅ **COMPLETED**
+   - ✅ Reran all 15 endpoints after fix
+   - ✅ Verified 15/15 passing (100%)
+   - **Time Taken**: 10 minutes
 
 ### Short-Term Actions (Priority 2)
 
@@ -525,25 +525,163 @@ AND jsonb_array_length(ee.validation_failures) > 0
 
 ---
 
+## Schema Fix and Retest Results
+
+### Issue Identified
+
+After initial testing showed 10/15 endpoints passing, analysis of backend error logs revealed schema compatibility issues in `qualityMetrics.ts`:
+
+**Error 1**: `column ee.extraction_log_id does not exist`
+- **Root Cause**: Code attempted to JOIN `validation_failures` as a separate table using non-existent `extraction_log_id` column
+- **Actual Schema**: `validation_failures` is a JSONB column in `extracted_entities` table
+
+**Error 2**: `column "entity_id" does not exist` in field_conflicts
+- **Root Cause**: Code referenced non-existent `entity_id` column in `field_conflicts` table
+- **Actual Schema**: Must JOIN to `merge_history.target_entity_id`
+
+### Fix Applied
+
+**File Modified**: `backend/src/services/qualityMetrics.ts`
+
+**Fix 1 - calculateAccuracy() function (lines 199-217)**:
+```typescript
+// Changed from JOIN to JSONB operations
+const errorsResult = await query(
+  `SELECT
+     jsonb_array_elements(validation_failures)->>'rule' as rule_name,
+     COUNT(*) as error_count
+   FROM extracted_entities
+   WHERE entity_type = $1
+     AND validation_status = 'failed'
+     AND jsonb_array_length(validation_failures) > 0
+   GROUP BY jsonb_array_elements(validation_failures)->>'rule'
+   ORDER BY error_count DESC
+   LIMIT 10`,
+  [entityType]
+);
+```
+
+**Fix 2 - identifyQualityIssues() function (lines 537-568)**:
+```typescript
+// Query JSONB column directly and parse in application code
+const validationResult = await query(
+  `SELECT DISTINCT
+     id as entity_id,
+     raw_text as raw_value,
+     validation_failures
+   FROM extracted_entities
+   WHERE entity_type = $1
+     AND validation_status = 'failed'
+     AND jsonb_array_length(validation_failures) > 0
+   LIMIT $2`,
+  [entityType, Math.floor(limit / 5)]
+);
+```
+
+**Fix 3 - calculateConsistency() function (lines 263-270)**:
+```typescript
+// Use correct JOIN column
+const inconsistentResult = await query(
+  `SELECT COUNT(DISTINCT mh.target_entity_id) as inconsistent_count
+   FROM field_conflicts fc
+   JOIN merge_history mh ON fc.merge_history_id = mh.id
+   WHERE mh.entity_type = $1 AND fc.manual_override = false`,
+  [entityType]
+);
+```
+
+### Retest Results: 15/15 PASSING (100%)
+
+After applying the fix and restarting the backend:
+
+```
+================================
+Phase 6 Smoke Test - 15 Key Endpoints
+================================
+
+1. Testing Duplicate statistics... ✓ PASS (HTTP 200)
+2. Testing Duplicate detection config... ✓ PASS (HTTP 200)
+3. Testing List duplicate clusters... ✓ PASS (HTTP 200)
+4. Testing High confidence duplicates... ✓ PASS (HTTP 200)
+5. Testing Merge strategies... ✓ PASS (HTTP 200)
+6. Testing Merge statistics... ✓ PASS (HTTP 200)
+7. Testing Merge history... ✓ PASS (HTTP 200)
+8. Testing Quality score... ✓ PASS (HTTP 200)
+9. Testing Quality trends... ✓ PASS (HTTP 200)
+10. Testing Quality issues... ✓ PASS (HTTP 200)
+11. Testing Quality report... ✓ PASS (HTTP 200)
+12. Testing Quality dashboard... ✓ PASS (HTTP 200)
+13. Testing Correlation statistics... ✓ PASS (HTTP 200)
+14. Testing Multi-source entities... ✓ PASS (HTTP 200)
+15. Testing Duplicate summary... ✓ PASS (HTTP 200)
+
+================================
+Test Results Summary
+================================
+Passed: 15/15
+Failed: 0/15
+
+✓ ALL TESTS PASSED!
+```
+
+**Sample Quality Response**:
+```json
+{
+  "success": true,
+  "entityType": "deal",
+  "qualityScore": {
+    "overall": 90.57,
+    "completeness": 62.5,
+    "accuracy": 100,
+    "consistency": 100,
+    "timeliness": 99.62,
+    "uniqueness": 100
+  },
+  "breakdown": {
+    "completeness": {
+      "score": 62.5,
+      "totalFields": 8,
+      "filledFields": 5
+    },
+    "accuracy": {
+      "score": 100,
+      "totalEntities": 8,
+      "validEntities": 8,
+      "commonErrors": []
+    }
+  }
+}
+```
+
+### Commits
+
+- **873976b**: "fix: resolve quality metrics schema compatibility issues"
+  - Fixed 3 SQL queries to match actual database schema
+  - All quality endpoints now operational
+  - 15/15 smoke tests passing
+
+---
+
 ## Conclusion
 
 ### Summary
 
-Phase 6 API testing was **partially successful**:
+Phase 6 API testing was **fully successful**:
 
 ✅ **Infrastructure**: Fully operational (PostgreSQL, Redis, Backend)
 ✅ **Database**: All 14 migrations applied successfully
 ✅ **Core Functionality**: Duplicate detection, merge, and correlation working
-⚠️ **Quality Metrics**: 5 endpoints failing due to fixable schema mismatch
-📋 **Coverage**: 15/44 endpoints tested (34%)
+✅ **Quality Metrics**: All 5 endpoints working after schema fix
+✅ **Smoke Tests**: 15/15 endpoints passing (100%)
+📋 **Coverage**: 15/44 endpoints tested (34% - smoke test coverage)
 
 ### Key Findings
 
 1. **Phase 6 migration (014) applied successfully** - All Phase 6 tables, indexes, and views created
-2. **10 out of 15 smoke test endpoints working** - 67% success rate
+2. **All 15 smoke test endpoints working** - 100% success rate after fixes
 3. **Duplicate detection logic is sound** - Correctly returns results based on configuration
 4. **Merge strategies properly configured** - All 5 strategies and 6 conflict resolution methods available
-5. **Quality metrics have schema compatibility issue** - Requires code fix, not database migration
+5. **Quality metrics schema issues resolved** - Fixed JSONB column handling in 3 functions
 
 ### Next Steps
 
@@ -565,9 +703,10 @@ Phase 6 API testing was **partially successful**:
 
 ### Approval Status
 
-**Phase 6 Core Features**: ✅ **APPROVED** for continued development
-**Quality Metrics**: ⚠️ **CONDITIONAL** - approved pending schema fix
-**Production Readiness**: ⚠️ **NOT READY** - requires fixes and full testing
+**Phase 6 Core Features**: ✅ **APPROVED** - all core features working
+**Quality Metrics**: ✅ **APPROVED** - schema fixes applied, all endpoints operational
+**Smoke Test Status**: ✅ **PASSING** - 15/15 endpoints (100%)
+**Production Readiness**: ⚠️ **NOT READY** - requires comprehensive testing of remaining 29 endpoints
 
 ---
 
