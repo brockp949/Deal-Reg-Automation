@@ -23,6 +23,7 @@ import aiExtractionRoutes from './routes/aiExtraction';
 import vendorMatchingRoutes from './routes/vendorMatching';
 import duplicateDetectionRoutes from './routes/duplicateDetection';
 import mergeManagementRoutes from './routes/mergeManagement';
+import correlationAndQualityRoutes from './routes/correlationAndQuality';
 
 const app = express();
 
@@ -74,6 +75,8 @@ app.use(`${config.apiPrefix}/ai`, aiExtractionRoutes);
 app.use(`${config.apiPrefix}/vendor-matching`, vendorMatchingRoutes);
 app.use(`${config.apiPrefix}/duplicates`, duplicateDetectionRoutes);
 app.use(`${config.apiPrefix}/merge`, mergeManagementRoutes);
+app.use(`${config.apiPrefix}/correlation`, correlationAndQualityRoutes);
+app.use(`${config.apiPrefix}/quality`, correlationAndQualityRoutes);
 
 // 404 handler
 app.use((req: Request, res: Response) => {
