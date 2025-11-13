@@ -208,9 +208,217 @@ data/
 - Deliverables: ingest module, chunk index, stream iterator, large-fixture tests.
 
 **Phase 2: Email Parsing & Thread Reconstruction**
-- Parse From/To/Cc, Date, Subject, Message-ID, References, In-Reply-To; capture multipart/attachments metadata.
-- Prefer plain text; convert HTML to text when needed.
-- Group threads by X-GM-THRID when present; else fallback to In-Reply-To/References/subject matching.
+
+*Objective:* Extract structured metadata from emails, handle multipart content, and reconstruct conversation threads for context-aware processing.
+
+*Implementation Details:*
+
+1. **Email Parser (`EmailParser.ts`)**
+   - Class: `EmailParser`
+   - Methods:
+     - `parse(message: ParsedMail)` → returns `ParsedEmailMetadata`
+     - `extractHeaders(message: ParsedMail)` → returns header object
+     - `extractAddresses(addressObj: AddressObject)` → returns normalized addresses
+     - `extractAttachmentMetadata(message: ParsedMail)` → returns attachment info
+   - Header Extraction:
+     - From, To, Cc, Bcc (normalized email addresses with names)
+     - Date (parsed to ISO8601)
+     - Subject (decoded, normalized)
+     - Message-ID (unique identifier)
+     - References (array of parent message IDs)
+     - In-Reply-To (immediate parent message ID)
+     - X-GM-THRID (Gmail thread ID when available)
+   - Metadata Schema:
+     ```typescript
+     interface ParsedEmailMetadata {
+       message_id: string;
+       from: EmailAddress;
+       to: EmailAddress[];
+       cc: EmailAddress[];
+       bcc: EmailAddress[];
+       subject: string;
+       date: Date;
+       references: string[];
+       in_reply_to: string | null;
+       gmail_thread_id: string | null;
+       body_text: string | null;
+       body_html: string | null;
+       attachments: AttachmentMetadata[];
+       headers: Record<string, string | string[]>;
+     }
+
+     interface EmailAddress {
+       email: string;
+       name?: string;
+     }
+
+     interface AttachmentMetadata {
+       filename: string;
+       content_type: string;
+       size_bytes: number;
+       content_id?: string;
+       is_inline: boolean;
+     }
+     ```
+   - Acceptance Criteria:
+     - ✓ Parses all standard RFC 5322 headers
+     - ✓ Handles missing/malformed headers gracefully
+     - ✓ Extracts attachments metadata without loading content
+     - ✓ Normalizes addresses (lowercase email, preserve name)
+     - ✓ Handles encoded subjects (UTF-8, ISO-8859-1, etc.)
+
+2. **Thread Builder (`ThreadBuilder.ts`)**
+   - Class: `ThreadBuilder`
+   - Methods:
+     - `addMessage(metadata: ParsedEmailMetadata)` → void
+     - `buildThreads()` → returns `EmailThread[]`
+     - `findThreadForMessage(metadata: ParsedEmailMetadata)` → returns thread ID
+   - Threading Algorithm:
+     ```
+     1. Primary: Use X-GM-THRID if present (Gmail native threading)
+     2. Fallback: Use In-Reply-To/References (RFC 5256 standard)
+     3. Last resort: Subject normalization + date proximity
+        - Normalize: remove Re:/Fwd:/etc, trim whitespace
+        - Group messages with same normalized subject within 7 days
+     ```
+   - Thread Schema:
+     ```typescript
+     interface EmailThread {
+       thread_id: string; // Gmail thread ID or generated UUID
+       messages: ParsedEmailMetadata[];
+       root_message: ParsedEmailMetadata; // First message in thread
+       participants: EmailAddress[]; // Unique participants
+       subject: string; // Thread subject (from root)
+       date_start: Date;
+       date_end: Date;
+       message_count: number;
+     }
+     ```
+   - Edge Cases:
+     - Missing References header → use In-Reply-To only
+     - Missing both → subject matching with date proximity
+     - Branched threads → follow In-Reply-To chain
+     - Out-of-order messages → sort by date after grouping
+   - Acceptance Criteria:
+     - ✓ >98% correct threading on test set (using Gmail thread IDs as ground truth)
+     - ✓ Handles missing headers (degrades to subject matching)
+     - ✓ Resolves branched threads (multiple replies to same message)
+     - ✓ Performance: O(n log n) for n messages
+
+3. **Multipart Handler (`MultipartHandler.ts`)**
+   - Class: `MultipartHandler`
+   - Methods:
+     - `extractBestTextContent(message: ParsedMail)` → returns `{ text: string, source: 'plain' | 'html' }`
+     - `decodeContent(content: string, encoding: string)` → returns decoded string
+     - `extractAllTextParts(message: ParsedMail)` → returns text parts array
+   - Content Preference Order:
+     1. text/plain (preferred)
+     2. text/html → convert to plain text
+     3. multipart/alternative → prefer text/plain over text/html
+     4. multipart/mixed → extract all text parts
+   - Encoding Support:
+     - base64, quoted-printable, 7bit, 8bit, binary
+     - Character sets: UTF-8, ISO-8859-1, Windows-1252, etc.
+   - Acceptance Criteria:
+     - ✓ Correctly selects text/plain when available
+     - ✓ Falls back to HTML→text conversion
+     - ✓ Handles nested multipart structures
+     - ✓ Decodes all common encodings
+
+4. **HTML to Text Converter (`HtmlToTextConverter.ts`)**
+   - Class: `HtmlToTextConverter`
+   - Methods:
+     - `convert(html: string)` → returns plain text
+     - `stripHtmlTags(html: string)` → returns text without tags
+     - `preserveLinks(html: string)` → extracts links inline
+   - Conversion Strategy:
+     - Remove `<script>`, `<style>`, `<head>` entirely
+     - Convert `<br>`, `<p>`, `<div>` to newlines
+     - Convert `<a>` to text with URL: `[text](url)`
+     - Convert `<ul>/<ol>/<li>` to bullet points
+     - Strip all other HTML tags
+     - Decode HTML entities (&nbsp;, &amp;, etc.)
+     - Normalize whitespace (multiple spaces → single space)
+   - Libraries: Use `html2text` or `node-html-to-text`
+   - Acceptance Criteria:
+     - ✓ Preserves paragraph structure
+     - ✓ Converts links to readable format
+     - ✓ Removes all script/style content
+     - ✓ Handles malformed HTML gracefully
+
+5. **Integration Module (`index.ts`)**
+   - Combines all Phase 2 components
+   - Exports:
+     ```typescript
+     export { EmailParser, ParsedEmailMetadata, EmailAddress }
+     export { ThreadBuilder, EmailThread }
+     export { MultipartHandler }
+     export { HtmlToTextConverter }
+     ```
+
+*Configuration Example:*
+```typescript
+// config/parsing.ts
+export interface ParsingConfig {
+  parsing: {
+    prefer_plain_text: boolean;
+    preserve_html: boolean;
+    max_attachment_size_mb: number;
+  };
+  threading: {
+    use_gmail_thread_id: boolean;
+    subject_match_window_days: number;
+    normalize_subject: boolean;
+  };
+  html_conversion: {
+    preserve_links: boolean;
+    convert_lists: boolean;
+    max_line_length: number;
+  };
+}
+```
+
+*Testing Strategy:*
+- **Unit Tests:**
+  - EmailParser: all header types, missing headers, encoded subjects
+  - ThreadBuilder: single thread, branched thread, subject-only matching
+  - MultipartHandler: text/plain, text/html, multipart/alternative, nested
+  - HtmlToTextConverter: various HTML structures, malformed HTML
+- **Integration Tests:**
+  - Parse→Thread workflow on 100-message fixture
+  - Gmail thread ID accuracy vs fallback threading
+  - Performance test: 1000 messages in <5 seconds
+- **Edge Case Tests:**
+  - Missing Message-ID (generate synthetic ID)
+  - Duplicate Message-IDs (append counter)
+  - Circular References (detect and break loop)
+  - Date parsing errors (use current date as fallback)
+
+*File Structure:*
+```
+src/
+  parsing/
+    __init__.ts
+    EmailParser.ts
+    ThreadBuilder.ts
+    MultipartHandler.ts
+    HtmlToTextConverter.ts
+    index.ts
+tests/
+  parsing/
+    test_email_parser.ts
+    test_thread_builder.ts
+    test_multipart_handler.ts
+    test_html_converter.ts
+    fixtures/
+      single_thread.json
+      branched_thread.json
+      multipart_email.eml
+      html_email.eml
+config/
+  parsing.ts
+```
+
 - Deliverables: parser module, thread builder, tests for single/branched/missing-header cases.
 
 **Phase 3: Preprocessing & Content Cleaning**
