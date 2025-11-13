@@ -10,9 +10,201 @@ Intelligent Automated Deal Registration Email Processing System – Phased Imple
 - Set success metrics and confidence thresholds; document constraints and error-handling principles.
 
 **Phase 1: Ingestion & Large File Handling**
-- Segment MBOX by size (~500MB) or time window; split on message boundaries and track chunk metadata.
-- Stream messages (iterator-based) to avoid loading entire files; add file locks for safe concurrent access.
-- Gmail prefilter: read X-Gmail-Labels to prioritize Inbox/Sent/Important and de-emphasize spam/promotions.
+
+*Objective:* Handle 5–7GB MBOX files with constant memory usage, enable resumable processing, and prioritize high-value emails.
+
+*Implementation Details:*
+
+1. **MBOX Splitter (`mbox_splitter.py`)**
+   - Class: `MBOXSplitter`
+   - Methods:
+     - `split_mbox(file_path, chunk_size_mb=500, output_dir=None)` → returns chunk metadata
+     - `validate_split(original_path, chunk_paths)` → ensures byte-perfect reconstruction
+   - Algorithm:
+     - Read file in streaming mode using `mailbox.mbox()` with lazy loading
+     - Track message boundaries via `From ` separator detection
+     - Write chunks maintaining message atomicity (never split mid-message)
+     - Generate SHA256 hash per chunk for integrity
+   - Metadata Schema:
+     ```json
+     {
+       "original_file": "inbox.mbox",
+       "original_size_bytes": 7340032000,
+       "original_hash": "abc123...",
+       "chunks": [
+         {
+           "chunk_id": "inbox_chunk_001",
+           "path": "chunks/inbox_chunk_001.mbox",
+           "size_bytes": 524288000,
+           "message_count": 5432,
+           "date_range": {"start": "2023-01-01T00:00:00Z", "end": "2023-03-15T23:59:59Z"},
+           "hash": "def456...",
+           "labels": ["INBOX", "SENT", "IMPORTANT"]
+         }
+       ],
+       "split_timestamp": "2025-01-15T10:30:00Z"
+     }
+     ```
+   - Acceptance Criteria:
+     - ✓ Splits 7GB MBOX in <10 minutes
+     - ✓ Memory usage stays <500MB during split
+     - ✓ Concatenating chunks reproduces original file (validated by hash)
+     - ✓ No messages truncated or lost (message count verification)
+
+2. **Streaming Message Iterator (`message_iterator.py`)**
+   - Class: `MessageStreamIterator`
+   - Methods:
+     - `__init__(chunk_path, resume_position=0)`
+     - `__iter__()` and `__next__()` for iteration
+     - `get_position()` → returns current byte offset for resumability
+     - `skip_to_position(byte_offset)` → enables resume
+   - Features:
+     - Yields parsed `email.message.Message` objects one at a time
+     - Maintains file pointer position for crash recovery
+     - Uses buffer (4KB) for efficient I/O
+     - Handles malformed messages gracefully (log and skip)
+   - Memory Profile:
+     - Maximum memory per iterator: <50MB (buffered I/O + single message)
+     - Supports parallel processing via multiple iterator instances
+   - Acceptance Criteria:
+     - ✓ Processes 500MB chunk with <50MB RAM
+     - ✓ Resume from byte offset works across process restarts
+     - ✓ Handles corrupted messages without crashing
+
+3. **Gmail Label Prefilter (`label_filter.py`)**
+   - Class: `GmailLabelFilter`
+   - Methods:
+     - `extract_labels(message)` → parses X-Gmail-Labels header
+     - `calculate_priority(labels)` → returns priority score (0-100)
+     - `should_process(message, min_priority=30)` → boolean decision
+   - Priority Scoring:
+     ```python
+     HIGH_VALUE_LABELS = {
+         "SENT": 50,
+         "IMPORTANT": 40,
+         "INBOX": 30,
+         "STARRED": 25
+     }
+     LOW_VALUE_LABELS = {
+         "SPAM": -100,
+         "TRASH": -100,
+         "PROMOTIONS": -30,
+         "FORUMS": -20,
+         "SOCIAL": -15
+     }
+     ```
+   - Label Normalization: uppercase, strip spaces, handle multi-labels
+   - Acceptance Criteria:
+     - ✓ Correctly parses X-Gmail-Labels in 100% of test cases
+     - ✓ Filters out >80% of spam/promotional emails
+     - ✓ Retains 100% of SENT and IMPORTANT messages
+
+4. **Chunk Index & Metadata Tracker (`chunk_index.py`)**
+   - Class: `ChunkIndex`
+   - Storage: SQLite database (`chunk_index.db`)
+   - Schema:
+     ```sql
+     CREATE TABLE chunks (
+       chunk_id TEXT PRIMARY KEY,
+       original_file TEXT NOT NULL,
+       path TEXT NOT NULL,
+       size_bytes INTEGER,
+       message_count INTEGER,
+       date_start TEXT,
+       date_end TEXT,
+       hash TEXT,
+       status TEXT DEFAULT 'pending', -- pending|processing|completed|failed
+       created_at TEXT,
+       processed_at TEXT
+     );
+     CREATE TABLE processing_log (
+       id INTEGER PRIMARY KEY AUTOINCREMENT,
+       chunk_id TEXT,
+       message_offset INTEGER,
+       status TEXT,
+       error TEXT,
+       timestamp TEXT,
+       FOREIGN KEY (chunk_id) REFERENCES chunks(chunk_id)
+     );
+     ```
+   - Methods:
+     - `register_chunk(chunk_metadata)` → adds chunk to index
+     - `mark_processing(chunk_id, offset)` → updates status
+     - `mark_completed(chunk_id)` → finalizes chunk
+     - `get_next_chunk(priority='label_score')` → returns next chunk to process
+     - `get_resume_point(chunk_id)` → returns last processed offset
+   - Acceptance Criteria:
+     - ✓ Idempotent chunk registration
+     - ✓ Concurrent access safe (file locking)
+     - ✓ Resume processing from crash works 100%
+
+5. **File Locking & Concurrency (`file_locks.py`)**
+   - Use `fcntl.flock()` (Unix) or `msvcrt.locking()` (Windows)
+   - Lock files during read/write to prevent race conditions
+   - Timeout mechanism for stale locks (5 minutes)
+   - Acceptance Criteria:
+     - ✓ Multiple workers can't process same chunk simultaneously
+     - ✓ Stale locks auto-released after timeout
+
+*Configuration Example (`config/ingestion.yaml`):*
+```yaml
+ingestion:
+  chunk_size_mb: 500
+  chunk_output_dir: "./data/chunks"
+  max_parallel_workers: 4
+  resume_on_failure: true
+
+gmail_filter:
+  min_priority_score: 30
+  high_value_labels: ["SENT", "IMPORTANT", "INBOX", "STARRED"]
+  low_value_labels: ["SPAM", "TRASH", "PROMOTIONS"]
+
+performance:
+  buffer_size_kb: 4
+  max_memory_mb: 500
+  io_timeout_seconds: 30
+```
+
+*Testing Strategy:*
+- **Unit Tests:**
+  - Test MBOX splitting with 100KB, 10MB, 1GB fixtures
+  - Test iterator with various encodings (UTF-8, Latin-1, corrupted)
+  - Test label parsing with edge cases (missing headers, malformed labels)
+- **Integration Tests:**
+  - Split 5GB real MBOX and verify integrity
+  - Process chunk in parallel with 4 workers
+  - Simulate crash mid-processing and verify resume
+- **Performance Tests:**
+  - Benchmark split speed (target: >10MB/s)
+  - Memory profiling with valgrind/memory_profiler
+  - Concurrent access stress test (10 workers)
+
+*File Structure:*
+```
+src/
+  ingestion/
+    __init__.py
+    mbox_splitter.py
+    message_iterator.py
+    label_filter.py
+    chunk_index.py
+    file_locks.py
+tests/
+  ingestion/
+    test_splitter.py
+    test_iterator.py
+    test_label_filter.py
+    fixtures/
+      sample_100kb.mbox
+      sample_10mb.mbox
+      corrupted.mbox
+config/
+  ingestion.yaml
+data/
+  chunks/        # Generated chunks
+  chunk_index.db # SQLite index
+```
+
 - Deliverables: ingest module, chunk index, stream iterator, large-fixture tests.
 
 **Phase 2: Email Parsing & Thread Reconstruction**
