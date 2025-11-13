@@ -23,6 +23,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.27.3",
     "@types/better-sqlite3": "^7.6.13",
+    "@types/html-to-text": "^9.0.4",
     "bcryptjs": "^2.4.3",
     "better-sqlite3": "^12.4.1",
     "bull": "^4.12.0",
@@ -34,6 +35,7 @@
     "express-validator": "^7.0.1",
     "fuzzball": "^2.2.3",
     "helmet": "^7.1.0",
+    "html-to-text": "^9.0.5",
     "jsonwebtoken": "^9.0.2",
     "mailparser": "^3.7.1",
     "morgan": "^1.10.0",
