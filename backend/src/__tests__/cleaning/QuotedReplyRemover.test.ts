@@ -132,8 +132,8 @@ My second point.
     });
   });
 
-  describe('detectQuoteBlocks', () => {
-    it('should detect quote blocks with confidence scores', () => {
+  describe('detectQuoteMarkers', () => {
+    it('should detect line numbers with quote markers', () => {
       const text = `Original content.
 
 > Quoted line 1
@@ -141,23 +141,28 @@ My second point.
 
 More original content.`;
 
-      const blocks = remover.detectQuoteBlocks(text);
+      const quoteLines = remover.detectQuoteMarkers(text);
 
-      expect(blocks.length).toBeGreaterThan(0);
-      expect(blocks[0].start_line).toBeGreaterThan(0);
-      expect(blocks[0].confidence).toBeGreaterThan(0);
+      expect(quoteLines.length).toBeGreaterThan(0);
     });
 
-    it('should detect "On ... wrote:" blocks', () => {
+    it('should detect "On ... wrote:" pattern', () => {
       const text = `Reply here.
 
 On Jan 15, 2024, at 10:00 AM, user@example.com wrote:
 Quoted content.`;
 
-      const blocks = remover.detectQuoteBlocks(text);
+      const quoteLines = remover.detectQuoteMarkers(text);
 
-      expect(blocks.length).toBeGreaterThan(0);
-      expect(blocks[0].quote_type).toBe('on_wrote');
+      expect(quoteLines.length).toBeGreaterThan(0);
+    });
+
+    it('should return empty array for text without quotes', () => {
+      const text = 'No quotes here at all';
+
+      const quoteLines = remover.detectQuoteMarkers(text);
+
+      expect(quoteLines).toHaveLength(0);
     });
   });
 
@@ -178,54 +183,35 @@ Another original line.`;
     });
   });
 
-  describe('hasQuotedContent', () => {
-    it('should detect quoted content', () => {
-      const withQuotes = '> This has quotes';
-      const withoutQuotes = 'This has no quotes';
-
-      expect(remover.hasQuotedContent(withQuotes)).toBe(true);
-      expect(remover.hasQuotedContent(withoutQuotes)).toBe(false);
-    });
-
-    it('should detect "On ... wrote:" pattern', () => {
-      const text = 'On Jan 15, 2024, John wrote:\nQuoted text';
-
-      expect(remover.hasQuotedContent(text)).toBe(true);
-    });
-
-    it('should detect forwarded messages', () => {
-      const text = '---------- Forwarded message ---------';
-
-      expect(remover.hasQuotedContent(text)).toBe(true);
-    });
-  });
-
-  describe('getQuoteRatio', () => {
-    it('should calculate quote ratio correctly', () => {
+  describe('getQuoteStats', () => {
+    it('should calculate quote statistics correctly', () => {
       const text = `Original line 1
 Original line 2
 > Quoted line 1
 > Quoted line 2
 > Quoted line 3`;
 
-      const ratio = remover.getQuoteRatio(text);
+      const stats = remover.getQuoteStats(text);
 
-      expect(ratio).toBeGreaterThan(0);
-      expect(ratio).toBeLessThan(1);
-      // 3 quoted lines out of 5 total = 0.6
-      expect(ratio).toBeCloseTo(0.6, 1);
+      expect(stats.total_lines).toBe(5);
+      expect(stats.quote_lines).toBe(3);
+      expect(stats.quote_percentage).toBeCloseTo(60, 0);
     });
 
-    it('should return 0 for text with no quotes', () => {
+    it('should return 0% for text with no quotes', () => {
       const text = 'No quotes here\nJust plain text';
 
-      expect(remover.getQuoteRatio(text)).toBe(0);
+      const stats = remover.getQuoteStats(text);
+
+      expect(stats.quote_percentage).toBe(0);
     });
 
-    it('should return 1 for text that is all quotes', () => {
+    it('should return 100% for text that is all quotes', () => {
       const text = '> All quoted\n> Every line\n> Is quoted';
 
-      expect(remover.getQuoteRatio(text)).toBe(1);
+      const stats = remover.getQuoteStats(text);
+
+      expect(stats.quote_percentage).toBe(100);
     });
   });
 
