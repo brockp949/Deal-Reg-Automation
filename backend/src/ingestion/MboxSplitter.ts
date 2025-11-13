@@ -268,7 +268,7 @@ export class MboxSplitter {
 
       writeStream.end();
 
-      await new Promise((resolve) => writeStream.on('finish', resolve));
+      await new Promise<void>((resolve) => writeStream.on('finish', () => resolve()));
 
       const reconstructedHash = await this.calculateFileHash(
         tempReconstructedPath

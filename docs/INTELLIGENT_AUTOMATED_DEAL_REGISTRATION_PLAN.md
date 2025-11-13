@@ -422,9 +422,208 @@ config/
 - Deliverables: parser module, thread builder, tests for single/branched/missing-header cases.
 
 **Phase 3: Preprocessing & Content Cleaning**
-- Multipart selection and decoding (base64/quoted-printable); HTML→text stripping tags/styles/scripts.
-- Remove quoted replies and signatures/disclaimers; preserve signature subset separately for enrichment.
-- Normalize casing, Unicode/encodings, whitespace; produce clean text for deterministic matching/NLP.
+
+*Objective:* Clean and normalize email content by removing quoted replies, extracting signatures, and normalizing text for downstream NLP/extraction.
+
+*Implementation Details:*
+
+1. **Quoted Reply Remover (`QuotedReplyRemover.ts`)**
+   - Class: `QuotedReplyRemover`
+   - Methods:
+     - `removeQuotedReplies(text: string)` → returns cleaned text
+     - `detectQuoteMarkers(text: string)` → returns quote boundaries
+     - `extractOriginalContent(text: string)` → returns only new content
+   - Detection Patterns:
+     ```
+     - Lines starting with ">" or ">>"
+     - "On DATE, PERSON wrote:" patterns
+     - "From: ... Sent: ... To: ... Subject: ..." headers
+     - Indented blocks (common in replies)
+     - "--- Original Message ---" markers
+     - Gmail-style quoted text (hidden in HTML)
+     ```
+   - Algorithm:
+     1. Split text into lines
+     2. Detect quote markers (>, "On...wrote:", forwarded headers)
+     3. Remove quoted blocks while preserving original content
+     4. Clean up excessive newlines
+   - Acceptance Criteria:
+     - ✓ Removes >90% of quoted content on test set
+     - ✓ Preserves all original (non-quoted) content
+     - ✓ Handles nested quoting (multiple reply levels)
+     - ✓ Detects Gmail, Outlook, and RFC-style quoting
+
+2. **Signature Extractor (`SignatureExtractor.ts`)**
+   - Class: `SignatureExtractor`
+   - Methods:
+     - `extractSignature(text: string)` → returns `{ body: string, signature: SignatureData | null }`
+     - `parseSignature(sigText: string)` → returns structured data
+     - `detectSignatureBoundary(text: string)` → returns line number
+   - Signature Patterns:
+     ```
+     - "-- " (RFC 3676 sig delimiter)
+     - "Sent from my iPhone/Android"
+     - "Best regards," "Sincerely," "Thanks," patterns
+     - Contact info blocks (name, title, phone, email)
+     - Disclaimer text ("This email is confidential...")
+     ```
+   - Signature Schema:
+     ```typescript
+     interface SignatureData {
+       raw_text: string;
+       name?: string;
+       title?: string;
+       company?: string;
+       phone?: string;
+       email?: string;
+       disclaimer?: string;
+     }
+     ```
+   - Extraction Strategy:
+     - Look for signature delimiter ("-- ")
+     - If not found, scan last 5-10 lines for contact patterns
+     - Parse extracted signature for structured fields
+     - Separate disclaimer text from contact info
+   - Acceptance Criteria:
+     - ✓ Detects 85%+ of signatures on test set
+     - ✓ Extracts contact info (name, phone, email)
+     - ✓ Separates signature from body content
+     - ✓ Handles multi-line signatures
+
+3. **Text Normalizer (`TextNormalizer.ts`)**
+   - Class: `TextNormalizer`
+   - Methods:
+     - `normalize(text: string)` → returns normalized text
+     - `normalizeWhitespace(text: string)` → cleans whitespace
+     - `normalizeUnicode(text: string)` → handles encodings
+     - `normalizeCase(text: string, mode: 'lower' | 'title')` → case normalization
+   - Normalization Steps:
+     ```
+     1. Unicode normalization (NFC form)
+     2. Remove control characters
+     3. Collapse multiple spaces/tabs → single space
+     4. Collapse multiple newlines → max 2
+     5. Trim lines
+     6. Remove zero-width characters
+     7. Normalize quotes (" " → " ")
+     8. Normalize dashes (– — → -)
+     ```
+   - Special Handling:
+     - Preserve structure (don't collapse all newlines)
+     - Keep important punctuation
+     - Handle common UTF-8 mojibake
+     - Normalize smart quotes to ASCII
+   - Acceptance Criteria:
+     - ✓ Produces deterministic output
+     - ✓ Handles all common Unicode normalization cases
+     - ✓ Preserves paragraph structure
+     - ✓ Removes invisible characters
+
+4. **Content Cleaning Pipeline (`CleaningPipeline.ts`)**
+   - Class: `CleaningPipeline`
+   - Methods:
+     - `clean(text: string, options?: CleaningOptions)` → returns `CleanedContent`
+     - `addCleaner(cleaner: ContentCleaner)` → adds custom cleaner
+     - `removeCleaner(name: string)` → removes cleaner
+   - Pipeline Stages:
+     ```
+     1. Remove quoted replies → original content only
+     2. Extract signature → body + signature data
+     3. Normalize text → clean, consistent format
+     4. (Optional) Remove disclaimers
+     5. (Optional) Remove URLs/emails for privacy
+     ```
+   - Output Schema:
+     ```typescript
+     interface CleanedContent {
+       original_text: string;
+       cleaned_text: string;
+       signature?: SignatureData;
+       removed_quotes: string[];
+       normalization_applied: string[];
+       char_count_before: number;
+       char_count_after: number;
+     }
+     ```
+   - Configurable Options:
+     ```typescript
+     interface CleaningOptions {
+       remove_quotes: boolean;
+       extract_signature: boolean;
+       normalize_text: boolean;
+       remove_disclaimers: boolean;
+       preserve_urls: boolean;
+       preserve_emails: boolean;
+     }
+     ```
+   - Acceptance Criteria:
+     - ✓ Modular pipeline (add/remove cleaners)
+     - ✓ Configurable cleaning stages
+     - ✓ Tracks what was removed/changed
+     - ✓ Preserves original for comparison
+
+*Configuration Example (`config/cleaning.ts`):*
+```typescript
+export interface CleaningConfig {
+  quotes: {
+    remove_quoted_replies: boolean;
+    quote_markers: string[]; // ['>', 'On...wrote:', etc.]
+    max_quote_depth: number;
+  };
+  signatures: {
+    extract_signatures: boolean;
+    parse_contact_info: boolean;
+    signature_markers: string[]; // ['--', 'Sent from', etc.]
+    max_signature_lines: number;
+  };
+  normalization: {
+    normalize_unicode: boolean;
+    normalize_whitespace: boolean;
+    collapse_newlines: boolean;
+    max_consecutive_newlines: number;
+  };
+}
+```
+
+*Testing Strategy:*
+- **Unit Tests:**
+  - QuotedReplyRemover: various quote styles, nested quotes, no quotes
+  - SignatureExtractor: RFC delimiter, contact blocks, disclaimers
+  - TextNormalizer: Unicode, whitespace, special chars
+  - CleaningPipeline: full pipeline, selective stages, custom cleaners
+- **Integration Tests:**
+  - Real email samples with quotes/signatures
+  - Edge cases: signature-only emails, no signature, multiple sigs
+  - Performance: 1000 emails in <5 seconds
+- **Comparison Tests:**
+  - Before/after cleaning comparison
+  - Verify no content loss (only remove quotes/sigs)
+
+*File Structure:*
+```
+src/
+  cleaning/
+    __init__.ts
+    QuotedReplyRemover.ts
+    SignatureExtractor.ts
+    TextNormalizer.ts
+    CleaningPipeline.ts
+    types.ts
+    index.ts
+tests/
+  cleaning/
+    test_quoted_reply_remover.ts
+    test_signature_extractor.ts
+    test_text_normalizer.ts
+    test_cleaning_pipeline.ts
+    fixtures/
+      email_with_quotes.txt
+      email_with_signature.txt
+      email_with_unicode.txt
+config/
+  cleaning.ts
+```
+
 - Deliverables: clean pipeline, configurable cleaners, noisy-email tests.
 
 **Phase 4: High-Speed Triage (Filter Likely Deal Emails)**
