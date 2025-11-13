@@ -1,0 +1,107 @@
+From sender@example.com Mon, 15 Jan 2024 09:00:00 GMT
+From: partner-portal@vendor.com
+To: sales@company.com
+Subject: Deal Registration Confirmed - Acme Corp
+Date: Mon, 15 Jan 2024 09:00:00 GMT
+Message-ID: <deal-reg-001@vendor.com>
+X-Gmail-Labels: SENT,IMPORTANT
+Content-Type: text/plain; charset=UTF-8
+
+Dear Partner,
+
+Your deal registration has been confirmed.
+
+Deal Details:
+- Customer: Acme Corporation
+- Opportunity: Cloud Migration Project
+- Estimated Value: USD 250,000
+- Registration ID: DR-2024-001234
+- Partner: TechSolutions Inc.
+
+This registration is valid for 90 days.
+
+Best regards,
+Vendor Partner Team
+
+
+From sender@example.com Tue, 16 Jan 2024 14:30:00 GMT
+From: procurement@acmecorp.com
+To: sales@company.com
+Subject: RFP: Cloud Infrastructure Modernization
+Date: Tue, 16 Jan 2024 14:30:00 GMT
+Message-ID: <rfp-001@acmecorp.com>
+X-Gmail-Labels: INBOX,IMPORTANT
+Content-Type: text/plain; charset=UTF-8
+
+Hello,
+
+We are issuing an RFP for our cloud infrastructure modernization project.
+
+Project Details:
+- Budget: $200,000 - $300,000
+- Timeline: Q2 2024
+- RFP Number: RFP-2024-0567
+
+Please submit your proposal by February 15, 2024.
+
+Contact: Jane Smith (jane.smith@acmecorp.com)
+
+Regards,
+Acme Corp Procurement
+
+
+From sender@example.com Wed, 17 Jan 2024 08:00:00 GMT
+From: marketing@promotions.com
+To: sales@company.com
+Subject: Amazing Deals! Buy Now!
+Date: Wed, 17 Jan 2024 08:00:00 GMT
+Message-ID: <spam-001@promotions.com>
+X-Gmail-Labels: CATEGORY_PROMOTIONS,SPAM
+Content-Type: text/plain; charset=UTF-8
+
+Get 50% off on all products!
+
+Limited time offer. Click here to shop now!
+
+
+From sender@example.com Sat, 20 Jan 2024 16:45:00 GMT
+From: legal@globaltech.com
+To: sales@company.com
+Subject: Contract Executed - GlobalTech Partnership
+Date: Sat, 20 Jan 2024 16:45:00 GMT
+Message-ID: <contract-001@globaltech.com>
+X-Gmail-Labels: SENT,IMPORTANT,STARRED
+Content-Type: text/plain; charset=UTF-8
+
+The partnership agreement has been signed.
+
+Contract Details:
+- Contract Number: CT-2024-789
+- Customer: GlobalTech Solutions
+- Contract Value: $500,000
+- Term: 3 years
+- Effective Date: January 20, 2024
+
+All parties have signed. Countersigned copy attached.
+
+Best regards,
+GlobalTech Legal Team
+
+
+From sender@example.com Thu, 25 Jan 2024 11:00:00 GMT
+From: jane.smith@acmecorp.com
+To: sales@company.com
+Subject: Re: RFP: Cloud Infrastructure Modernization
+Date: Thu, 25 Jan 2024 11:00:00 GMT
+Message-ID: <rfp-followup-001@acmecorp.com>
+X-Gmail-Labels: INBOX
+Content-Type: text/plain; charset=UTF-8
+
+Hi,
+
+Just following up on the RFP we sent last week. Do you have any questions?
+
+The deadline is approaching soon.
+
+Thanks,
+Jane

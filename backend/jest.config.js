@@ -15,4 +15,5 @@ module.exports = {
   verbose: true,
   coverageDirectory: 'coverage',
   testTimeout: 10000,
+  setupFilesAfterEnv: ['<rootDir>/src/__tests__/setup.ts'],
 };
