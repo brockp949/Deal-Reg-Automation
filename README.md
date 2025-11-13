@@ -41,6 +41,8 @@ deal-reg-automation/
 └── README.md
 ```
 
+- See docs/PHASES_1-7_COMBINED.md for the consolidated Phase 1–7 documentation (combined from all phase files).
+
 ## Getting Started
 
 ### Prerequisites
@@ -133,4 +135,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details
+
+
 
