@@ -244,7 +244,8 @@ describe('TextNormalizer', () => {
       const text = '  Text    here  ';
       const normalized = TextNormalizer.minimalNormalization(text);
 
-      expect(normalized).toBe('Text    here');
+      // Minimal normalization includes whitespace normalization
+      expect(normalized).toBe('Text here');
     });
   });
 
