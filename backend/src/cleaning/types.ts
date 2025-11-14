@@ -15,21 +15,22 @@ export interface SignatureData {
 
 export interface CleanedContent {
   original_text: string;
-  cleaned_text: string;
+  cleaned_body: string;
   signature?: SignatureData;
-  removed_quotes: string[];
-  normalization_applied: string[];
-  char_count_before: number;
-  char_count_after: number;
+  had_quoted_replies: boolean;
+  had_signature: boolean;
+  original_length: number;
+  cleaned_length: number;
+  processing_time_ms: number;
+  has_minimum_content: boolean;
 }
 
 export interface CleaningOptions {
-  remove_quotes: boolean;
-  extract_signature: boolean;
-  normalize_text: boolean;
-  remove_disclaimers: boolean;
-  preserve_urls: boolean;
-  preserve_emails: boolean;
+  remove_quoted_replies?: boolean;
+  extract_signatures?: boolean;
+  normalize_text?: boolean;
+  preserve_structure?: boolean;
+  min_content_length?: number;
 }
 
 export interface QuoteBlock {
