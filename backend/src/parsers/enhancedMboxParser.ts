@@ -13,7 +13,20 @@
 import { simpleParser, ParsedMail, AddressObject } from 'mailparser';
 import { readFileSync } from 'fs';
 import logger from '../utils/logger';
-import { cleanEmailText } from '../services/emailCleanerService';
+import { CleaningPipeline } from '../cleaning/CleaningPipeline';
+
+// ============================================================================
+// EMAIL CLEANING PIPELINE
+// ============================================================================
+
+// Initialize the Phase 3 CleaningPipeline with default options
+const cleaningPipeline = new CleaningPipeline({
+  remove_quoted_replies: true,
+  extract_signatures: true,
+  normalize_text: true,
+  preserve_structure: true,
+  min_content_length: 10, // Minimum 10 characters for valid content
+});
 
 // ============================================================================
 // TIERED KEYWORD LEXICON
@@ -327,7 +340,7 @@ function normalizeText(text: string): string {
 
 /**
  * Complete pre-processing pipeline
- * Now uses the centralized emailCleanerService for comprehensive noise removal
+ * Now uses the Phase 3 CleaningPipeline for comprehensive noise removal
  */
 export function preprocessEmail(text: string, isHtml: boolean = false): string {
   let cleaned = text;
@@ -336,25 +349,21 @@ export function preprocessEmail(text: string, isHtml: boolean = false): string {
     cleaned = stripHtml(cleaned);
   }
 
-  // Use new email cleaner service for comprehensive cleaning
-  const cleaningResult = cleanEmailText(cleaned, {
-    removeSignatures: true,
-    removeDisclaimers: true,
-    removeQuotedText: true,
-    removeForwardedHeaders: true,
-    removeAutoReplyMessages: true,
-    preserveMinLines: 3,
-  });
+  // Use Phase 3 CleaningPipeline for comprehensive cleaning
+  const cleaningResult = cleaningPipeline.clean(cleaned);
 
   logger.debug('Email cleaning complete', {
-    originalLines: cleaningResult.linesRemoved + cleaningResult.linesKept,
-    linesKept: cleaningResult.linesKept,
-    linesRemoved: cleaningResult.linesRemoved,
-    confidence: cleaningResult.confidence,
-    sectionsRemoved: cleaningResult.removedSections.length,
+    originalLength: cleaningResult.original_length,
+    cleanedLength: cleaningResult.cleaned_length,
+    bytesRemoved: cleaningResult.original_length - cleaningResult.cleaned_length,
+    reductionPercent: Math.round((1 - cleaningResult.cleaned_length / cleaningResult.original_length) * 100),
+    hadQuotedReplies: cleaningResult.had_quoted_replies,
+    hadSignature: cleaningResult.had_signature,
+    hasMinimumContent: cleaningResult.has_minimum_content,
+    processingTimeMs: cleaningResult.processing_time_ms,
   });
 
-  return cleaningResult.cleanedText;
+  return cleaningResult.cleaned_body;
 }
 
 // ============================================================================
