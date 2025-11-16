@@ -16,9 +16,12 @@ import {
   NormalizedDeal,
   NormalizedContact,
   ParsingErrorSeverity,
+  RfqSignals,
 } from '../types/parsing';
 import { stat } from 'fs/promises';
 import logger from '../utils/logger';
+import { loadSourceMetadata } from '../utils/sourceMetadata';
+import { analyzeOpportunitySignals, inferDealStage } from '../utils/opportunitySignals';
 
 export class StandardizedMboxParser extends BaseParser {
   constructor() {
@@ -57,6 +60,43 @@ export class StandardizedMboxParser extends BaseParser {
     // Create output skeleton
     const output = this.createOutputSkeleton(fileName, 'email', 'mbox', fileSize);
 
+    const sourceMetadata = await loadSourceMetadata(filePath);
+    if (sourceMetadata) {
+      output.metadata.sourceMetadata = sourceMetadata;
+      const metadataTags: string[] = [];
+
+      if (sourceMetadata.queryName) {
+        metadataTags.push(`query:${sourceMetadata.queryName}`);
+      }
+
+      if (sourceMetadata.connector === 'gmail') {
+        const subject =
+          sourceMetadata.message.headers?.subject ||
+          sourceMetadata.message.headers?.['subject'];
+        if (subject) {
+          metadataTags.push(`subject:${subject}`);
+        }
+        if (sourceMetadata.message.threadId) {
+          metadataTags.push(`thread:${sourceMetadata.message.threadId}`);
+        }
+        if (sourceMetadata.message.historyId) {
+          metadataTags.push(`history:${sourceMetadata.message.historyId}`);
+        }
+        sourceMetadata.message.labels?.forEach((label) =>
+          metadataTags.push(`label:${label.toLowerCase()}`)
+        );
+        sourceMetadata.message.labelIds?.forEach((labelId) =>
+          metadataTags.push(`label-id:${labelId}`)
+        );
+      }
+
+      output.metadata.sourceTags = Array.from(
+        new Set(
+          metadataTags.filter((tag) => Boolean(tag && tag.trim())).map((tag) => tag.trim())
+        )
+      );
+    }
+
     try {
       logger.info('Starting MBOX parsing', { fileName, fileSize });
 
@@ -66,6 +106,7 @@ export class StandardizedMboxParser extends BaseParser {
         confidenceThreshold: options?.confidenceThreshold || 0.15,
       });
 
+      // Load metadata if available
       // Convert extracted deals to standardized format
       const vendorMap = new Map<string, NormalizedVendor>();
       const vendors: NormalizedVendor[] = [];
@@ -74,6 +115,22 @@ export class StandardizedMboxParser extends BaseParser {
 
       // Get existing vendors for matching (this would need to be passed in or fetched)
       // For now, we'll create new vendors from domains
+
+      const threadAnalysis = new Map<string, ReturnType<typeof analyzeOpportunitySignals>>();
+      const messageToThreadId = new Map<string, string>();
+
+      for (const thread of enhancedResult.threads) {
+        const combinedText = thread.messages
+          .map((message) => `${message.subject || ''}\n${message.cleaned_body || ''}`)
+          .join('\n');
+        threadAnalysis.set(thread.thread_id, analyzeOpportunitySignals(combinedText));
+        thread.messages.forEach((message) => {
+          messageToThreadId.set(message.message_id, thread.thread_id);
+        });
+      }
+
+      const baseTags = new Set(output.metadata.sourceTags ?? []);
+      const aggregateTags = new Set(baseTags);
 
       // Process each extracted deal
       for (const deal of enhancedResult.extractedDeals) {
@@ -151,6 +208,48 @@ export class StandardizedMboxParser extends BaseParser {
           source_location: `Email from ${deal.source_email_from || 'unknown'}`,
         };
 
+        const dealTags = new Set(baseTags);
+        const threadId = messageToThreadId.get(deal.source_email_id);
+        const analysis = threadId ? threadAnalysis.get(threadId) : undefined;
+
+        if (analysis) {
+          const hasSignals =
+            analysis.rfqSignals.quantities.length > 0 ||
+            analysis.rfqSignals.priceTargets.length > 0 ||
+            analysis.rfqSignals.timelineRequests.length > 0 ||
+            analysis.rfqSignals.marginNotes.length > 0 ||
+            analysis.rfqSignals.actorMentions.length > 0;
+
+          if (hasSignals) {
+            const rfqSignals: RfqSignals = {
+              quantities: [...analysis.rfqSignals.quantities],
+              priceTargets: [...analysis.rfqSignals.priceTargets],
+              timelineRequests: [...analysis.rfqSignals.timelineRequests],
+              marginNotes: [...analysis.rfqSignals.marginNotes],
+              actorMentions: [...analysis.rfqSignals.actorMentions],
+            };
+            normalizedDeal.rfq_signals = rfqSignals;
+          }
+          if (analysis.stageHints.length > 0) {
+            normalizedDeal.stage_hints = [...analysis.stageHints];
+            analysis.stageHints.forEach((hint) => dealTags.add(`stage-hint:${hint}`));
+          }
+          if (analysis.opportunityTags.length > 0) {
+            analysis.opportunityTags.forEach((tag) => dealTags.add(`opportunity:${tag}`));
+          }
+          const inferredStage = inferDealStage(
+            analysis.stageHints,
+            output.metadata.sourceMetadata?.queryName,
+            deal.project_name || deal.deal_name
+          );
+          if (inferredStage && !normalizedDeal.deal_stage) {
+            normalizedDeal.deal_stage = inferredStage;
+          }
+        }
+
+        normalizedDeal.source_tags = Array.from(dealTags);
+        dealTags.forEach((tag) => aggregateTags.add(tag));
+
         deals.push(normalizedDeal);
 
         // Extract contact if decision maker info is present
@@ -185,8 +284,8 @@ export class StandardizedMboxParser extends BaseParser {
       if (options?.includeRawData) {
         output.rawData = {
           enhancedResult,
-          emailThreads: enhancedResult.emailThreads,
-          keywordMatches: enhancedResult.keywordMatches,
+          threads: enhancedResult.threads,
+          extractedDeals: enhancedResult.extractedDeals,
         };
       }
 
@@ -196,6 +295,7 @@ export class StandardizedMboxParser extends BaseParser {
       }
 
       // Finalize output (calculates stats, validates, etc.)
+      output.metadata.sourceTags = Array.from(aggregateTags);
       const finalOutput = this.finalizeOutput(output, startTime);
 
       // Log summary

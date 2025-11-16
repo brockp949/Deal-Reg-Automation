@@ -82,6 +82,20 @@ CREATE TABLE IF NOT EXISTS source_files (
   duplicate_of_id UUID REFERENCES source_files(id)
 );
 
+-- Ensure columns exist for legacy databases
+ALTER TABLE source_files
+  ADD COLUMN IF NOT EXISTS checksum_sha256 CHAR(64),
+  ADD COLUMN IF NOT EXISTS checksum_verified_at TIMESTAMP,
+  ADD COLUMN IF NOT EXISTS uploaded_by VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS upload_metadata JSONB DEFAULT '{}'::jsonb,
+  ADD COLUMN IF NOT EXISTS duplicate_of_id UUID,
+  ADD COLUMN IF NOT EXISTS scan_status VARCHAR(20) DEFAULT 'not_scanned',
+  ADD COLUMN IF NOT EXISTS scan_engine VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS scan_details JSONB DEFAULT '{}'::jsonb,
+  ADD COLUMN IF NOT EXISTS scan_completed_at TIMESTAMP,
+  ADD COLUMN IF NOT EXISTS quarantined_at TIMESTAMP,
+  ADD COLUMN IF NOT EXISTS quarantine_reason TEXT;
+
 CREATE INDEX IF NOT EXISTS idx_files_status ON source_files(processing_status);
 CREATE INDEX IF NOT EXISTS idx_files_upload_date ON source_files(upload_date);
 CREATE INDEX IF NOT EXISTS idx_files_checksum ON source_files(checksum_sha256);

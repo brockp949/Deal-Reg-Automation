@@ -1,0 +1,125 @@
+{
+  "$schema": "./opportunity-patterns-schema.json",
+  "version": "1.0.0",
+  "description": "Pattern configurations for opportunity signal detection",
+  "patterns": {
+    "opportunities": [
+      {
+        "tag": "clearled-pdu",
+        "keywords": ["clearled", "media player", "media-player", "pdu"],
+        "description": "ClearLED PDU and media player opportunities"
+      },
+      {
+        "tag": "marshalling-cabinet",
+        "keywords": ["marshalling", "cabinet", "antora"],
+        "description": "Marshalling cabinet opportunities"
+      },
+      {
+        "tag": "switchgear",
+        "keywords": ["switchgear", "switch-gear", "switch gear", "depcom"],
+        "description": "Switchgear opportunities"
+      },
+      {
+        "tag": "tdr-board",
+        "keywords": ["tdr", "time domain", "bnc"],
+        "description": "TDR board opportunities"
+      },
+      {
+        "tag": "buck-converter",
+        "keywords": ["buck converter"],
+        "description": "Buck converter opportunities"
+      },
+      {
+        "tag": "graphene-heater",
+        "keywords": ["graphene", "heater"],
+        "description": "Graphene heater opportunities"
+      },
+      {
+        "tag": "diamond-semiconductor",
+        "keywords": ["diamond fab", "diamond-based"],
+        "description": "Diamond semiconductor opportunities"
+      },
+      {
+        "tag": "monoto-sim-plan",
+        "keywords": ["monoto", "sim plan", "cellular"],
+        "description": "Monoto SIM plan opportunities"
+      },
+      {
+        "tag": "vendor-4iec",
+        "keywords": ["4iec"],
+        "description": "4IEC vendor opportunities"
+      }
+    ],
+    "actors": [
+      {
+        "label": "jeremy nocchi",
+        "keywords": ["jeremy nocchi", "jeremy", "nocchi"]
+      },
+      {
+        "label": "steven moore",
+        "keywords": ["steven moore", "steven", "s moore"]
+      },
+      {
+        "label": "vincent",
+        "keywords": ["vincent"]
+      },
+      {
+        "label": "dan long",
+        "keywords": ["dan long", "dan", "d long"]
+      },
+      {
+        "label": "antora",
+        "keywords": ["antora"]
+      },
+      {
+        "label": "clearled",
+        "keywords": ["clearled"]
+      }
+    ],
+    "stages": [
+      {
+        "hint": "rfq",
+        "keywords": ["rfq", "request for quote", "quote request", "pricing request"]
+      },
+      {
+        "hint": "quote",
+        "keywords": ["quote", "pricing needed", "price request"]
+      },
+      {
+        "hint": "po_in_progress",
+        "keywords": ["purchase order", "PO", "ordered", "cutting PO", "cutting POs"]
+      },
+      {
+        "hint": "research",
+        "keywords": ["prototype", "concept", "research", "lab", "materials lab"]
+      },
+      {
+        "hint": "integration",
+        "keywords": ["field trial", "rollout", "integration", "deploy"]
+      }
+    ]
+  },
+  "regexPatterns": {
+    "quantity": [
+      "\\b\\d{1,3}(?:,\\d{3})*(?:\\s*[-–]\\s*\\d{1,3}(?:,\\d{3})*)?\\s*(?:units|pcs|pieces|systems|cabinets|boards|qty|units\\/yr|per year|yr)\\b",
+      "\\b\\d+(?:\\s*-\\s*\\d+)?\\s*(?:k|K)\\b"
+    ],
+    "price": [
+      "\\$\\s?\\d+(?:,\\d{3})*(?:\\s*[-–]\\s*(?:\\$\\s?)?\\d+(?:,\\d{3})*)?(?:\\s*(?:k|K|m|M))?(?:\\s*per\\s*(?:unit|cabinet|board))?",
+      "\\b\\d+(?:\\s*-\\s*\\d+)?\\s*(?:k|K)\\s*(?:USD|usd|dollars)?(?:\\s*per\\s*(?:unit|cabinet|board))?"
+    ],
+    "timeline": [
+      "\\bQ[1-4]\\s*20\\d{2}\\b",
+      "\\b\\d+\\s*(?:weeks?|months?|days?)\\b",
+      "\\b(?:July|August|September|October|November|December|January|February|March|April|May|June)\\s+20\\d{2}\\b",
+      "\\bETA\\s*[:\\-]?\\s*[^\\n]+"
+    ],
+    "margin": [
+      "\\b\\d{1,2}\\s*[-–]\\s*\\d{1,2}\\s*%",
+      "\\b\\d{1,2}\\s*[-–]\\s*\\d{1,2}\\s*%\\s*(?:margin|margins)\\b",
+      "\\b\\d{1,2}\\s*%\\s*(?:margin|gm|gross margin)\\b",
+      "\\bmargin(?:s)?\\s*(?:target|goal|expected)?\\s*[:\\-]?\\s*\\d{1,2}\\s*%\\b"
+    ],
+    "actionLine": "^[-*•]\\s*(?:\\[.\\]\\s*)?(?:action|todo|follow up|send|schedule|call|email|deliver|ping)\\b"
+  }
+}

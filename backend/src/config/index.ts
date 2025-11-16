@@ -53,10 +53,43 @@ const envSchema = z.object({
 
   // Logging
   LOG_LEVEL: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
+
+  // Google connectors
+  GOOGLE_CLIENT_EMAIL: z.string().optional(),
+  GOOGLE_PRIVATE_KEY: z.string().optional(),
+  GOOGLE_IMPERSONATED_USER: z.string().optional(),
+  GMAIL_SYNC_ENABLED: z.string().default('false'),
+  GMAIL_SYNC_QUERIES: z.string().default('4IEC,quote,RFQ'),
+  GMAIL_SYNC_WINDOW_DAYS: z.string().default('180'),
+  GMAIL_SYNC_MAX_RESULTS: z.string().default('50'),
+  DRIVE_SYNC_ENABLED: z.string().default('false'),
+  DRIVE_SYNC_QUERIES: z.string().default('4IEC,meeting'),
+  DRIVE_SYNC_MIME_TYPES: z.string().default('application/vnd.google-apps.document'),
+  DRIVE_SYNC_PAGE_SIZE: z.string().default('20'),
 });
 
 // Parse and validate environment variables
 const env = envSchema.parse(process.env);
+
+const parseList = (value?: string) =>
+  value
+    ?.split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean) ?? [];
+
+const parseNamedQueries = (entries: string[]) =>
+  entries.map((entry, index) => {
+    const [maybeName, maybeQuery] = entry.includes('|')
+      ? entry.split('|', 2)
+      : [entry, entry];
+    const safeName =
+      maybeName?.trim().toLowerCase().replace(/[^a-z0-9]+/gi, '-') ||
+      `query-${index + 1}`;
+    return {
+      name: safeName,
+      query: (maybeQuery || maybeName || '').trim(),
+    };
+  });
 
 // Export typed configuration
 export const config = {
@@ -121,6 +154,29 @@ export const config = {
   },
 
   logLevel: env.LOG_LEVEL,
+
+  connectors: {
+    googleServiceAccount:
+      env.GOOGLE_CLIENT_EMAIL && env.GOOGLE_PRIVATE_KEY
+        ? {
+            clientEmail: env.GOOGLE_CLIENT_EMAIL,
+            privateKey: env.GOOGLE_PRIVATE_KEY,
+            impersonatedUser: env.GOOGLE_IMPERSONATED_USER,
+          }
+        : undefined,
+    gmailSync: {
+      enabled: env.GMAIL_SYNC_ENABLED === 'true',
+      windowDays: parseInt(env.GMAIL_SYNC_WINDOW_DAYS, 10) || 180,
+      maxResults: parseInt(env.GMAIL_SYNC_MAX_RESULTS, 10) || 50,
+      queries: parseNamedQueries(parseList(env.GMAIL_SYNC_QUERIES)),
+    },
+    driveSync: {
+      enabled: env.DRIVE_SYNC_ENABLED === 'true',
+      pageSize: parseInt(env.DRIVE_SYNC_PAGE_SIZE, 10) || 20,
+      mimeTypes: parseList(env.DRIVE_SYNC_MIME_TYPES),
+      queries: parseNamedQueries(parseList(env.DRIVE_SYNC_QUERIES)),
+    },
+  },
 };
 
 export default config;

@@ -21,3 +21,9 @@ jest.mock('../utils/logger', () => ({
     debug: jest.fn(),
   },
 }));
+
+// Clean up mocks after each test
+// resetAllMocks() clears mock history AND resets implementations
+afterEach(() => {
+  jest.resetAllMocks();
+});

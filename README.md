@@ -104,6 +104,15 @@ npm install
 npm run dev
 ```
 
+### Opportunity Tracker CLI (Phase 3 Pipeline)
+
+After running the Google source sync (`npm run source:sync`) and processing manifests (`npm run source:process -- --manifest <path>`), you can inspect readiness data directly from the CLI:
+
+1. `npm run source:show -- --filter "<keyword>" --clusters`
+   - Lists stored opportunities (`uploads/opportunities/opportunities.json`) and correlated clusters (`opportunity-clusters.json`). Use `--limit`, `--file`, or `--clusters-file` to customize output.
+2. `npm run source:metrics`
+   - Generates `uploads/opportunities/readiness-metrics.json`, summarizing per-stage totals, priority mix, and cluster coverage for dashboards/readiness docs.
+
 ## Development Roadmap
 
 ### Phase 1: MVP (Current)

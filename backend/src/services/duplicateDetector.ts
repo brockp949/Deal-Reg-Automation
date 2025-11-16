@@ -465,12 +465,14 @@ async function detectFuzzyNameMatch(
   for (const existing of existingDeals) {
     const dealNameScore = calculateFuzzyStringSimilarity(deal.dealName, existing.dealName);
     const customerScore = calculateFuzzyStringSimilarity(deal.customerName, existing.customerName);
+    const avgScore = (dealNameScore + customerScore) / 2;
 
-    // Both scores must be high
-    if (dealNameScore >= MATCH_CONFIG.FUZZY_HIGH_THRESHOLD &&
-        customerScore >= MATCH_CONFIG.FUZZY_HIGH_THRESHOLD) {
-
-      const avgScore = (dealNameScore + customerScore) / 2;
+    // Require both scores to be at least "medium" similarity and the average to be high.
+    if (
+      dealNameScore >= MATCH_CONFIG.FUZZY_MEDIUM_THRESHOLD &&
+      customerScore >= MATCH_CONFIG.FUZZY_MEDIUM_THRESHOLD &&
+      avgScore >= MATCH_CONFIG.FUZZY_HIGH_THRESHOLD
+    ) {
       const confidence = avgScore / 100;
 
       matches.push({
@@ -588,7 +590,10 @@ async function detectVendorCustomerMatch(
     // Same vendor and high customer similarity
     if (customerSim >= 0.80) {
       const dealNameSim = calculateDealNameSimilarity(deal.dealName, existing.dealName);
-      const confidence = (customerSim * 0.5 + dealNameSim * 0.3 + 0.2); // +0.2 for vendor match
+      const vendorBonus = 0.3;
+      const confidence = Math.min(1,
+        vendorBonus + (customerSim * 0.5) + (dealNameSim * 0.2)
+      );
 
       matches.push({
         matchedEntityId: existing.id!,
@@ -656,6 +661,7 @@ export async function detectDuplicateDeals(
 ): Promise<DuplicateDetectionResult> {
   const threshold = context?.threshold || MATCH_CONFIG.MINIMUM_MATCH_THRESHOLD;
   const strategies = context?.strategies || Object.values(DuplicateStrategy);
+  const usingProvidedDeals = Array.isArray(context?.existingDeals);
 
   try {
     // Get existing deals if not provided
@@ -736,7 +742,7 @@ export async function detectDuplicateDeals(
     }
 
     // Log detection
-    if (matches.length > 0 && deal.id) {
+    if (!usingProvidedDeals && matches.length > 0 && deal.id) {
       await logDuplicateDetection(deal.id, matches[0].matchedEntityId, matches[0]);
     }
 
@@ -920,7 +926,7 @@ async function getExistingDeals(deal: DealData): Promise<DealData[]> {
     return result.rows;
   } catch (error: any) {
     logger.warn('Failed to get existing deals', { error: error.message });
-    return [];
+    throw error;
   }
 }
 
@@ -943,7 +949,7 @@ async function getAllDeals(): Promise<DealData[]> {
     return result.rows;
   } catch (error: any) {
     logger.warn('Failed to get all deals', { error: error.message });
-    return [];
+    throw error;
   }
 }
 
