@@ -3,20 +3,13 @@ import path from 'path';
 import logger from '../utils/logger';
 import { config } from '../config';
 import { main as metricsMain } from './opportunityMetrics';
+import { OpportunityMetrics } from './opportunityMetrics';
 
 interface ReportOptions {
   metricsFile?: string;
   output?: string;
   refresh?: boolean;
-}
-
-interface OpportunityMetrics {
-  totalOpportunities: number;
-  stageBreakdown: Record<string, number>;
-  priorityBreakdown: Record<string, number>;
-  clusterCount: number;
-  clusteredOpportunityCount: number;
-  generatedAt: string;
+  publishPath?: string;
 }
 
 function parseArgs(): ReportOptions {
@@ -29,6 +22,8 @@ function parseArgs(): ReportOptions {
       options.output = args[++i];
     } else if (args[i] === '--refresh') {
       options.refresh = true;
+    } else if (args[i] === '--publish' && args[i + 1]) {
+      options.publishPath = args[++i];
     }
   }
   return options;
@@ -44,6 +39,13 @@ function renderReport(metrics: OpportunityMetrics): string {
   lines.push('# Opportunity Readiness Report');
   lines.push(`Generated: ${metrics.generatedAt}`);
   lines.push('');
+  if (metrics.processingErrors > 0) {
+    lines.push(`⚠️ Processing errors: ${metrics.processingErrors}`);
+    metrics.errorDetails.forEach((detail) => {
+      lines.push(`- ${detail.filePath}: ${detail.error}`);
+    });
+    lines.push('');
+  }
   lines.push(`- Total opportunities: **${metrics.totalOpportunities}**`);
   lines.push(
     `- Clustered opportunities: **${metrics.clusteredOpportunityCount}** (across ${metrics.clusterCount} clusters)`
@@ -68,7 +70,7 @@ function renderReport(metrics: OpportunityMetrics): string {
   return lines.join('\n');
 }
 
-export async function main(optionsOverride?: ReportOptions) {
+export async function main(optionsOverride?: ReportOptions, metrics?: OpportunityMetrics) {
   const options = optionsOverride ?? parseArgs();
   const opportunitiesDir = path.resolve(config.upload.directory, 'opportunities');
   const metricsPath = options.metricsFile ?? path.join(opportunitiesDir, 'readiness-metrics.json');
@@ -83,14 +85,20 @@ export async function main(optionsOverride?: ReportOptions) {
     });
   }
 
-  const metrics = await loadMetrics(metricsPath);
-  const report = renderReport(metrics);
+  const finalMetrics = metrics ?? (await loadMetrics(metricsPath));
+  const report = renderReport(finalMetrics);
   await fs.writeFile(outputPath, report, 'utf-8');
+
+  if (options.publishPath) {
+    await fs.mkdir(path.dirname(options.publishPath), { recursive: true });
+    await fs.writeFile(options.publishPath, report, 'utf-8');
+  }
 
   logger.info('Opportunity readiness report generated', {
     outputPath,
-    generatedAt: metrics.generatedAt,
-    totalOpportunities: metrics.totalOpportunities,
+    publishPath: options.publishPath,
+    generatedAt: finalMetrics.generatedAt,
+    totalOpportunities: finalMetrics.totalOpportunities,
   });
 }
 

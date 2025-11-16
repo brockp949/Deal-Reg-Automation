@@ -51,6 +51,8 @@ describe('OpportunityCorrelator', () => {
     expect(clusters[0].records.map((r) => r.id)).toEqual(['opp-a', 'opp-b']);
     expect(clusters[0].signals.sharedOpportunityTags).toEqual(['clearled-pdu']);
     expect(clusters[0].signals.sharedActors).toEqual(['jeremy nocchi']);
+    expect(clusters[0].summary.stage).toBe('rfq');
+    expect(clusters[0].summary.vendors).toEqual(['ClearLED']);
     expect(clusters[0].score).toBeGreaterThan(0.3);
   });
 
@@ -70,6 +72,7 @@ describe('OpportunityCorrelator', () => {
     const clusters = correlator.correlate([recordA, recordB]);
     expect(clusters).toHaveLength(1);
     expect(clusters[0].records.map((r) => r.id)).toEqual(['opp-a', 'opp-b']);
+    expect(clusters[0].summary.vendors.sort()).toEqual(['ClearLED']);
   });
 
   it('ignores groups that do not meet score threshold', () => {
@@ -87,5 +90,29 @@ describe('OpportunityCorrelator', () => {
 
     const clusters = correlator.correlate([recordA, recordB]);
     expect(clusters).toHaveLength(0);
+  });
+
+  it('summarizes clusters with merged stage and priority', () => {
+    const correlator = new OpportunityCorrelator({ minScore: 0 });
+    const recordA = buildRecord({
+      id: 'opp-a',
+      stage: 'rfq',
+      priority: 'medium',
+      metadata: { parser: 'StandardizedMboxParser', vendor: 'ClearLED', customer: 'Antora' },
+    });
+    const recordB = buildRecord({
+      id: 'opp-b',
+      stage: 'po_in_progress',
+      priority: 'high',
+      metadata: { parser: 'StandardizedTranscriptParser', vendor: 'DriveVendor', customer: 'Antora' },
+    });
+
+    const clusters = correlator.correlate([recordA, recordB]);
+    expect(clusters).toHaveLength(1);
+    const summary = clusters[0].summary;
+    expect(summary.stage).toBe('po_in_progress');
+    expect(summary.priority).toBe('high');
+    expect(summary.vendors.sort()).toEqual(['ClearLED', 'DriveVendor']);
+    expect(summary.stageConfidence).toBe(0.5);
   });
 });
