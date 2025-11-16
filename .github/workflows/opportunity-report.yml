@@ -1,0 +1,41 @@
+name: opportunity-report
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 2 * * *'
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm install
+      - name: Refresh opportunities & metrics
+        working-directory: backend
+        env:
+          GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
+          GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
+        run: |
+          npm run source:sync || true
+          npm run source:process || true
+          npm run source:report || true
+      - name: Copy readiness report
+        run: |
+          cp docs/OPPORTUNITY_READINESS.md OPPORTUNITY_READINESS.md
+      - name: Create pull request with updated report
+        uses: peter-evans/create-pull-request@v5
+        with:
+          commit-message: 'docs: update opportunity readiness report'
+          title: 'Automated opportunity readiness report'
+          body: 'Automated update of OPPORTUNITY_READINESS.md'
+          branch: automation/opportunity-report
+          add-paths: |
+            OPPORTUNITY_READINESS.md

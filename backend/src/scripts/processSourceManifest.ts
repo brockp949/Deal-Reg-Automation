@@ -6,6 +6,7 @@ import { SourceManifestEntry } from '../ingestion/SourceSyncService';
 import { config } from '../config';
 import { OpportunityStore } from '../opportunities/OpportunityStore';
 import { OpportunityCorrelator } from '../opportunities/OpportunityCorrelator';
+import { OpportunityConsolidator } from '../opportunities/OpportunityConsolidator';
 import { main as opportunityMetrics } from './opportunityMetrics';
 
 interface CliOptions {
@@ -67,6 +68,14 @@ async function main() {
   );
   await fs.writeFile(clusterOutputPath, JSON.stringify(clusters, null, 2), 'utf-8');
 
+  const consolidator = new OpportunityConsolidator();
+  const consolidated = consolidator.consolidate(storeResult.storedRecords);
+  const consolidatedPath = path.join(
+    path.dirname(storeResult.filePath),
+    'consolidated-opportunities.json'
+  );
+  await fs.writeFile(consolidatedPath, JSON.stringify(consolidated, null, 2), 'utf-8');
+
   logger.info('Manifest processing complete', {
     filesProcessed: result.filesProcessed,
     opportunities: result.opportunities.length,
@@ -75,13 +84,17 @@ async function main() {
     persistedPath: storeResult.filePath,
     clusters: clusters.length,
     clusterOutputPath,
+    consolidatedPath,
   });
 
-  await opportunityMetrics({
-    file: storeResult.filePath,
-    clustersFile: clusterOutputPath,
-    output: path.join(path.dirname(storeResult.filePath), 'readiness-metrics.json'),
-  });
+  await opportunityMetrics(
+    {
+      file: storeResult.filePath,
+      clustersFile: clusterOutputPath,
+      output: path.join(path.dirname(storeResult.filePath), 'readiness-metrics.json'),
+    },
+    result.errors
+  );
 
   if (result.errors.length > 0) {
     logger.warn('Some manifest entries failed', {

@@ -10,13 +10,15 @@ interface MetricsOptions {
   output?: string;
 }
 
-interface OpportunityMetrics {
+export interface OpportunityMetrics {
   totalOpportunities: number;
   stageBreakdown: Record<string, number>;
   priorityBreakdown: Record<string, number>;
   clusterCount: number;
   clusteredOpportunityCount: number;
   generatedAt: string;
+  processingErrors: number;
+  errorDetails: Array<{ filePath: string; error: string }>;
 }
 
 function parseArgs(): MetricsOptions {
@@ -39,7 +41,11 @@ async function loadJson<T>(filePath: string): Promise<T> {
   return JSON.parse(raw) as T;
 }
 
-function summarize(records: OpportunityRecord[], clusters: any[]): OpportunityMetrics {
+function summarize(
+  records: OpportunityRecord[],
+  clusters: any[],
+  errors: Array<{ entry: { filePath: string }; error: string }>
+): OpportunityMetrics {
   const stageBreakdown: Record<string, number> = {};
   const priorityBreakdown: Record<string, number> = {};
 
@@ -64,10 +70,18 @@ function summarize(records: OpportunityRecord[], clusters: any[]): OpportunityMe
     clusterCount: clusters.length,
     clusteredOpportunityCount: clusteredOpportunityIds.size,
     generatedAt: new Date().toISOString(),
+    processingErrors: errors.length,
+    errorDetails: errors.slice(0, 10).map(({ entry, error }) => ({
+      filePath: entry.filePath,
+      error,
+    })),
   };
 }
 
-export async function main(optionsOverride?: MetricsOptions) {
+export async function main(
+  optionsOverride?: MetricsOptions,
+  errors?: Array<{ entry: { filePath: string }; error: string }>
+) {
   const options = optionsOverride ?? parseArgs();
   const opportunitiesPath =
     options.file ??
@@ -81,7 +95,7 @@ export async function main(optionsOverride?: MetricsOptions) {
 
   const records = await loadJson<OpportunityRecord[]>(opportunitiesPath);
   const clusters = await loadJson<any[]>(clustersPath);
-  const metrics = summarize(records, clusters);
+  const metrics = summarize(records, clusters, errors ?? []);
 
   await fs.writeFile(outputPath, JSON.stringify(metrics, null, 2), 'utf-8');
 

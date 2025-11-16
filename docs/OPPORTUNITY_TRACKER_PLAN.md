@@ -15,9 +15,9 @@
 - Introduced `OpportunityCorrelator` to group Gmail/Drive opportunities that share opportunity tags or vendor/customer fingerprints, laying the groundwork for Phase 4 consolidation (tests in `backend/src/__tests__/opportunities/OpportunityCorrelator.test.ts`).
 
 ### Readiness Summary
-- Status: **In-flight** (Phase 3). Phases 1–2 are complete; Phase 3 CLI pipeline operational.
-- Latest metrics: see `uploads/opportunities/readiness-metrics.json` and `opportunity-readiness-report.md`.
-- Commands: `npm run source:process` (refresh data + metrics + report), `npm run source:show -- --clusters` (inspect), `npm run source:report` (regenerate report).
+- Status: **In-flight** (Phase 3). Phases 1-2 are complete; Phase 3 CLI pipeline operational.
+- Latest metrics: see `uploads/opportunities/readiness-metrics.json`, `consolidated-opportunities.json`, and `opportunity-readiness-report.md` (also published under `docs/OPPORTUNITY_READINESS.md`).
+- Commands: `npm run source:process` (refresh data + metrics + report), `npm run source:show -- --clusters` (inspect), `npm run source:consolidate` (produce merged view), `npm run source:report` (regenerate/publish report). The GitHub workflow `opportunity-report` runs these on a schedule to keep reports current.
 ## Phase 1 – Connector-Aligned Ingestion
 1. Wrap Gmail search/read endpoints with predefined queries (keywords, participants, date ranges) that emit normalized thread objects with metadata (threadId, snippet, labels, timestamps).
 2. Build a Drive search/fetch workflow that tags documents/transcripts by meeting name, participants, and date; produce a manifest used by the transcript parser.
@@ -51,3 +51,5 @@
 ### CLI Reference
 - `npm run source:show -- --filter clearled --clusters` shows stored opportunities (`uploads/opportunities/opportunities.json`) and correlated clusters (`opportunity-clusters.json`). Adjust `--limit` or `--file/--clusters-file` to point at custom locations.
 - `npm run source:metrics` builds `readiness-metrics.json`, summarizing total opportunities, per-stage counts, priorities, and cluster coverage for dashboards.
+- `npm run source:consolidate` generates `consolidated-opportunities.json`, merging Gmail + Drive fragments into unified records using the latest correlation heuristics.
+- `npm run source:report` produces `uploads/opportunities/opportunity-readiness-report.md` and copies it to `docs/OPPORTUNITY_READINESS.md`. A scheduled GitHub Action (`.github/workflows/opportunity-report.yml`) runs `source:process`, `source:consolidate`, and `source:report` daily to keep the published report current.
