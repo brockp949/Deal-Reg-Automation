@@ -9,3 +9,10 @@ export { ChunkIndex, ChunkRecord, ProcessingLogEntry } from './ChunkIndex';
 export { MessageStreamIterator, IteratorOptions, IteratorState, stream_mbox_chunk } from './MessageStreamIterator';
 export { FileLock, LockOptions, LockInfo, with_file_lock, cleanup_stale_locks } from './FileLocks';
 export { DEFAULT_INGESTION_CONFIG, getIngestionConfig, loadIngestionConfigFromEnv, IngestionConfig } from '../config/ingestion';
+export {
+  SourceSyncService,
+  SourceSyncOptions,
+  GmailSyncConfig,
+  DriveSyncConfig,
+  SourceManifestEntry,
+} from './SourceSyncService';

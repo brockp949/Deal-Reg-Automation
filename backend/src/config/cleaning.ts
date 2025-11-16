@@ -6,8 +6,8 @@ import { CleaningOptions } from '../cleaning/types';
 import { NormalizationOptions } from '../cleaning/TextNormalizer';
 
 export interface CleaningConfig {
-  cleaning: CleaningOptions;
-  normalization: NormalizationOptions;
+  cleaning: Required<CleaningOptions>;
+  normalization: Required<NormalizationOptions>;
 }
 
 const DEFAULT_CLEANING_CONFIG: CleaningConfig = {

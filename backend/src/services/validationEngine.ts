@@ -536,7 +536,7 @@ async function checkForDuplicateDeals(
 
     // Name similarity (simple approach)
     if (newDealName && existingName) {
-      const commonWords = newDealName.split(' ').filter(word =>
+      const commonWords = newDealName.split(' ').filter((word: string) =>
         existingName.includes(word) && word.length > 3
       );
       matchScore += (commonWords.length / newDealName.split(' ').length) * 0.4;

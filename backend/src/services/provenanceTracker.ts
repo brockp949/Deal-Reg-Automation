@@ -125,6 +125,7 @@ export async function trackMultipleFields(
     extractionMethod: ExtractionMethod;
     confidence?: number;
     extractedBy?: string;
+    extractionContext?: Record<string, any>;
   }
 ): Promise<void> {
   const promises = Object.entries(fields).map(([fieldName, fieldValue]) => {
@@ -328,6 +329,7 @@ export async function trackDealProvenance(
     sourceLocation?: string;
     extractionMethod: ExtractionMethod;
     confidence?: number;
+    extractionContext?: Record<string, any>;
   }
 ): Promise<void> {
   await trackMultipleFields('deal', dealId, dealData, metadata);
@@ -345,6 +347,7 @@ export async function trackVendorProvenance(
     sourceLocation?: string;
     extractionMethod: ExtractionMethod;
     confidence?: number;
+    extractionContext?: Record<string, any>;
   }
 ): Promise<void> {
   await trackMultipleFields('vendor', vendorId, vendorData, metadata);
@@ -362,6 +365,7 @@ export async function trackContactProvenance(
     sourceLocation?: string;
     extractionMethod: ExtractionMethod;
     confidence?: number;
+    extractionContext?: Record<string, any>;
   }
 ): Promise<void> {
   await trackMultipleFields('contact', contactId, contactData, metadata);

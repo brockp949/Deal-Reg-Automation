@@ -1,3 +1,5 @@
+import type { SourceMetadata } from '../connectors/types';
+
 /**
  * Standardized Parser Types
  *
@@ -128,6 +130,9 @@ export interface NormalizedDeal {
   extraction_method?: ExtractionMethod;
   source_email_id?: string;
   source_location?: string;
+  source_tags?: string[];
+  rfq_signals?: RfqSignals;
+  stage_hints?: string[];
 }
 
 export interface NormalizedContact {
@@ -143,6 +148,23 @@ export interface NormalizedContact {
   // Metadata
   is_primary?: boolean;
   source_location?: string;
+  source_tags?: string[];
+}
+
+export interface RfqSignals {
+  quantities: string[];
+  priceTargets: string[];
+  timelineRequests: string[];
+  marginNotes: string[];
+  actorMentions: string[];
+}
+
+export interface ParserSemanticSections {
+  attendees: string[];
+  pricing: string[];
+  margins: string[];
+  actionItems: string[];
+  opportunityMentions: string[];
 }
 
 // ============================================================================
@@ -169,6 +191,8 @@ export interface StandardizedParserOutput {
       contacts: number;
       total: number;
     };
+    sourceMetadata?: SourceMetadata;
+    sourceTags?: string[];
   };
 
   // The normalized, clean text from the file (optional)
@@ -184,6 +208,9 @@ export interface StandardizedParserOutput {
 
   // Original raw data (for debugging and audit purposes)
   rawData?: any;
+
+  // Semantic sections derived from transcripts or narratives
+  semanticSections?: ParserSemanticSections;
 
   // Errors and warnings encountered during parsing
   errors: ParsingError[];
@@ -300,6 +327,10 @@ export interface TranscriptParserOptions extends BaseParserOptions {
 
   // Speaker identification
   identifySpeakers?: boolean;            // Default: false
+
+  // Thresholds for enhanced parsing heuristics
+  buyingSignalThreshold?: number;
+  confidenceThreshold?: number;
 }
 
 // ============================================================================

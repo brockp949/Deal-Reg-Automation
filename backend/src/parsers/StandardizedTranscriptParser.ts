@@ -17,9 +17,16 @@ import {
   NormalizedContact,
   ParsingErrorSeverity,
   FileType,
+  RfqSignals,
 } from '../types/parsing';
 import { stat, readFile } from 'fs/promises';
 import logger from '../utils/logger';
+import { loadSourceMetadata } from '../utils/sourceMetadata';
+import {
+  analyzeOpportunitySignals,
+  extractSemanticSections,
+  inferDealStage,
+} from '../utils/opportunitySignals';
 
 export class StandardizedTranscriptParser extends BaseParser {
   constructor() {
@@ -82,6 +89,7 @@ export class StandardizedTranscriptParser extends BaseParser {
 
       let extractedData: any;
       let transcriptText: string = '';
+      let opportunityAnalysis: ReturnType<typeof analyzeOpportunitySignals> | undefined;
 
       try {
         // Use enhanced parsing if requested (default)
@@ -109,12 +117,16 @@ export class StandardizedTranscriptParser extends BaseParser {
               contacts: [],
             };
           }
-        } else {
-          // Basic parsing - read text and extract
-          transcriptText = await readFile(filePathToProcess, 'utf-8');
-          output.statistics.linesProcessed = transcriptText.split('\n').length;
-          extractedData = extractInfoFromTranscript(transcriptText);
-        }
+      } else {
+        // Basic parsing - read text and extract
+        const parsedTranscript = parseTextTranscript(filePathToProcess);
+        transcriptText = parsedTranscript.text;
+        output.statistics.linesProcessed = transcriptText.split('\n').length;
+        extractedData = extractInfoFromTranscript(parsedTranscript);
+      }
+
+        opportunityAnalysis = analyzeOpportunitySignals(transcriptText || '');
+        output.semanticSections = extractSemanticSections(transcriptText || '', opportunityAnalysis);
       } finally {
         // Clean up temp file if created
         if (tempFilePath) {
@@ -128,6 +140,54 @@ export class StandardizedTranscriptParser extends BaseParser {
         }
       }
 
+      // Load source metadata if available
+      const sourceMetadata = await loadSourceMetadata(filePath);
+      if (sourceMetadata) {
+        output.metadata.sourceMetadata = sourceMetadata;
+        const metadataTags: string[] = [];
+        if (sourceMetadata.queryName) {
+          metadataTags.push(`query:${sourceMetadata.queryName}`);
+        }
+        if (sourceMetadata.connector === 'drive') {
+          metadataTags.push(`doc:${sourceMetadata.file.id}`);
+          metadataTags.push(`doc-name:${sourceMetadata.file.name}`);
+          if (sourceMetadata.file.createdTime) {
+            metadataTags.push(`doc-created:${sourceMetadata.file.createdTime}`);
+          }
+          if (sourceMetadata.file.modifiedTime) {
+            metadataTags.push(`doc-modified:${sourceMetadata.file.modifiedTime}`);
+          }
+          sourceMetadata.file.owners?.forEach((owner) => {
+            const ownerLabel = owner.displayName || owner.emailAddress;
+            if (ownerLabel) {
+              metadataTags.push(`doc-owner:${ownerLabel}`);
+            }
+          });
+        }
+        output.metadata.sourceTags = Array.from(
+          new Set(
+            metadataTags.filter((tag) => Boolean(tag && tag.trim())).map((tag) => tag.trim())
+          )
+        );
+      }
+
+      const baseTags = new Set(output.metadata.sourceTags ?? []);
+      const aggregateTags = new Set(baseTags);
+      const sharedSignalTags = new Set(baseTags);
+
+      if (opportunityAnalysis) {
+        opportunityAnalysis.opportunityTags.forEach((tag) => {
+          const normalizedTag = `opportunity:${tag}`;
+          sharedSignalTags.add(normalizedTag);
+          aggregateTags.add(normalizedTag);
+        });
+        opportunityAnalysis.stageHints.forEach((hint) => {
+          const normalizedHint = `stage-hint:${hint}`;
+          sharedSignalTags.add(normalizedHint);
+          aggregateTags.add(normalizedHint);
+        });
+      }
+
       // Convert to standardized format
       const { vendors, deals, contacts } = extractedData;
 
@@ -135,10 +195,70 @@ export class StandardizedTranscriptParser extends BaseParser {
       output.entities.vendors = vendors.map((v: any) => this.normalizeVendor(v));
 
       // Map deals
-      output.entities.deals = deals.map((d: any) => this.normalizeDeal(d));
+      const normalizedDeals: NormalizedDeal[] = deals.map((d: any) => this.normalizeDeal(d));
+
+      if (opportunityAnalysis) {
+        const hasSignals =
+          opportunityAnalysis.rfqSignals.quantities.length > 0 ||
+          opportunityAnalysis.rfqSignals.priceTargets.length > 0 ||
+          opportunityAnalysis.rfqSignals.timelineRequests.length > 0 ||
+          opportunityAnalysis.rfqSignals.marginNotes.length > 0 ||
+          opportunityAnalysis.rfqSignals.actorMentions.length > 0;
+
+        normalizedDeals.forEach((deal: NormalizedDeal) => {
+          const dealTags = new Set(sharedSignalTags);
+          if (hasSignals) {
+            const rfqSignals: RfqSignals = {
+              quantities: [...opportunityAnalysis!.rfqSignals.quantities],
+              priceTargets: [...opportunityAnalysis!.rfqSignals.priceTargets],
+              timelineRequests: [...opportunityAnalysis!.rfqSignals.timelineRequests],
+              marginNotes: [...opportunityAnalysis!.rfqSignals.marginNotes],
+              actorMentions: [...opportunityAnalysis!.rfqSignals.actorMentions],
+            };
+            deal.rfq_signals = rfqSignals;
+            rfqSignals.actorMentions.forEach((actor) =>
+              dealTags.add(`actor:${actor.replace(/\s+/g, '-')}`)
+            );
+          }
+
+          if (opportunityAnalysis!.stageHints.length > 0) {
+            const mergedHints = new Set([
+              ...(deal.stage_hints ?? []),
+              ...opportunityAnalysis!.stageHints,
+            ]);
+            deal.stage_hints = Array.from(mergedHints);
+          }
+
+          const inferredStage = inferDealStage(
+            opportunityAnalysis!.stageHints,
+            output.metadata.sourceMetadata?.queryName,
+            deal.project_name || deal.deal_name
+          );
+          if (inferredStage && !deal.deal_stage) {
+            deal.deal_stage = inferredStage;
+          }
+
+          deal.source_tags = Array.from(dealTags);
+          dealTags.forEach((tag) => aggregateTags.add(tag));
+        });
+      } else {
+        normalizedDeals.forEach((deal: NormalizedDeal) => {
+          deal.source_tags = Array.from(sharedSignalTags);
+        });
+      }
+
+      output.entities.deals = normalizedDeals;
 
       // Map contacts
-      output.entities.contacts = contacts.map((c: any) => this.normalizeContact(c));
+      const normalizedContacts: NormalizedContact[] = contacts.map((c: any) =>
+        this.normalizeContact(c)
+      );
+      normalizedContacts.forEach((contact: NormalizedContact) => {
+        contact.source_tags = Array.from(sharedSignalTags);
+      });
+      output.entities.contacts = normalizedContacts;
+
+      output.metadata.sourceTags = Array.from(aggregateTags);
 
       // Add normalized text if requested
       if (options?.includeNormalizedText) {

@@ -11,7 +11,12 @@
     "db:migrate": "node -r tsx/cjs src/db/migrate.ts",
     "db:seed": "node -r tsx/cjs src/db/seed.ts",
     "lint": "eslint src --ext .ts",
-    "test": "jest"
+    "test": "jest",
+    "source:sync": "node -r tsx/cjs src/scripts/runSourceSync.ts",
+    "source:process": "node -r tsx/cjs src/scripts/processSourceManifest.ts",
+    "source:show": "node -r tsx/cjs src/scripts/showOpportunities.ts",
+    "source:metrics": "node -r tsx/cjs src/scripts/opportunityMetrics.ts",
+    "source:report": "node -r tsx/cjs src/scripts/opportunityReport.ts"
   },
   "keywords": [
     "deal-registration",
@@ -34,6 +39,7 @@
     "express": "^4.18.2",
     "express-validator": "^7.0.1",
     "fuzzball": "^2.2.3",
+    "googleapis": "^166.0.0",
     "helmet": "^7.1.0",
     "html-to-text": "^9.0.5",
     "jsonwebtoken": "^9.0.2",
