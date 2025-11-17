@@ -1097,6 +1097,474 @@ WHERE ad.decided_at > CURRENT_DATE - INTERVAL '30 days';
 
 ---
 
+## Blue/Green Deployment Strategy
+
+### Overview
+
+Blue/Green deployment minimizes downtime and enables instant rollback by maintaining two identical production environments. Only one environment serves live traffic at any time.
+
+**Benefits**:
+- Zero-downtime deployments
+- Instant rollback capability
+- Full production testing before traffic switch
+- Reduced deployment risk
+
+### Prerequisites
+
+#### Infrastructure Setup
+- [ ] Two identical environments configured:
+  - **Blue** (current production)
+  - **Green** (new version staging)
+- [ ] Load balancer configured (nginx, HAProxy, or cloud load balancer)
+- [ ] Shared database accessible from both environments
+- [ ] Shared Redis accessible from both environments
+- [ ] Shared file storage (uploads directory) accessible from both
+- [ ] Health check endpoints implemented
+
+#### Environment Variables for Blue/Green
+
+Add to both blue and green `.env` files:
+
+```bash
+# Deployment Environment
+DEPLOYMENT_ENV=blue  # or 'green'
+DEPLOYMENT_VERSION=v1.2.3
+DEPLOYMENT_TIMESTAMP=2024-01-15T10:00:00Z
+
+# Health Check
+HEALTH_CHECK_ENABLED=true
+```
+
+### Blue/Green Deployment Process
+
+#### Step 1: Prepare Green Environment
+
+```bash
+# 1. Deploy new version to green environment
+cd /var/dealreg/green
+git pull origin main
+cd backend && npm install
+npm run build
+
+# 2. Update environment variables
+cp .env.example .env
+# Edit .env with production values
+nano .env
+
+# 3. Run database migrations (if needed)
+# NOTE: Migrations run on shared database, so coordinate carefully
+npm run db:migrate
+
+# 4. Start green environment
+pm2 start ecosystem.config.js --env green
+pm2 save
+```
+
+#### Step 2: Smoke Test Green Environment
+
+```bash
+# Run smoke tests against green environment
+cd /var/dealreg/green/backend
+
+# Test all connectors
+npm run smoke:all
+
+# Verify health endpoints
+curl http://localhost:4001/health  # Green runs on different port
+curl http://localhost:4001/api/health/db
+curl http://localhost:4001/api/health/redis
+
+# Test critical API endpoints
+curl -X POST http://localhost:4001/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"test@example.com","password":"test123"}'
+
+# Run load test (optional but recommended)
+npm run load:test -- --size 100 --no-consolidation
+```
+
+#### Step 3: Switch Traffic to Green
+
+**Option A: Load Balancer Configuration (Recommended)**
+
+Update load balancer config to route traffic to green:
+
+```nginx
+# /etc/nginx/sites-available/dealreg
+
+upstream backend {
+    # Comment out blue, enable green
+    # server 127.0.0.1:4000;  # Blue
+    server 127.0.0.1:4001;    # Green
+}
+
+server {
+    listen 80;
+    server_name dealreg.example.com;
+
+    location /api {
+        proxy_pass http://backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+Reload nginx:
+```bash
+sudo nginx -t  # Test configuration
+sudo systemctl reload nginx
+```
+
+**Option B: Port Remapping (Simple)**
+
+```bash
+# Stop blue, start green on production port
+pm2 stop dealreg-backend-blue
+pm2 start /var/dealreg/green/ecosystem.config.js --env production
+```
+
+#### Step 4: Monitor Green Environment
+
+```bash
+# Monitor logs for errors
+pm2 logs dealreg-backend-green --lines 100
+
+# Check metrics
+npm run source:metrics
+
+# Monitor database connections
+psql $DATABASE_URL -c "SELECT count(*) FROM pg_stat_activity WHERE datname = 'dealreg';"
+
+# Check error rate
+curl http://localhost:4001/api/metrics | jq '.errorRate'
+```
+
+**Monitoring Checklist** (Monitor for 30-60 minutes):
+- [ ] No errors in application logs
+- [ ] API response times normal (< 500ms p95)
+- [ ] Database connection count stable
+- [ ] Redis connectivity stable
+- [ ] File uploads working
+- [ ] AI extraction working (Phase 4+)
+- [ ] No user-reported issues
+
+#### Step 5: Decommission Blue (After 24-48 hours)
+
+```bash
+# Once green is stable, stop blue environment
+pm2 stop dealreg-backend-blue
+pm2 delete dealreg-backend-blue
+pm2 save
+
+# Optional: Keep blue for quick rollback, or fully decommission
+# To decommission:
+cd /var/dealreg
+mv blue blue-old-$(date +%Y%m%d)
+# Delete after 7 days if no issues
+```
+
+### Canary Deployment (Alternative)
+
+Canary deployment routes a small percentage of traffic to the new version before full rollout.
+
+#### Nginx Configuration for Canary
+
+```nginx
+# /etc/nginx/sites-available/dealreg
+
+# Define upstream groups
+upstream backend_blue {
+    server 127.0.0.1:4000;  # Blue (stable)
+}
+
+upstream backend_green {
+    server 127.0.0.1:4001;  # Green (canary)
+}
+
+# Split configuration
+split_clients "${remote_addr}" $backend_split {
+    10%     "green";   # 10% traffic to green
+    *       "blue";    # 90% traffic to blue
+}
+
+server {
+    listen 80;
+    server_name dealreg.example.com;
+
+    location /api {
+        # Route based on split
+        proxy_pass http://backend_$backend_split;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+**Gradual Rollout**:
+1. Start with 5-10% traffic to green
+2. Monitor for 1-2 hours
+3. Increase to 25% if stable
+4. Monitor for 1-2 hours
+5. Increase to 50% if stable
+6. Monitor for 1-2 hours
+7. Route 100% to green
+8. Decommission blue
+
+### Rollback Procedures
+
+#### Emergency Rollback (< 5 minutes)
+
+**Scenario**: Critical issue detected in green environment requiring immediate rollback.
+
+```bash
+# 1. Switch load balancer back to blue
+sudo nano /etc/nginx/sites-available/dealreg
+# Change: server 127.0.0.1:4001; (green) → server 127.0.0.1:4000; (blue)
+
+sudo nginx -t && sudo systemctl reload nginx
+
+# 2. Verify blue is running
+pm2 list | grep blue
+curl http://localhost:4000/health
+
+# 3. If blue is stopped, restart it
+pm2 restart dealreg-backend-blue
+
+# 4. Notify team
+echo "ROLLBACK EXECUTED: Green → Blue" | \
+  curl -X POST $SLACK_WEBHOOK_URL \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"🚨 Emergency rollback executed. Green environment rolled back to Blue."}'
+
+# 5. Stop green to prevent confusion
+pm2 stop dealreg-backend-green
+
+# Total time: < 2 minutes
+```
+
+#### Database Rollback
+
+**CAUTION**: Database rollback is complex and should be avoided if possible.
+
+**If Green Applied Breaking Database Migrations**:
+
+```bash
+# 1. Identify migration to rollback
+cd /var/dealreg/green/backend
+npm run db:migrate:status
+
+# 2. Rollback migrations (if tool supports it)
+# Option 1: Using migration tool
+npm run db:migrate:down  # Rolls back last migration
+
+# Option 2: Manual SQL rollback
+psql $DATABASE_URL < /var/dealreg/backups/pre-deployment-schema.sql
+
+# 3. Verify database state
+psql $DATABASE_URL -c "SELECT * FROM schema_migrations ORDER BY id DESC LIMIT 5;"
+
+# 4. Switch back to blue
+# Follow emergency rollback procedure above
+```
+
+**Prevention**:
+- Always make migrations backward-compatible
+- Use additive changes (add columns, don't remove)
+- Deprecate before removing (multi-phase migrations)
+- Test migrations on staging database first
+- Take database backup immediately before migration
+
+#### File Storage Rollback
+
+**If Green Version Changed File Storage Format**:
+
+```bash
+# 1. Restore files from backup
+rsync -av /var/dealreg/backups/uploads-$(date +%Y%m%d)/ /var/dealreg/uploads/
+
+# 2. Verify file integrity
+cd /var/dealreg/uploads
+find . -type f -exec md5sum {} \; > /tmp/checksums.txt
+diff /tmp/checksums.txt /var/dealreg/backups/checksums-$(date +%Y%m%d).txt
+
+# 3. Switch back to blue
+# Follow emergency rollback procedure
+```
+
+### Rollback Decision Matrix
+
+| Issue Severity | Rollback? | Action |
+|----------------|-----------|--------|
+| Critical API errors (> 5%) | ✅ YES | Emergency rollback |
+| Database connection failures | ✅ YES | Emergency rollback |
+| AI extraction failing | ✅ YES | Emergency rollback (Phase 4+) |
+| Minor UI issues | ❌ NO | Hotfix on green |
+| Performance degradation (< 20%) | ⚠️ MAYBE | Monitor, rollback if worsens |
+| User-reported bugs (low volume) | ❌ NO | Hotfix on green |
+| High error rate (1-5%) | ⚠️ MAYBE | Monitor for 30 min, rollback if persists |
+
+### Rollback Testing
+
+**Test rollback procedure quarterly**:
+
+```bash
+# 1. Deploy test version to green
+# 2. Switch traffic to green
+# 3. Wait 5 minutes
+# 4. Execute rollback procedure
+# 5. Verify blue serves traffic correctly
+# 6. Document time taken and any issues
+```
+
+### Post-Deployment Runbook
+
+#### Day 1 (Deployment Day)
+
+**Hour 0-1** (Immediately after traffic switch):
+- [ ] Monitor logs every 5 minutes
+- [ ] Check error rates
+- [ ] Verify critical workflows:
+  - File upload
+  - Deal extraction
+  - User authentication
+  - Approval workflow (Phase 7)
+
+**Hour 1-4**:
+- [ ] Monitor logs every 15 minutes
+- [ ] Check database query performance
+- [ ] Review user feedback channels
+- [ ] Verify background jobs running
+
+**Hour 4-24**:
+- [ ] Monitor logs every 30 minutes
+- [ ] Review metrics dashboard
+- [ ] Check scheduled jobs (source:sync runs at 2 AM)
+
+#### Day 2-7
+
+- [ ] Daily log review (morning and evening)
+- [ ] Monitor key metrics:
+  - API error rate
+  - Response time p95
+  - Database connections
+  - File processing success rate
+- [ ] Review user-reported issues
+- [ ] Check backup completion
+
+#### Week 2+
+
+- [ ] Weekly metrics review
+- [ ] Compare performance to baseline
+- [ ] Document lessons learned
+- [ ] Update deployment procedures if needed
+
+### Deployment Communication Template
+
+**Pre-Deployment Notification** (24 hours before):
+
+```
+Subject: [DEPLOYMENT] Deal Reg System Update - [DATE] [TIME]
+
+Team,
+
+We will be deploying version [VERSION] to production:
+
+Date: [DATE]
+Time: [TIME] - [TIME] (Estimated 30 minutes)
+Downtime: None expected (blue/green deployment)
+
+Changes:
+- [Change 1]
+- [Change 2]
+- [Change 3]
+
+Rollback plan: Prepared and tested
+Contact: [ENGINEER] ([EMAIL], [PHONE])
+
+Please report any issues immediately after deployment.
+
+Thanks,
+Engineering Team
+```
+
+**Post-Deployment Notification**:
+
+```
+Subject: [DEPLOYED] Deal Reg System v[VERSION] - Success
+
+Team,
+
+Deployment completed successfully:
+
+Deployed: [TIME]
+Status: ✅ All systems operational
+Version: [VERSION]
+
+Monitoring: Active for next 24 hours
+Report issues: [SLACK_CHANNEL] or [EMAIL]
+
+Thanks,
+Engineering Team
+```
+
+**Rollback Notification**:
+
+```
+Subject: [ROLLBACK] Deal Reg System - Rolled Back to v[VERSION]
+
+Team,
+
+We have rolled back the deployment due to [REASON]:
+
+Rolled back: [TIME]
+Current version: [OLD_VERSION]
+Status: ✅ Stable
+
+Root cause analysis: In progress
+Next deployment: TBD
+
+We will communicate more details once investigation is complete.
+
+Thanks,
+Engineering Team
+```
+
+### Checklist Summary
+
+**Pre-Deployment**:
+- [ ] Green environment configured and tested
+- [ ] Database migrations tested on staging
+- [ ] Backup taken (database + files)
+- [ ] Blue environment confirmed stable
+- [ ] Rollback procedure documented and understood
+- [ ] Team notified 24 hours in advance
+- [ ] Monitoring dashboard prepared
+
+**Deployment**:
+- [ ] Green deployed and started
+- [ ] Smoke tests passed
+- [ ] Health checks passing
+- [ ] Load balancer switched to green
+- [ ] Blue kept running for rollback
+
+**Post-Deployment**:
+- [ ] Logs monitored for 1 hour
+- [ ] Error rates normal
+- [ ] Performance metrics normal
+- [ ] User testing completed
+- [ ] Team notified of success
+
+**Rollback** (if needed):
+- [ ] Issue severity assessed
+- [ ] Rollback decision made
+- [ ] Load balancer switched to blue
+- [ ] Green stopped
+- [ ] Rollback notification sent
+- [ ] Post-mortem scheduled
+
+---
+
 ## Summary
 
 This deployment checklist covers:
