@@ -26,6 +26,7 @@ jobs:
         run: |
           npm run source:sync || true
           npm run source:process || true
+          npm run source:export || true
           npm run source:report || true
       - name: Copy readiness report
         run: |

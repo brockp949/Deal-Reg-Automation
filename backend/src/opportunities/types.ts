@@ -44,3 +44,25 @@ export interface OpportunityMapperOptions {
   defaultStage?: OpportunityStage;
   defaultPriority?: OpportunityPriority;
 }
+
+export interface CompositeOpportunity {
+  composite_id: string;
+  cluster_id: string;
+  opportunity_ids: string[];
+  stage: OpportunityStage;
+  stage_confidence: number;
+  priority: OpportunityPriority;
+  priority_confidence: number;
+  vendors: string[];
+  customers: string[];
+  actors: string[];
+  tags: string[];
+  score: number;
+  conflicts: {
+    stages: string[];
+    priorities: string[];
+    vendors: string[];
+    customers: string[];
+    has_mixed_sources: boolean;
+  };
+}

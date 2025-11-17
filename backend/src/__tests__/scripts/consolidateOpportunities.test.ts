@@ -76,9 +76,9 @@ describe('consolidateOpportunities CLI', () => {
     const consolidated = JSON.parse(await fs.readFile(outputPath, 'utf-8'));
     expect(consolidated.length).toBe(2);
     const clusterEntry = consolidated.find((entry: any) =>
-      entry.clusterId.startsWith('cluster-')
+      entry.cluster_id.startsWith('cluster-')
     );
-    expect(clusterEntry?.opportunityIds).toEqual(
+    expect(clusterEntry?.opportunity_ids).toEqual(
       expect.arrayContaining(['opp-a', 'opp-b'])
     );
     expect(logSpy).toHaveBeenCalledWith(
