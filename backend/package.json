@@ -13,6 +13,11 @@
     "lint": "eslint src --ext .ts",
     "test": "jest",
     "source:sync": "node -r tsx/cjs src/scripts/runSourceSync.ts",
+    "source:sync:gmail": "node -r tsx/cjs src/scripts/runSourceSync.ts --connector gmail",
+    "source:sync:drive": "node -r tsx/cjs src/scripts/runSourceSync.ts --connector drive",
+    "source:sync:crm-csv": "node -r tsx/cjs src/scripts/runSourceSync.ts --connector crm-csv",
+    "source:sync:teams": "node -r tsx/cjs src/scripts/runSourceSync.ts --connector teams",
+    "source:sync:zoom": "node -r tsx/cjs src/scripts/runSourceSync.ts --connector zoom",
     "source:process": "node -r tsx/cjs src/scripts/processSourceManifest.ts",
     "source:show": "node -r tsx/cjs src/scripts/showOpportunities.ts",
     "source:metrics": "node -r tsx/cjs src/scripts/opportunityMetrics.ts",
@@ -23,7 +28,14 @@
     "source:feedback": "node -r tsx/cjs src/scripts/feedbackManager.ts",
     "source:publish": "node -r tsx/cjs src/scripts/publishDashboard.ts --publish docs/DASHBOARD.md",
     "source:history": "node -r tsx/cjs src/scripts/historyQuery.ts --limit 5",
-    "source:ci": "npm run source:process && npm run source:export && npm run source:quality && npm run source:report && npm run source:publish"
+    "source:ci": "npm run source:process && npm run source:export && npm run source:quality && npm run source:report && npm run source:publish",
+    "smoke:gmail": "node -r tsx/cjs src/scripts/smokeTests.ts --connector gmail",
+    "smoke:drive": "node -r tsx/cjs src/scripts/smokeTests.ts --connector drive",
+    "smoke:crm-csv": "node -r tsx/cjs src/scripts/smokeTests.ts --connector crm-csv",
+    "smoke:teams": "node -r tsx/cjs src/scripts/smokeTests.ts --connector teams",
+    "smoke:zoom": "node -r tsx/cjs src/scripts/smokeTests.ts --connector zoom",
+    "smoke:all": "node -r tsx/cjs src/scripts/smokeTests.ts --all",
+    "load:test": "node -r tsx/cjs src/scripts/loadTest.ts"
   },
   "keywords": [
     "deal-registration",

@@ -15,7 +15,12 @@ import SourceSyncService, {
 } from '../ingestion/SourceSyncService';
 
 async function main() {
-  if (!config.connectors.googleServiceAccount) {
+  // Parse command line arguments for connector filtering
+  const args = process.argv.slice(2);
+  const connectorFlagIndex = args.indexOf('--connector');
+  const selectedConnector = connectorFlagIndex !== -1 ? args[connectorFlagIndex + 1] : null;
+
+  if (!config.connectors.googleServiceAccount && selectedConnector !== 'crm-csv') {
     logger.warn('Google service account credentials are not configured. Aborting source sync.');
     return;
   }
@@ -23,33 +28,54 @@ async function main() {
   const connectors: { gmail?: GmailConnector; drive?: DriveConnector; crmCsv?: CRMCSVConnector } = {};
   const spoolDirectory = path.resolve(config.upload.directory, 'source-sync');
 
+  // Gmail connector
   const gmailQueries = config.connectors.gmailSync.queries.filter((q) => q.query.length > 0);
-  if (config.connectors.gmailSync.enabled && gmailQueries.length > 0) {
+  const enableGmail = (!selectedConnector || selectedConnector === 'gmail') && config.connectors.gmailSync.enabled && gmailQueries.length > 0;
+  if (enableGmail) {
     connectors.gmail = new GmailConnector({
       auth: config.connectors.googleServiceAccount,
       maxResults: config.connectors.gmailSync.maxResults,
     });
+    logger.info('Gmail connector enabled');
   }
 
+  // Drive connector
   const driveQueries = config.connectors.driveSync.queries.filter((q) => q.query.length > 0);
-  if (config.connectors.driveSync.enabled && driveQueries.length > 0) {
+  const enableDrive = (!selectedConnector || selectedConnector === 'drive') && config.connectors.driveSync.enabled && driveQueries.length > 0;
+  if (enableDrive) {
     connectors.drive = new DriveConnector({
       auth: config.connectors.googleServiceAccount,
       pageSize: config.connectors.driveSync.pageSize,
     });
+    logger.info('Drive connector enabled');
   }
 
-  // Check if CRM CSV sync is enabled via environment variable
+  // CRM CSV connector
   const crmCsvEnabled = process.env.CRM_CSV_ENABLED === 'true';
-  if (crmCsvEnabled) {
+  const enableCrmCsv = (!selectedConnector || selectedConnector === 'crm-csv') && crmCsvEnabled;
+  if (enableCrmCsv) {
     const crmDirectory = process.env.CRM_CSV_DIRECTORY || path.resolve(config.upload.directory, 'crm');
     connectors.crmCsv = new CRMCSVConnector({ directory: crmDirectory });
     logger.info('CRM CSV connector enabled', { directory: crmDirectory });
   }
 
+  // Teams and Zoom connectors (Phase 7.2 - not yet in main sync service, placeholder for future)
+  if (selectedConnector === 'teams') {
+    logger.info('Teams connector requested but not yet integrated into main sync service');
+    return;
+  }
+  if (selectedConnector === 'zoom') {
+    logger.info('Zoom connector requested but not yet integrated into main sync service');
+    return;
+  }
+
   if (!connectors.gmail && !connectors.drive && !connectors.crmCsv) {
     logger.warn('No connectors are enabled. Nothing to do.');
     return;
+  }
+
+  if (selectedConnector) {
+    logger.info(`Running sync for connector: ${selectedConnector}`);
   }
 
   const options: SourceSyncOptions = {
