@@ -134,6 +134,7 @@ Each milestone bakes in validation: local `npm test -- --runInBand`, targeted sc
 - Smoke test verifying history writer appends records and enforces retention.
 - Connector stub tests ensuring toggling flags registers manifest entries without impacting current workflow.
 - Performance regression test (mock large manifest) to ensure instrumentation overhead is minimal.
+- **Status**: ✅ Pipeline metrics recorder, history JSONL, connector registry/stubs, and `source:history` CLI are in place with docs + tests.
 
 ### CLI Reference
 - `npm run source:show -- --filter clearled --clusters` shows stored opportunities (`uploads/opportunities/opportunities.json`) and correlated clusters (`opportunity-clusters.json`). Adjust `--limit` or `--file/--clusters-file` to point at custom locations.
@@ -143,6 +144,42 @@ Each milestone bakes in validation: local `npm test -- --runInBand`, targeted sc
 - `npm run source:ci` runs process → export → quality → report sequentially; ideal for CI or scheduled automation after `source:sync`.
 - `npm run source:publish` snapshots metrics/quality history, generates `dashboard.json`, and publishes `docs/DASHBOARD.md` for stakeholders.
 - `npm run source:feedback` imports reviewer annotations (`uploads/opportunities/feedback/annotations.json`) and prints summaries so overrides feed the next pipeline run.
+- `npm run source:history` queries `uploads/opportunities/history/metrics-history.jsonl` for trend snapshots (pass `--limit` / `--json`).
 - `npm run source:report` produces `uploads/opportunities/opportunity-readiness-report.md` and copies it to `docs/OPPORTUNITY_READINESS.md`. A scheduled GitHub Action (`.github/workflows/opportunity-report.yml`) runs `source:sync` plus `source:ci` daily to keep the published report current.
 
 See `docs/PHASE_3_SUMMARY.md` for detailed milestone results.
+
+## Phase 7 - Connector Expansion & Deployment Hardening (Planned)
+
+### Milestone 7.1 - CRM CSV Connector & Parsing
+**Objectives**
+- Land the first non-Google connector (CRM CSV) end-to-end: ingestion, parsing, validation, and mapping into OpportunityRecords.
+- Provide ops runbooks + config for nightly CRM drops.
+
+**Deliverables**
+1. CRM CSV ingestion job (either SourceSync extension or dedicated script) that reads `uploads/crm/*.csv`, converts to manifest entries, and persists metadata sidecars.
+2. Parser + mapper support for CRM fields (deal IDs, accounts, values, owners) with conflict detection against Gmail/Drive records.
+3. Tests: CSV fixtures in `src/__tests__/parsers`, integration run covering CSV + Gmail merge path, and pipeline validation ensuring CRM data flows to composites.
+4. Docs: update README/plan + `docs/CONNECTOR_READINESS.md` with CRM-specific runbook and troubleshooting.
+
+### Milestone 7.2 - Teams/Zoom Transcript Connector & NLP Enhancements
+**Objectives**
+- Add real-time meeting transcript ingestion from non-Google sources, ensuring parity with Drive transcript parser.
+- Enhance semantic extraction for Teams/Zoom quirks (speaker diarization, timestamps).
+
+**Deliverables**
+1. Connector harness (Graph API/Zoom) with token management, rate limiting, and manifest output (pointing to `uploads/transcripts`).
+2. Parser updates to normalize Teams/Zoom transcript format into semantic sections and RFQ signals.
+3. Tests: mocked transcript payloads covering speaker metadata, time ranges, action item detection; integration test verifying multi-source transcripts merge cleanly with Gmail/CRM.
+4. Docs/runbook describing credential setup, scheduling, and fallback plan.
+
+### Milestone 7.3 - Deployment Hardening & Observability
+**Objectives**
+- Move Phase 6 outputs into production by hardening deployment scripts, alerts, and dashboards.
+- Ensure multi-connector runs remain stable and observable.
+
+**Deliverables**
+1. GitHub Actions pipelines (or equivalent CI/CD) that run `source:sync` per connector, `source:ci`, `source:publish`, and push artifacts to production storage (S3/Sheets/BI).
+2. Alerting/monitoring integration using the new pipeline metrics (e.g., send Slack/Datadog notifications when durations exceed thresholds or connectors fail).
+3. Blue/green or canary deploy instructions plus rollback plan documented in `DEPLOYMENT_CHECKLIST.md`.
+4. Tests: smoke test scripts for each connector, load-test scenario (large manifest) to validate instrumentation and retention, plus documentation updates summarizing Phase 7 readiness.

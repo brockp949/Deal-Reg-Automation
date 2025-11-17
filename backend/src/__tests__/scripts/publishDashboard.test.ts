@@ -113,8 +113,10 @@ describe('publishDashboard CLI', () => {
     });
 
     const historyDir = path.join(opportunitiesDir, 'history');
-    const historyEntries = await fs.readdir(historyDir);
-    expect(historyEntries.length).toBe(1);
+    const dirEntries = (await fs.readdir(historyDir, { withFileTypes: true })).filter((entry) =>
+      entry.isDirectory()
+    );
+    expect(dirEntries.length).toBe(1);
 
     const dashboard = JSON.parse(
       await fs.readFile(path.join(opportunitiesDir, 'dashboard.json'), 'utf-8')
@@ -165,7 +167,12 @@ describe('publishDashboard CLI', () => {
     });
 
     const historyDir = path.join(opportunitiesDir, 'history');
-    const historyEntries = (await fs.readdir(historyDir)).sort();
+    const historyEntries = (
+      await fs.readdir(historyDir, { withFileTypes: true })
+    )
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort();
     expect(historyEntries.length).toBe(2);
     expect(historyEntries[0]).toContain('20251118');
     expect(historyEntries[1]).toContain('20251119');

@@ -5,6 +5,7 @@ import { config } from '../config';
 import { OpportunityMetrics } from './opportunityMetrics';
 import { QualitySummary } from './opportunityQuality';
 import { CompositeOpportunity } from '../opportunities/types';
+import PipelineMetricsRecorder from '../utils/pipelineMetrics';
 
 interface PublishOptions {
   historyLimit?: number;
@@ -352,7 +353,28 @@ function renderDashboardMarkdown(data: DashboardData): string {
   return lines.join('\n');
 }
 
+async function appendHistoryRecord(
+  opportunitiesDir: string,
+  data: DashboardData
+): Promise<void> {
+  const historyDir = path.join(opportunitiesDir, 'history');
+  await fs.mkdir(historyDir, { recursive: true });
+  const historyFile = path.join(historyDir, 'metrics-history.jsonl');
+  const record = {
+    generatedAt: data.generatedAt,
+    totals: data.totals,
+    stageBreakdown: data.stageBreakdown,
+    priorityBreakdown: data.priorityBreakdown,
+    quality: data.quality,
+    actionItems: data.actionItems,
+    feedback: data.feedback,
+  };
+  await fs.appendFile(historyFile, JSON.stringify(record) + '\n', 'utf-8');
+}
+
 export async function main(optionsOverride?: PublishOptions) {
+  const metricsRecorder = new PipelineMetricsRecorder();
+  metricsRecorder.startStep('publish_dashboard');
   const options = optionsOverride ?? parseArgs();
   const opportunitiesDir = path.resolve(config.upload.directory, 'opportunities');
   const historyDir = path.join(opportunitiesDir, 'history');
@@ -384,6 +406,7 @@ export async function main(optionsOverride?: PublishOptions) {
   const dashboard = buildDashboardData(metrics, quality, composites, history);
   const dashboardPath = options.dashboardPath ?? path.join(opportunitiesDir, 'dashboard.json');
   await fs.writeFile(dashboardPath, JSON.stringify(dashboard, null, 2));
+  await appendHistoryRecord(opportunitiesDir, dashboard);
 
   if (options.publishPath) {
     await fs.mkdir(path.dirname(options.publishPath), { recursive: true });
@@ -396,6 +419,12 @@ export async function main(optionsOverride?: PublishOptions) {
     dashboardPath,
     publishPath: options.publishPath,
     historyCount: history.length,
+  });
+
+  metricsRecorder.endStep('publish_dashboard');
+  await metricsRecorder.persist({
+    historyCount: history.length,
+    conflictsTracked: dashboard.topConflicts.length,
   });
 }
 

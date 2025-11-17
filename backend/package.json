@@ -22,6 +22,7 @@
     "source:quality": "node -r tsx/cjs src/scripts/opportunityQuality.ts",
     "source:feedback": "node -r tsx/cjs src/scripts/feedbackManager.ts",
     "source:publish": "node -r tsx/cjs src/scripts/publishDashboard.ts --publish docs/DASHBOARD.md",
+    "source:history": "node -r tsx/cjs src/scripts/historyQuery.ts --limit 5",
     "source:ci": "npm run source:process && npm run source:export && npm run source:quality && npm run source:report && npm run source:publish"
   },
   "keywords": [

@@ -124,6 +124,8 @@ After running the Google source sync (`npm run source:sync`) and processing mani
    - Takes the latest metrics/quality/composite artifacts, snapshots them into history, generates `uploads/opportunities/dashboard.json`, and publishes `docs/DASHBOARD.md` for live dashboards.
 8. `npm run source:feedback`
    - Imports stakeholder annotations (`opportunity_id`, stage/priority corrections, notes) and updates `feedback-summary.json` / `docs/FEEDBACK_SUMMARY.md`; rerun `source:ci` afterward to apply overrides to opportunities/composites.
+9. `npm run source:history`
+   - Dumps the metrics/quality history snapshots stored under `uploads/opportunities/history/metrics-history.jsonl` for quick trend analysis.
 
 ## Development Roadmap
 
