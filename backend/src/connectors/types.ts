@@ -66,6 +66,15 @@ export interface DriveFileContent {
   fileExtension: string;
 }
 
+export interface CRMCSVFileSummary {
+  fileName: string;
+  filePath: string;
+  fileSize: number;
+  modifiedTime: string;
+  createdTime: string;
+  checksum: string;
+}
+
 export type GmailSourceMetadata = {
   connector: 'gmail';
   queryName?: string;
@@ -78,4 +87,9 @@ export type DriveSourceMetadata = {
   file: DriveFileSummary;
 };
 
-export type SourceMetadata = GmailSourceMetadata | DriveSourceMetadata;
+export type CRMCSVSourceMetadata = {
+  connector: 'crm_csv';
+  file: CRMCSVFileSummary;
+};
+
+export type SourceMetadata = GmailSourceMetadata | DriveSourceMetadata | CRMCSVSourceMetadata;

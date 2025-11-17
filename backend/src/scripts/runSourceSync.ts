@@ -5,10 +5,12 @@ import logger from '../utils/logger';
 import {
   DriveConnector,
   GmailConnector,
+  CRMCSVConnector,
 } from '../connectors';
 import SourceSyncService, {
   DriveSyncConfig,
   GmailSyncConfig,
+  CRMCSVSyncConfig,
   SourceSyncOptions,
 } from '../ingestion/SourceSyncService';
 
@@ -18,7 +20,7 @@ async function main() {
     return;
   }
 
-  const connectors: { gmail?: GmailConnector; drive?: DriveConnector } = {};
+  const connectors: { gmail?: GmailConnector; drive?: DriveConnector; crmCsv?: CRMCSVConnector } = {};
   const spoolDirectory = path.resolve(config.upload.directory, 'source-sync');
 
   const gmailQueries = config.connectors.gmailSync.queries.filter((q) => q.query.length > 0);
@@ -37,8 +39,16 @@ async function main() {
     });
   }
 
-  if (!connectors.gmail && !connectors.drive) {
-    logger.warn('Neither Gmail nor Drive sync is enabled. Nothing to do.');
+  // Check if CRM CSV sync is enabled via environment variable
+  const crmCsvEnabled = process.env.CRM_CSV_ENABLED === 'true';
+  if (crmCsvEnabled) {
+    const crmDirectory = process.env.CRM_CSV_DIRECTORY || path.resolve(config.upload.directory, 'crm');
+    connectors.crmCsv = new CRMCSVConnector({ directory: crmDirectory });
+    logger.info('CRM CSV connector enabled', { directory: crmDirectory });
+  }
+
+  if (!connectors.gmail && !connectors.drive && !connectors.crmCsv) {
+    logger.warn('No connectors are enabled. Nothing to do.');
     return;
   }
 
@@ -63,6 +73,13 @@ async function main() {
           })),
         } satisfies DriveSyncConfig)
       : undefined,
+    crmCsv: connectors.crmCsv
+      ? ({
+          enabled: true,
+          directory: process.env.CRM_CSV_DIRECTORY || path.resolve(config.upload.directory, 'crm'),
+          maxFiles: parseInt(process.env.CRM_CSV_MAX_FILES || '100', 10),
+        } satisfies CRMCSVSyncConfig)
+      : undefined,
   };
 
   const service = new SourceSyncService(options, connectors);
@@ -79,6 +96,10 @@ async function main() {
     driveQueries: report.drive.map((entry) => ({
       query: entry.query.name,
       files: entry.files.length,
+    })),
+    crmCsvFiles: report.crmCsv.map((entry) => ({
+      files: entry.files.length,
+      totalSizeMB: (entry.files.reduce((sum, f) => sum + f.fileSize, 0) / 1024 / 1024).toFixed(2),
     })),
     spoolDirectory,
     manifestPath,

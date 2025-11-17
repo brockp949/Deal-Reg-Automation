@@ -323,17 +323,36 @@ export class OpportunityMapper {
     output: StandardizedParserOutput
   ): OpportunitySourceReference {
     const sourceMetadata = output.metadata.sourceMetadata;
+    const referenceIds: string[] = [];
+
+    // Add deal-specific IDs
+    if (deal.source_email_id) {
+      referenceIds.push(deal.source_email_id);
+    }
+
+    // Add connector-specific reference IDs
+    if (sourceMetadata?.connector === 'drive') {
+      referenceIds.push(sourceMetadata.file.id);
+    } else if (sourceMetadata?.connector === 'gmail') {
+      if (sourceMetadata.message.id) {
+        referenceIds.push(sourceMetadata.message.id);
+      }
+      if (sourceMetadata.message.threadId) {
+        referenceIds.push(sourceMetadata.message.threadId);
+      }
+    } else if (sourceMetadata?.connector === 'crm_csv') {
+      // For CRM CSV, use file checksum as reference ID
+      referenceIds.push(sourceMetadata.file.checksum);
+      referenceIds.push(sourceMetadata.file.fileName);
+    }
+
     return {
       parser: output.metadata.parsingMethod,
       fileName: output.metadata.fileName,
       sourceType: output.metadata.sourceType,
       connector: sourceMetadata?.connector,
       queryName: sourceMetadata?.queryName,
-      referenceIds: this.dedupe(
-        [deal.source_email_id, sourceMetadata?.connector === 'drive' ? sourceMetadata.file.id : undefined].filter(
-          (value): value is string => Boolean(value)
-        )
-      ),
+      referenceIds: this.dedupe(referenceIds),
     };
   }
 
