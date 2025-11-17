@@ -137,6 +137,12 @@ Manages stakeholder annotations for opportunities.
 - **Description**: Imports reviewer annotations (stage/priority corrections, notes, verdicts) into `uploads/opportunities/feedback/annotations.json`. After importing, rerun `npm run source:ci` so overrides apply to opportunities/composites. Use `--list` to print the latest summary (`feedback-summary.json` / `docs/FEEDBACK_SUMMARY.md`).
 - **Prerequisites**: Annotation files must contain `opportunity_id` plus optional `stage`, `priority`, `notes`, `verdict`, `reviewer`, `reviewed_at`.
 
+### `npm run source:history`
+Queries the metrics/quality history snapshots for trend analysis.
+- **Usage**: `npm run source:history [-- --limit 5 --json]`
+- **Description**: Reads `uploads/opportunities/history/metrics-history.jsonl` and prints the latest N entries (or emits JSON) for inspections, dashboards, or data science exports.
+- **Prerequisites**: Run `npm run source:publish` at least once to seed the history file.
+
 ## Typical Workflow
 
 ### First-time Setup

@@ -9,6 +9,7 @@ import { OpportunityCorrelator } from '../opportunities/OpportunityCorrelator';
 import { OpportunityConsolidator } from '../opportunities/OpportunityConsolidator';
 import { main as exportComposite } from './exportCompositeOpportunities';
 import { main as opportunityMetrics } from './opportunityMetrics';
+import PipelineMetricsRecorder from '../utils/pipelineMetrics';
 import AnnotationService from '../feedback/AnnotationService';
 import { main as opportunityQuality } from './opportunityQuality';
 
@@ -40,6 +41,8 @@ async function loadManifest(manifestPath: string): Promise<SourceManifestEntry[]
 }
 
 async function main() {
+  const pipelineMetrics = new PipelineMetricsRecorder();
+  pipelineMetrics.startStep('process_source_manifest');
   const args = parseArgs();
   const defaultManifest = path.resolve(
     config.upload.directory,
@@ -150,6 +153,12 @@ async function main() {
       })),
     });
   }
+
+  pipelineMetrics.endStep('process_source_manifest');
+  await pipelineMetrics.persist({
+    errors: result.errors.length,
+    opportunities: result.opportunities.length,
+  });
 
   if (annotationResult.stats.stageOverrides || annotationResult.stats.priorityOverrides) {
     logger.info('Applied annotations to opportunities', { annotationStats: annotationResult.stats });
