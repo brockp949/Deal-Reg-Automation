@@ -6,6 +6,8 @@ import {
   DriveFileSummary,
   GmailConnector,
   GmailMessageSummary,
+  CRMCSVConnector,
+  CRMCSVFile,
 } from '../connectors';
 import {
   DriveFileContent,
@@ -13,6 +15,7 @@ import {
   GmailMessagePayload,
   GmailSearchQuery,
   SourceMetadata,
+  CRMCSVFileSummary,
 } from '../connectors/types';
 import { SourceType } from '../types/parsing';
 
@@ -30,10 +33,18 @@ export interface DriveSyncConfig {
   queries: DriveSearchQuery[];
 }
 
+export interface CRMCSVSyncConfig {
+  enabled: boolean;
+  directory: string;
+  pattern?: RegExp;
+  maxFiles?: number;
+}
+
 export interface SourceSyncOptions {
   spoolDirectory: string;
   gmail?: GmailSyncConfig;
   drive?: DriveSyncConfig;
+  crmCsv?: CRMCSVSyncConfig;
 }
 
 export interface GmailSyncResult {
@@ -48,18 +59,24 @@ export interface DriveSyncResult {
   spoolFiles: string[];
 }
 
+export interface CRMCSVSyncResult {
+  files: CRMCSVFile[];
+  spoolFiles: string[];
+}
+
 export interface SourceSyncReport {
   gmail: GmailSyncResult[];
   drive: DriveSyncResult[];
+  crmCsv: CRMCSVSyncResult[];
   manifest: SourceManifestEntry[];
 }
 
 export interface SourceManifestEntry {
   filePath: string;
   metadataPath: string;
-  parser: 'StandardizedMboxParser' | 'StandardizedTranscriptParser';
+  parser: 'StandardizedMboxParser' | 'StandardizedTranscriptParser' | 'StandardizedCSVParser';
   sourceType: SourceType;
-  connector: 'gmail' | 'drive';
+  connector: 'gmail' | 'drive' | 'crm_csv';
   queryName?: string;
   recordedAt: string;
   sourceMetadata: SourceMetadata;
@@ -71,11 +88,12 @@ export class SourceSyncService {
     private readonly connectors: {
       gmail?: GmailConnector;
       drive?: DriveConnector;
+      crmCsv?: CRMCSVConnector;
     } = {}
   ) {}
 
   async syncAll(): Promise<SourceSyncReport> {
-    const report: SourceSyncReport = { gmail: [], drive: [], manifest: [] };
+    const report: SourceSyncReport = { gmail: [], drive: [], crmCsv: [], manifest: [] };
 
     if (this.options.gmail?.enabled && this.connectors.gmail) {
       const gmailResults = await this.syncGmail();
@@ -87,6 +105,12 @@ export class SourceSyncService {
       const driveResults = await this.syncDrive();
       report.drive = driveResults.results;
       report.manifest.push(...driveResults.manifestEntries);
+    }
+
+    if (this.options.crmCsv?.enabled && this.connectors.crmCsv) {
+      const crmCsvResults = await this.syncCRMCSV();
+      report.crmCsv = crmCsvResults.results;
+      report.manifest.push(...crmCsvResults.manifestEntries);
     }
 
     return report;
@@ -277,10 +301,85 @@ export class SourceSyncService {
     return metadataPath;
   }
 
+  async syncCRMCSV(): Promise<{ results: CRMCSVSyncResult[]; manifestEntries: SourceManifestEntry[] }> {
+    if (!this.options.crmCsv || !this.connectors.crmCsv) {
+      return { results: [], manifestEntries: [] };
+    }
+
+    const manifestEntries: SourceManifestEntry[] = [];
+    const baseDir = path.join(this.options.spoolDirectory, 'crm');
+    await fs.mkdir(baseDir, { recursive: true });
+
+    // Scan for CSV files in the configured directory
+    const scanResult = await this.connectors.crmCsv.scanCSVFiles({
+      directory: this.options.crmCsv.directory,
+      pattern: this.options.crmCsv.pattern,
+      maxFiles: this.options.crmCsv.maxFiles,
+    });
+
+    const spoolFiles: string[] = [];
+
+    for (const file of scanResult.files) {
+      try {
+        // Copy CSV file to spool directory (preserving original)
+        const destPath = path.join(baseDir, file.fileName);
+        await fs.copyFile(file.filePath, destPath);
+
+        // Create metadata
+        const metadata: SourceMetadata = {
+          connector: 'crm_csv',
+          file: {
+            fileName: file.fileName,
+            filePath: destPath,
+            fileSize: file.fileSize,
+            modifiedTime: file.modifiedTime.toISOString(),
+            createdTime: file.createdTime.toISOString(),
+            checksum: file.checksum,
+          },
+        };
+
+        const metadataPath = await this.writeMetadata(destPath, metadata);
+        manifestEntries.push(
+          this.createManifestEntry({
+            filePath: destPath,
+            metadataPath,
+            parser: 'StandardizedCSVParser',
+            sourceType: 'csv',
+            sourceMetadata: metadata,
+          })
+        );
+        spoolFiles.push(destPath);
+
+        logger.info('CRM CSV file synced', {
+          fileName: file.fileName,
+          sizeMB: (file.fileSize / 1024 / 1024).toFixed(2),
+        });
+      } catch (error: any) {
+        logger.error('Failed to sync CRM CSV file, skipping', {
+          fileName: file.fileName,
+          error: error.message,
+        });
+        // Continue with next file instead of failing entire sync
+      }
+    }
+
+    const result: CRMCSVSyncResult = {
+      files: scanResult.files,
+      spoolFiles,
+    };
+
+    logger.info('CRM CSV sync complete', {
+      filesSynced: scanResult.files.length,
+      totalSizeMB: (scanResult.totalSize / 1024 / 1024).toFixed(2),
+    });
+
+    return { results: [result], manifestEntries };
+  }
+
   private createManifestEntry(params: {
     filePath: string;
     metadataPath: string;
-    parser: 'StandardizedMboxParser' | 'StandardizedTranscriptParser';
+    parser: 'StandardizedMboxParser' | 'StandardizedTranscriptParser' | 'StandardizedCSVParser';
     sourceType: SourceType;
     sourceMetadata: SourceMetadata;
   }): SourceManifestEntry {
@@ -290,7 +389,9 @@ export class SourceSyncService {
       parser: params.parser,
       sourceType: params.sourceType,
       connector: params.sourceMetadata.connector,
-      queryName: params.sourceMetadata.queryName,
+      queryName: params.sourceMetadata.connector === 'gmail' || params.sourceMetadata.connector === 'drive'
+        ? params.sourceMetadata.queryName
+        : undefined,
       recordedAt: new Date().toISOString(),
       sourceMetadata: params.sourceMetadata,
     };

@@ -1,0 +1,6 @@
+Opportunity ID,Opportunity Name,Account Name,Amount,Stage,Close Date,Probability,Deal Owner,Contact Name,Contact Email
+OPP-001,4IEC Gateway Deployment - Acme Corp,Acme Corporation,125000,Proposal/Price Quote,2025-12-15,75,John Smith,Jane Doe,jane.doe@acmecorp.com
+OPP-002,Network Infrastructure Upgrade - TechStart,TechStart Inc,87500,Negotiation/Review,2026-01-20,80,Sarah Johnson,Bob Williams,bob.w@techstart.com
+OPP-003,Cloud Migration Services - GlobalTech,GlobalTech Solutions,250000,Closed Won,2025-11-01,100,Michael Brown,Alice Green,alice.green@globaltech.com
+OPP-004,Security Audit & Compliance - FinServ,FinServ Financial,56000,Prospecting,2026-03-10,25,Emily Davis,Charlie Wilson,cwilson@finserv.com
+OPP-005,Data Center Modernization - ManuCo,Manufacturing Co,340000,Value Proposition,2026-02-28,50,David Lee,Diana Prince,d.prince@manufaco.com

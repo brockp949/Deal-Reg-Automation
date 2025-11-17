@@ -14,7 +14,7 @@ export interface OpportunitySourceReference {
   parser: string;
   fileName: string;
   sourceType: SourceType;
-  connector?: 'gmail' | 'drive';
+  connector?: 'gmail' | 'drive' | 'crm_csv';
   queryName?: string;
   referenceIds: string[];
   manifestPath?: string;
