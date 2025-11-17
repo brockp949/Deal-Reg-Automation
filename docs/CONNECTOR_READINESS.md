@@ -380,17 +380,255 @@ CRM_CSV_MAX_FILES=100
 
 ---
 
-## Future Enhancements (Phase 7.2+)
+### 4. Microsoft Teams Transcript Connector
+**Status:** ✅ Production (Phase 7.2)
+**Type:** Meeting transcript ingestion from Microsoft Teams
 
-### Teams/Zoom Transcript Connector
-- Real-time meeting transcript ingestion
-- Speaker diarization
-- Action item extraction
-- API-based sync (Graph API, Zoom API)
+#### Configuration
+- **Environment Variable:** `TEAMS_TRANSCRIPT_ENABLED=true`
+- **Required Credentials:** Azure AD App Registration with Microsoft Graph API access
+- **API Permissions:** `OnlineMeetings.Read.All`, `CallRecords.Read.All`
+
+#### Runbook
+
+##### Initial Setup
+```bash
+# 1. Create Azure AD App Registration
+# - Navigate to Azure Portal → Azure Active Directory → App registrations
+# - Create new registration
+# - Note down: Client ID, Tenant ID
+# - Create client secret, note down secret value
+
+# 2. Grant API permissions
+# - Microsoft Graph → Application permissions
+# - Add: OnlineMeetings.Read.All, CallRecords.Read.All
+# - Grant admin consent
+
+# 3. Configure environment
+export TEAMS_TRANSCRIPT_ENABLED=true
+export TEAMS_CLIENT_ID="your-client-id"
+export TEAMS_CLIENT_SECRET="your-client-secret"
+export TEAMS_TENANT_ID="your-tenant-id"
+
+# 4. Test authentication
+npm run source:sync
+```
+
+##### Daily Operations
+```bash
+# Run sync to fetch new transcripts
+npm run source:sync
+
+# Verify Teams transcripts
+cat uploads/source-sync/source-sync-manifest.json | jq '.[] | select(.connector == "teams_transcript")'
+
+# Check downloaded transcripts
+ls uploads/source-sync/teams/
+
+# Process transcripts
+npm run source:process
+```
+
+#### Troubleshooting
+
+**Issue:** Authentication failures
+```bash
+# Verify credentials
+echo $TEAMS_CLIENT_ID
+echo $TEAMS_TENANT_ID
+
+# Test Graph API access
+curl -X POST https://login.microsoftonline.com/$TEAMS_TENANT_ID/oauth2/v2.0/token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "client_id=$TEAMS_CLIENT_ID&client_secret=$TEAMS_CLIENT_SECRET&scope=https://graph.microsoft.com/.default&grant_type=client_credentials"
+```
+
+**Issue:** No transcripts found
+- Ensure meeting recording/transcription is enabled in Teams admin center
+- Verify transcripts are generated (can take 1-2 hours after meeting ends)
+- Check API permissions include `OnlineMeetings.Read.All`
+
+**Issue:** Rate limiting
+- Teams connector implements automatic rate limiting (60 req/min, 2000 req/hour)
+- If hitting limits, reduce sync frequency or filter by date range
+
+---
+
+### 5. Zoom Transcript Connector
+**Status:** ✅ Production (Phase 7.2)
+**Type:** Meeting transcript ingestion from Zoom
+
+#### Configuration
+- **Environment Variable:** `ZOOM_TRANSCRIPT_ENABLED=true`
+- **Required Credentials:** Zoom Server-to-Server OAuth app
+- **API Scopes:** `recording:read:admin`, `meeting:read:admin`
+
+#### Runbook
+
+##### Initial Setup
+```bash
+# 1. Create Zoom Server-to-Server OAuth App
+# - Navigate to Zoom App Marketplace → Develop → Build App
+# - Choose "Server-to-Server OAuth"
+# - Note down: Account ID, Client ID, Client Secret
+
+# 2. Add scopes
+# - recording:read:admin (to access recordings/transcripts)
+# - meeting:read:admin (to list meetings)
+
+# 3. Activate app
+# - Complete app information
+# - Activate the app
+
+# 4. Configure environment
+export ZOOM_TRANSCRIPT_ENABLED=true
+export ZOOM_ACCOUNT_ID="your-account-id"
+export ZOOM_CLIENT_ID="your-client-id"
+export ZOOM_CLIENT_SECRET="your-client-secret"
+
+# 5. Test authentication
+npm run source:sync
+```
+
+##### Daily Operations
+```bash
+# Run sync
+npm run source:sync
+
+# Verify Zoom transcripts
+cat uploads/source-sync/source-sync-manifest.json | jq '.[] | select(.connector == "zoom_transcript")'
+
+# Check downloaded transcripts
+ls uploads/source-sync/zoom/
+
+# Process transcripts
+npm run source:process
+```
+
+#### Supported Transcript Formats
+
+**VTT (WebVTT)**
+- Timestamp-based format with speaker diarization
+- Preferred format (includes timing and speaker info)
+- Auto-detected and parsed with full metadata
+
+**Plain Text**
+- Speaker-prefixed format ("Speaker Name: Text")
+- Fallback when VTT not available
+- Still captures speaker info and action items
+
+**JSON**
+- Zoom's native transcript JSON format
+- Full metadata including timestamps, speakers, segments
+- Richest data source when available
+
+#### Speaker Diarization
+
+The transcript normalizer automatically:
+- Detects speaker names from transcript format
+- Extracts timestamps for each segment
+- Identifies action items and next steps
+- Maps speakers to opportunity actors
+
+**Teams Format Example:**
+```
+<v John Smith>We need 200-300 units by Q2 2026.</v>
+<v Sarah Johnson>Budget is $150k-$200k.</v>
+```
+
+**Zoom Format Example:**
+```
+Robert Williams: We're looking at 500-1000 units.
+Emily Davis: Target deployment is Q1 2026.
+```
+
+#### Troubleshooting
+
+**Issue:** Authentication failures
+```bash
+# Verify credentials
+echo $ZOOM_ACCOUNT_ID
+echo $ZOOM_CLIENT_ID
+
+# Test Zoom API
+curl -X POST https://zoom.us/oauth/token?grant_type=account_credentials&account_id=$ZOOM_ACCOUNT_ID \
+  -H "Authorization: Basic $(echo -n $ZOOM_CLIENT_ID:$ZOOM_CLIENT_SECRET | base64)"
+```
+
+**Issue:** No transcripts found
+- Ensure "Audio Transcript" is enabled in Zoom account settings
+- Check recordings are saved to cloud (not local-only)
+- Transcripts can take 1-2 hours to generate after meeting ends
+
+**Issue:** Transcript quality issues
+- Zoom transcript quality depends on audio quality
+- Speaker diarization works best with clear audio
+- Multiple overlapping speakers may reduce accuracy
+
+---
+
+## Multi-Connector Integration
+
+### Cross-Source Correlation
+
+The system automatically correlates opportunities from multiple sources:
+
+**Example: CRM CSV + Gmail**
+1. CRM exports deal "Acme Corp - Gateway Deployment" (Stage: Proposal)
+2. Gmail captures email thread about "Acme Gateway" (Stage: RFQ)
+3. Correlator matches via shared vendor/customer tags
+4. Consolidator creates composite with conflict flagging
+
+**Example: Teams Transcript + CRM CSV**
+1. Teams meeting transcript: "4IEC Gateway RFQ - 200-300 units, $150k-$200k"
+2. CRM record: "Acme Corp - Gateway Deployment - $175k"
+3. Correlator matches via vendor/customer/product tags
+4. Consolidator merges, flags any pricing conflicts
+
+**Example: Zoom + Drive + Gmail**
+1. Zoom transcript: Technical discussion, 500-1000 units
+2. Drive doc: Proposal document with pricing
+3. Gmail: Follow-up emails with PO details
+4. All three correlated into single composite opportunity
+
+---
+
+## Deployment Checklist
+
+### Phase 7.1 - CRM CSV Connector
+
+- [x] CRMCSVConnector implementation
+- [x] SourceSyncService integration
+- [x] StandardizedCSVParser multi-format support
+- [x] OpportunityMapper CRM field handling
+- [x] OpportunityConsolidator conflict detection
+- [x] Unit tests (CRMCSVConnector)
+- [x] Integration tests (CSV + Gmail/Drive merge)
+- [x] Test fixtures (Salesforce, HubSpot, Zoho)
+- [x] Documentation (this runbook)
+- [ ] Production deployment
+- [ ] Monitoring/alerting setup
+- [ ] CRM export automation (customer-specific)
+
+### Phase 7.2 - Teams/Zoom Transcript Connectors
+
+- [x] TeamsTranscriptConnector (Graph API)
+- [x] ZoomTranscriptConnector (Zoom API)
+- [x] Token management & refresh logic
+- [x] Rate limiting implementation
+- [x] Transcript normalizer (VTT/text/JSON)
+- [x] Enhanced speaker diarization
+- [x] Timestamp extraction & parsing
+- [x] Action item detection
+- [x] Test fixtures (Teams/Zoom VTT)
+- [x] Documentation (this runbook)
+- [ ] Production deployment
+- [ ] API credential setup (Teams/Zoom)
+- [ ] Monitoring/alerting setup
 
 ---
 
 ## Support
 
-**Tests:** `npm test -- CRMCSVConnector`
+**Tests:** `npm test -- Teams` or `npm test -- Zoom`
 **Documentation:** `/docs/OPPORTUNITY_TRACKER_PLAN.md`

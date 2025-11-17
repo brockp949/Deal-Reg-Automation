@@ -92,4 +92,44 @@ export type CRMCSVSourceMetadata = {
   file: CRMCSVFileSummary;
 };
 
-export type SourceMetadata = GmailSourceMetadata | DriveSourceMetadata | CRMCSVSourceMetadata;
+export interface TeamsTranscriptSummary {
+  id: string;
+  meetingId: string;
+  organizerId?: string;
+  subject?: string;
+  startTime?: string;
+  endTime?: string;
+  participants?: Array<{ name?: string; email?: string; role?: string }>;
+  duration?: number;
+}
+
+export interface ZoomTranscriptSummary {
+  id: string;
+  meetingId: string;
+  meetingUuid?: string;
+  topic?: string;
+  startTime?: string;
+  duration?: number;
+  hostId?: string;
+  hostEmail?: string;
+  participantCount?: number;
+}
+
+export type TeamsSourceMetadata = {
+  connector: 'teams_transcript';
+  queryName?: string;
+  transcript: TeamsTranscriptSummary;
+};
+
+export type ZoomSourceMetadata = {
+  connector: 'zoom_transcript';
+  queryName?: string;
+  transcript: ZoomTranscriptSummary;
+};
+
+export type SourceMetadata =
+  | GmailSourceMetadata
+  | DriveSourceMetadata
+  | CRMCSVSourceMetadata
+  | TeamsSourceMetadata
+  | ZoomSourceMetadata;
