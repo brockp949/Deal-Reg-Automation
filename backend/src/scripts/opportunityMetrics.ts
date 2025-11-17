@@ -3,6 +3,7 @@ import path from 'path';
 import logger from '../utils/logger';
 import { config } from '../config';
 import { OpportunityRecord, CompositeOpportunity } from '../opportunities/types';
+import type { QualitySummary } from './opportunityQuality';
 
 interface MetricsOptions {
   file?: string;
@@ -30,6 +31,19 @@ export interface OpportunityMetrics {
       customers: number;
     };
   };
+  actionItems?: {
+    total: number;
+    withOwner: number;
+    withDueDate: number;
+  };
+  quality?: {
+    findings: number;
+    high: number;
+    medium: number;
+    low: number;
+    stale: number;
+    averageScore: number;
+  };
 }
 
 function parseArgs(): MetricsOptions {
@@ -56,7 +70,8 @@ function summarize(
   records: OpportunityRecord[],
   clusters: any[],
   errors: Array<{ entry: { filePath: string }; error: string }>,
-  composites?: CompositeOpportunity[]
+  composites?: CompositeOpportunity[],
+  quality?: QualitySummary
 ): OpportunityMetrics {
   const stageBreakdown: Record<string, number> = {};
   const priorityBreakdown: Record<string, number> = {};
@@ -74,6 +89,8 @@ function summarize(
       }
     }
   }
+
+  const actionItems = records.flatMap((record) => record.structuredNextSteps ?? []);
 
   return {
     totalOpportunities: records.length,
@@ -106,13 +123,31 @@ function summarize(
           },
         }
       : undefined,
+    actionItems: actionItems.length
+      ? {
+          total: actionItems.length,
+          withOwner: actionItems.filter((item) => Boolean(item.owner)).length,
+          withDueDate: actionItems.filter((item) => Boolean(item.dueDate)).length,
+        }
+      : undefined,
+    quality: quality
+      ? {
+          findings: quality.totalComposites,
+          high: quality.highCount,
+          medium: quality.mediumCount,
+          low: quality.lowCount,
+          stale: quality.staleCount,
+          averageScore: Number(quality.averageScore.toFixed(1)),
+        }
+      : undefined,
   };
 }
 
 export async function main(
   optionsOverride?: MetricsOptions,
   errors?: Array<{ entry: { filePath: string }; error: string }>,
-  composites?: CompositeOpportunity[]
+  composites?: CompositeOpportunity[],
+  quality?: QualitySummary
 ) {
   const options = optionsOverride ?? parseArgs();
   const opportunitiesPath =
@@ -127,7 +162,7 @@ export async function main(
 
   const records = await loadJson<OpportunityRecord[]>(opportunitiesPath);
   const clusters = await loadJson<any[]>(clustersPath);
-  const metrics = summarize(records, clusters, errors ?? [], composites);
+  const metrics = summarize(records, clusters, errors ?? [], composites, quality);
 
   await fs.writeFile(outputPath, JSON.stringify(metrics, null, 2), 'utf-8');
 

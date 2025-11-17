@@ -11,6 +11,7 @@ import {
   OpportunityRecord,
   OpportunitySourceReference,
   OpportunityStage,
+  StructuredNextStep,
 } from './types';
 
 const STAGE_ALIAS_MAP: Record<string, OpportunityStage> = {
@@ -50,6 +51,13 @@ export class OpportunityMapper {
     const nextSteps = this.collectNextSteps(output);
     const sourceTags = this.collectSourceTags(deal, output);
     const opportunityId = this.generateOpportunityId(deal, index, output);
+    const lastTouched = this.normalizeTimestamp(output.metadata.parsedAt);
+    const structuredNextSteps = this.collectStructuredNextSteps(
+      deal,
+      output,
+      contacts,
+      actors
+    );
 
     const sourceSummary = this.buildSourceReference(deal, output);
 
@@ -63,6 +71,7 @@ export class OpportunityMapper {
       costUpsideNotes: costUpside,
       actors,
       nextSteps,
+      structuredNextSteps: structuredNextSteps.length ? structuredNextSteps : undefined,
       sourceTags,
       sourceSummary: [sourceSummary],
       metadata: {
@@ -70,6 +79,7 @@ export class OpportunityMapper {
         customer: deal.customer_name,
         parser: output.metadata.parsingMethod,
         confidence: deal.confidence_score,
+        lastTouched,
       },
     };
   }
@@ -170,6 +180,144 @@ export class OpportunityMapper {
     return this.dedupe([...(deal.source_tags ?? []), ...(output.metadata.sourceTags ?? [])]);
   }
 
+  private collectStructuredNextSteps(
+    deal: NormalizedDeal,
+    output: StandardizedParserOutput,
+    contacts: NormalizedContact[],
+    actors: string[]
+  ): StructuredNextStep[] {
+    const actionItems = output.semanticSections?.actionItems ?? [];
+    if (!actionItems.length) return [];
+
+    const candidates = this.buildOwnerCandidates(deal, contacts, actors, output);
+    const structured: StructuredNextStep[] = [];
+
+    for (const item of actionItems) {
+      const description = this.normalizeActionItem(item);
+      if (!description) continue;
+      const owner = this.inferOwnerFromAction(description, candidates);
+      const dueDate = this.extractDueDateToken(description);
+      structured.push({
+        description,
+        owner,
+        dueDate,
+        source: output.metadata.fileName,
+      });
+    }
+
+    return structured;
+  }
+
+  private buildOwnerCandidates(
+    deal: NormalizedDeal,
+    contacts: NormalizedContact[],
+    actors: string[],
+    output: StandardizedParserOutput
+  ): Map<string, string> {
+    const candidates = new Map<string, string>();
+    const addCandidate = (value?: string) => {
+      if (!value) return;
+      const normalized = this.normalizeOwnerToken(value);
+      if (!normalized) return;
+      if (!candidates.has(normalized)) {
+        candidates.set(normalized, value.trim());
+      }
+    };
+
+    actors.forEach((actor) => {
+      actor
+        .split(/[,/&]|(?:\band\b)/i)
+        .map((token) => token.trim())
+        .filter((token) => token.length > 0)
+        .forEach(addCandidate);
+    });
+
+    contacts.forEach((contact) => addCandidate(contact.name));
+    addCandidate(deal.decision_maker_contact);
+
+    output.semanticSections?.attendees?.forEach((entry) => {
+      const normalizedEntry = entry.replace(/^attendees:\s*/i, '');
+      normalizedEntry
+        .split(/[,;&]/)
+        .map((token) => token.trim())
+        .filter((token) => token.length > 0)
+        .forEach(addCandidate);
+    });
+
+    return candidates;
+  }
+
+  private normalizeActionItem(value: string | undefined): string | undefined {
+    if (!value) return undefined;
+    const cleaned = value.replace(/^[\s*\-•\u2022]+/, '').trim();
+    return cleaned.length ? cleaned : undefined;
+  }
+
+  private normalizeOwnerToken(value: string | undefined): string | undefined {
+    if (!value) return undefined;
+    const normalized = value
+      .toLowerCase()
+      .replace(/[^a-z\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return normalized.length ? normalized : undefined;
+  }
+
+  private inferOwnerFromAction(
+    description: string,
+    candidates: Map<string, string>
+  ): string | undefined {
+    const leadingPattern =
+      /^(?<owner>[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})\s*(?:[:\-–]\s+|to\s+)/;
+    const directMatch = description.match(leadingPattern);
+    if (directMatch?.groups?.owner) {
+      return directMatch.groups.owner.trim();
+    }
+
+    const normalizedDescription = this.normalizeOwnerToken(description) ?? '';
+    for (const [normalized, original] of candidates.entries()) {
+      if (normalizedDescription.includes(normalized)) {
+        return original;
+      }
+    }
+    return undefined;
+  }
+
+  private extractDueDateToken(description: string): string | undefined {
+    const duePhrase = description.match(
+      /\b(?:by|before|due|on|no later than)\s+([A-Za-z0-9\/,\- ]{3,40})/i
+    );
+    if (duePhrase?.[1]) {
+      return duePhrase[1].trim();
+    }
+
+    const fallback = description.match(
+      /\b(Q[1-4]\s+\d{4}|EOW|EOM|EOD|EOY|next week|next month)\b/i
+    );
+    if (fallback?.[1]) {
+      return fallback[1];
+    }
+
+    const explicitDate =
+      description.match(/\b\d{4}-\d{2}-\d{2}\b/) ??
+      description.match(/\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\b/) ??
+      description.match(
+        /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{1,2}(?:,\s*\d{2,4})?\b/i
+      );
+    if (explicitDate?.[0]) {
+      return explicitDate[0];
+    }
+
+    const dayOfWeek = description.match(
+      /\b(?:mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\b/i
+    );
+    if (dayOfWeek?.[0]) {
+      return dayOfWeek[0];
+    }
+
+    return undefined;
+  }
+
   private buildSourceReference(
     deal: NormalizedDeal,
     output: StandardizedParserOutput
@@ -234,5 +382,17 @@ export class OpportunityMapper {
           .filter((value) => value.length > 0)
       )
     );
+  }
+
+  private normalizeTimestamp(value: Date | string | undefined): string | undefined {
+    if (!value) return undefined;
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      return value.toISOString();
+    }
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return undefined;
+    }
+    return parsed.toISOString();
   }
 }

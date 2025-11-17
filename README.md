@@ -116,6 +116,10 @@ After running the Google source sync (`npm run source:sync`) and processing mani
    - Builds `uploads/opportunities/opportunity-readiness-report.md` and publishes a copy to `docs/OPPORTUNITY_READINESS.md` for easy sharing.
 4. `npm run source:export`
    - Converts `consolidated-opportunities.json` into tracker-ready JSON/CSV composites (`composite-opportunities.json` / `.csv`) for downstream analytics.
+5. `npm run source:quality`
+   - Scores each composite for completeness, consistency, freshness, and structured action items (owners/dates), writing `quality-findings.json` that feeds readiness metrics/reports.
+6. `npm run source:ci`
+   - Runs the full ingestion → consolidation → quality → reporting pipeline (process/export/quality/report) used by CI and scheduled automations.
 
 ## Development Roadmap
 

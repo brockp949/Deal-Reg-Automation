@@ -9,6 +9,7 @@ import { OpportunityCorrelator } from '../opportunities/OpportunityCorrelator';
 import { OpportunityConsolidator } from '../opportunities/OpportunityConsolidator';
 import { main as exportComposite } from './exportCompositeOpportunities';
 import { main as opportunityMetrics } from './opportunityMetrics';
+import { main as opportunityQuality } from './opportunityQuality';
 
 interface CliOptions {
   manifestPath?: string;
@@ -84,6 +85,12 @@ async function main() {
     outputCsv: compositeCsvPath,
   });
   const compositeData = JSON.parse(await fs.readFile(compositeJsonPath, 'utf-8'));
+  const qualityOutputPath = path.join(path.dirname(storeResult.filePath), 'quality-findings.json');
+  const qualitySummary = await opportunityQuality({
+    recordsFile: storeResult.filePath,
+    compositesFile: compositeJsonPath,
+    output: qualityOutputPath,
+  });
 
   logger.info('Manifest processing complete', {
     filesProcessed: result.filesProcessed,
@@ -96,6 +103,7 @@ async function main() {
     consolidatedPath,
     compositeJsonPath,
     compositeCsvPath,
+    qualityOutputPath,
   });
 
   await opportunityMetrics(
@@ -105,7 +113,8 @@ async function main() {
       output: path.join(path.dirname(storeResult.filePath), 'readiness-metrics.json'),
     },
     result.errors,
-    compositeData
+    compositeData,
+    qualitySummary
   );
 
   if (result.errors.length > 0) {

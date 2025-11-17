@@ -15,9 +15,9 @@
 - Introduced `OpportunityCorrelator` to group Gmail/Drive opportunities that share opportunity tags or vendor/customer fingerprints, laying the groundwork for Phase 4 consolidation (tests in `backend/src/__tests__/opportunities/OpportunityCorrelator.test.ts`).
 
 ### Readiness Summary
-- Status: **In-flight** (Phase 3). Phases 1-2 are complete; Phase 3 CLI pipeline operational.
-- Latest metrics: see `uploads/opportunities/readiness-metrics.json`, `consolidated-opportunities.json`, and `opportunity-readiness-report.md` (also published under `docs/OPPORTUNITY_READINESS.md`).
-- Commands: `npm run source:process` (refresh data + metrics + report), `npm run source:show -- --clusters` (inspect), `npm run source:consolidate` (produce merged view), `npm run source:report` (regenerate/publish report). The GitHub workflow `opportunity-report` runs these on a schedule to keep reports current.
+- Status: **Phase 5 in progress**. Milestone 5.1 (quality scoring) is live; Milestone 5.2 (action automation) now adds structured owners/dates to next steps.
+- Latest metrics: see `uploads/opportunities/readiness-metrics.json`, `consolidated-opportunities.json`, `composite-opportunities.{json,csv}`, and `opportunity-readiness-report.md` (also published under `docs/OPPORTUNITY_READINESS.md`).
+- Commands: `npm run source:process` (refresh data + metrics + report), `npm run source:show -- --clusters` (inspect), `npm run source:consolidate` (produce merged view), `npm run source:export` (composite exports), `npm run source:report` (regenerate/publish report). The GitHub workflow `opportunity-report` runs these nightly to keep docs current.
 - Phase 4 complete: consolidated composites, conflict detection, and automated reporting are live (see Phase 4 summary).
 ## Phase 1 – Connector-Aligned Ingestion
 1. Wrap Gmail search/read endpoints with predefined queries (keywords, participants, date ranges) that emit normalized thread objects with metadata (threadId, snippet, labels, timestamps).
@@ -39,10 +39,29 @@
 2. Resolve conflicting metrics (e.g., multiple unit counts) using weighting rules (recency, authoritative source type).
 3. Populate the consolidated tracker (quantities, pricing, margins, stage, next steps, cost upside) with backlinks to each contributing source.
 
-## Phase 5 – Quality Assurance & Automation
-1. Run the data-quality metrics pipeline on opportunity records to flag missing fields, inconsistent pricing, or stale data; surface remediation recommendations in the tracker.
-2. Auto-generate “next steps” from meeting action items and email follow-ups, capturing owners and due dates when available.
-3. Add CI coverage (unit + integration tests) spanning connector ingestion through opportunity consolidation to guard against regressions.
+## Phase 5 - Quality Assurance & Automation (Planned)
+
+### Milestone 5.1 - Data-Quality Metrics & Remediation Signals
+- Extend the metrics pipeline with completeness, consistency, and staleness scoring for each consolidated/composite opportunity.
+- Emit `quality-findings.json` plus embed remediation summaries into `readiness-metrics.json`/readiness reports, highlighting blockers (missing stage, conflicting pricing, last-touch > SLA).
+- CLI: `npm run source:quality` orchestrates recalculation (reads composites, writes findings, optionally patches readiness report).
+- Tests: unit tests for scoring helpers + integration coverage for manifest -> quality output.
+
+### Milestone 5.2 - Action Extraction & Owner Automation
+- Promote transcript/email action items into structured `next_steps` entries with inferred owners/due dates, filling tracker gaps automatically.
+- Backfill opportunities missing owner/due date by mining semantic sections + metadata.
+- Surface resulting tasks in readiness report and optional Slack/notification hooks.
+- Tests: parser fixtures verifying extraction plus mapper tests ensuring deduplication and owner inference.
+- **Status**: Structured next steps now populate `opportunities.json` (`structuredNextSteps`) with owner/due-date inference, and readiness metrics/report show aggregate action counts.
+
+### Milestone 5.3 - QA Automation & Regression Guardrails
+- Wire the full ingestion -> consolidation -> quality pipeline into CI so regressions fail fast (`npm run source:sync -- --dry-run`, `source:process`, `source:quality`).
+- Add scenario-based integration tests (Gmail-only, Drive-only, mixed) plus lint/type gates for the new automation scripts.
+- Produce Phase 5 documentation (summary + operations runbook) and update GitHub workflow to publish quality findings.
+- Tests: CI workflow validation + Jest suites covering automation surfaces.
+- **Status**: ✅ Added `npm run source:ci` for the full pipeline, wired into the GitHub workflow, and created integration scenarios covering Gmail-only, Drive-only, and mixed composites to guard regressions.
+
+Each milestone bakes in validation: local `npm test -- --runInBand`, targeted script smoke tests, and documentation updates tracking readiness.
 
 ## Phase 6 – Reporting & Iteration
 1. Produce dashboards/exports showing pipeline status, stages, volumes, and cost upside.
@@ -53,6 +72,8 @@
 - `npm run source:show -- --filter clearled --clusters` shows stored opportunities (`uploads/opportunities/opportunities.json`) and correlated clusters (`opportunity-clusters.json`). Adjust `--limit` or `--file/--clusters-file` to point at custom locations.
 - `npm run source:metrics` builds `readiness-metrics.json`, summarizing total opportunities, per-stage counts, priorities, and cluster coverage for dashboards.
 - `npm run source:consolidate` generates `consolidated-opportunities.json`, merging Gmail + Drive fragments into unified records using the latest correlation heuristics.
-- `npm run source:report` produces `uploads/opportunities/opportunity-readiness-report.md` and copies it to `docs/OPPORTUNITY_READINESS.md`. A scheduled GitHub Action (`.github/workflows/opportunity-report.yml`) runs `source:process`, `source:consolidate`, and `source:report` daily to keep the published report current.
+- `npm run source:quality` evaluates composites for completeness/conflicts/staleness and writes `quality-findings.json` for the readiness dashboard + report.
+- `npm run source:ci` runs process → export → quality → report sequentially; ideal for CI or scheduled automation after `source:sync`.
+- `npm run source:report` produces `uploads/opportunities/opportunity-readiness-report.md` and copies it to `docs/OPPORTUNITY_READINESS.md`. A scheduled GitHub Action (`.github/workflows/opportunity-report.yml`) runs `source:sync` plus `source:ci` daily to keep the published report current.
 
 See `docs/PHASE_3_SUMMARY.md` for detailed milestone results.
