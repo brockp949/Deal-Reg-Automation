@@ -25,9 +25,7 @@ jobs:
           GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
         run: |
           npm run source:sync || true
-          npm run source:process || true
-          npm run source:export || true
-          npm run source:report || true
+          npm run source:ci || true
       - name: Copy readiness report
         run: |
           cp docs/OPPORTUNITY_READINESS.md OPPORTUNITY_READINESS.md

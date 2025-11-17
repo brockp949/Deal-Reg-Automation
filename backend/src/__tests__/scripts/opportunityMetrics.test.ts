@@ -50,6 +50,9 @@ describe('opportunityMetrics CLI', () => {
           costUpsideNotes: [],
           actors: [],
           nextSteps: [],
+          structuredNextSteps: [
+            { description: 'Send deck', owner: 'Steven', dueDate: 'Nov 15', source: 'meeting.txt' },
+          ],
         },
         {
           id: 'opp-2',
@@ -62,6 +65,7 @@ describe('opportunityMetrics CLI', () => {
           costUpsideNotes: [],
           actors: [],
           nextSteps: [],
+          structuredNextSteps: [{ description: 'Follow up with Antora' }],
         },
       ]),
       'utf-8'
@@ -90,6 +94,7 @@ describe('opportunityMetrics CLI', () => {
     expect(metrics.totalOpportunities).toBe(2);
     expect(metrics.clusterCount).toBe(1);
     expect(metrics.clusteredOpportunityCount).toBe(2);
+    expect(metrics.actionItems).toEqual({ total: 2, withOwner: 1, withDueDate: 1 });
     expect(logSpy).toHaveBeenCalledWith(
       'Opportunity readiness metrics',
       expect.objectContaining({ totalOpportunities: 2 })

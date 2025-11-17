@@ -108,6 +108,23 @@ Displays extracted opportunities in a human-readable format.
   - `--stage <stage>`: Filter by opportunity stage (rfq, quote, po_in_progress, etc.)
   - `--format <format>`: Output format (table, json, csv)
 
+### `npm run source:quality`
+Evaluates consolidated opportunities for completeness, consistency, and freshness issues.
+- **Usage**: `npm run source:quality [options]`
+- **Description**: Reads `composite-opportunities.json` + `opportunities.json`, scores each composite, and writes `quality-findings.json` summarizing remediation guidance plus structured action-item coverage (owners/due dates). The summary is also consumed by readiness metrics/reporting.
+- **Prerequisites**: Run `npm run source:process` (and `npm run source:export`) so composites exist.
+- **Options**:
+  - `--records <path>`: Custom path to opportunity records JSON.
+  - `--composites <path>`: Custom path to composite opportunities JSON.
+  - `--output <path>`: Destination for findings (defaults to `uploads/opportunities/quality-findings.json`).
+  - `--stale-warning-days <number>` / `--stale-critical-days <number>`: Override freshness thresholds.
+
+### `npm run source:ci`
+Runs the full consolidation/quality/reporting pipeline for CI and scheduled automation.
+- **Usage**: `npm run source:ci`
+- **Description**: Sequentially executes `source:process`, `source:export`, `source:quality`, and `source:report` so readiness artifacts (metrics, composites, quality findings, published report) are always in sync.
+- **Prerequisites**: Run `npm run source:sync` first (or ensure manifests already exist). Requires `GOOGLE_*` credentials when run in automation.
+
 ## Typical Workflow
 
 ### First-time Setup

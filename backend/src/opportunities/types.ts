@@ -30,6 +30,7 @@ export interface OpportunityRecord {
   costUpsideNotes: string[];
   actors: string[];
   nextSteps: string[];
+  structuredNextSteps?: StructuredNextStep[];
   sourceTags: string[];
   sourceSummary: OpportunitySourceReference[];
   metadata: {
@@ -37,7 +38,15 @@ export interface OpportunityRecord {
     customer?: string;
     parser: string;
     confidence?: number;
+    lastTouched?: string;
   };
+}
+
+export interface StructuredNextStep {
+  description: string;
+  owner?: string;
+  dueDate?: string;
+  source?: string;
 }
 
 export interface OpportunityMapperOptions {

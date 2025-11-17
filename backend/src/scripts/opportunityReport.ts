@@ -61,6 +61,17 @@ function renderReport(metrics: OpportunityMetrics): string {
       );
     }
   }
+  if (metrics.actionItems) {
+    lines.push(
+      `- Action items: **${metrics.actionItems.total}** (${metrics.actionItems.withOwner} with owners, ${metrics.actionItems.withDueDate} with due dates)`
+    );
+  }
+  if (metrics.quality) {
+    lines.push(
+      `- Quality findings: **${metrics.quality.findings}** (high ${metrics.quality.high}, medium ${metrics.quality.medium}, low ${metrics.quality.low}, stale ${metrics.quality.stale})`
+    );
+    lines.push(`  - Avg quality score: ${metrics.quality.averageScore}`);
+  }
   lines.push('');
   lines.push('## Stage Breakdown');
   Object.entries(metrics.stageBreakdown)

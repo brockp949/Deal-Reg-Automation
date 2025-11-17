@@ -102,7 +102,10 @@ describe('OpportunityMapper', () => {
         attendees: ['Attendees: Jeremy Nocchi, Steven Moore'],
         pricing: ['Pricing: ClearLED PDU quote for 1,500-4,000 units at $500-700 per unit'],
         margins: ['27-30% GM'],
-        actionItems: ['- Send updated quote and call Antora Tuesday'],
+        actionItems: [
+          '- Steven: Send updated quote and call Antora Tuesday',
+          'Jeremy to send updated BOM by Nov 15',
+        ],
         opportunityMentions: ['clearled-pdu'],
       },
     });
@@ -120,7 +123,12 @@ describe('OpportunityMapper', () => {
     expect(opportunity.actors).toEqual(
       expect.arrayContaining(['jeremy nocchi', 'Steven Moore', 'Jeremy Nocchi, Steven Moore'])
     );
-    expect(opportunity.nextSteps).toContain('- Send updated quote and call Antora Tuesday');
+    expect(opportunity.nextSteps).toEqual(
+      expect.arrayContaining([
+        '- Steven: Send updated quote and call Antora Tuesday',
+        'Jeremy to send updated BOM by Nov 15',
+      ])
+    );
     expect(opportunity.sourceTags).toEqual(
       expect.arrayContaining(['opportunity:clearled-pdu', 'query:4iec'])
     );
@@ -131,6 +139,20 @@ describe('OpportunityMapper', () => {
     });
     expect(opportunity.metadata.vendor).toBe('ClearLED');
     expect(opportunity.metadata.customer).toBe('Antora');
+    expect(opportunity.metadata.lastTouched).toBe('2025-11-10T12:00:00.000Z');
+    expect(opportunity.structuredNextSteps).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          description: 'Steven: Send updated quote and call Antora Tuesday',
+          owner: 'Steven',
+        }),
+        expect.objectContaining({
+          description: 'Jeremy to send updated BOM by Nov 15',
+          owner: 'Jeremy',
+          dueDate: 'Nov 15',
+        }),
+      ])
+    );
   });
 
   it('falls back to defaults when signals are missing', () => {
