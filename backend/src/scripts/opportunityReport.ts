@@ -72,6 +72,11 @@ function renderReport(metrics: OpportunityMetrics): string {
     );
     lines.push(`  - Avg quality score: ${metrics.quality.averageScore}`);
   }
+  if (metrics.feedback) {
+    lines.push(
+      `- Feedback overrides: **${metrics.feedback.total}** (${metrics.feedback.stageOverrides} stage, ${metrics.feedback.priorityOverrides} priority, ${metrics.feedback.notes} noted)`
+    );
+  }
   lines.push('');
   lines.push('## Stage Breakdown');
   Object.entries(metrics.stageBreakdown)

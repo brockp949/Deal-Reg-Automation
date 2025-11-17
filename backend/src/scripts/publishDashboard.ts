@@ -38,6 +38,7 @@ interface DashboardData {
     low: number;
     stale: number;
   };
+  feedback?: OpportunityMetrics['feedback'];
   history: {
     stageTrend: Array<{ date: string; stages: Record<string, number> }>;
     priorityTrend: Array<{ date: string; priorities: Record<string, number> }>;
@@ -225,6 +226,14 @@ function buildDashboardData(
           stale: quality.staleCount,
         }
       : undefined,
+    feedback: metrics.feedback
+      ? {
+          total: metrics.feedback.total,
+          stageOverrides: metrics.feedback.stageOverrides,
+          priorityOverrides: metrics.feedback.priorityOverrides,
+          notes: metrics.feedback.notes,
+        }
+      : undefined,
     history: {
       stageTrend,
       priorityTrend,
@@ -298,6 +307,11 @@ function renderDashboardMarkdown(data: DashboardData): string {
   if (data.quality) {
     lines.push(
       `- Quality findings: **${data.quality.findings}** (avg score ${data.quality.averageScore}, high ${data.quality.high}, medium ${data.quality.medium}, low ${data.quality.low}, stale ${data.quality.stale})`
+    );
+  }
+  if (data.feedback) {
+    lines.push(
+      `- Feedback overrides: **${data.feedback.total}** (${data.feedback.stageOverrides} stage corrections, ${data.feedback.priorityOverrides} priority, ${data.feedback.notes} with notes)`
     );
   }
   lines.push('');

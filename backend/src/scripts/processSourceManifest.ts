@@ -9,6 +9,7 @@ import { OpportunityCorrelator } from '../opportunities/OpportunityCorrelator';
 import { OpportunityConsolidator } from '../opportunities/OpportunityConsolidator';
 import { main as exportComposite } from './exportCompositeOpportunities';
 import { main as opportunityMetrics } from './opportunityMetrics';
+import AnnotationService from '../feedback/AnnotationService';
 import { main as opportunityQuality } from './opportunityQuality';
 
 interface CliOptions {
@@ -62,8 +63,31 @@ async function main() {
   const store = new OpportunityStore({ baseDir: config.upload.directory });
   const storeResult = await store.upsert(result.opportunities);
 
+  const annotationService = new AnnotationService({ baseDir: config.upload.directory });
+  const annotationResult = await annotationService.applyAnnotations(storeResult.storedRecords);
+  await fs.writeFile(storeResult.filePath, JSON.stringify(annotationResult.records, null, 2), 'utf-8');
+  const annotatedRecords = annotationResult.records;
+  const feedbackSummaryPath = path.join(
+    path.dirname(storeResult.filePath),
+    'feedback-summary.json'
+  );
+  await fs.writeFile(feedbackSummaryPath, JSON.stringify(annotationResult.stats, null, 2), 'utf-8');
+  const feedbackDocPath = path.resolve('docs', 'FEEDBACK_SUMMARY.md');
+  const feedbackLines = [
+    '# Feedback Summary',
+    '',
+    `Generated: ${annotationResult.stats.lastUpdated}`,
+    '',
+    `- Total annotations: **${annotationResult.stats.totalAnnotations}**`,
+    `- Stage overrides: **${annotationResult.stats.stageOverrides}**`,
+    `- Priority overrides: **${annotationResult.stats.priorityOverrides}**`,
+    `- Notes captured: **${annotationResult.stats.notesCount}**`,
+  ];
+  await fs.mkdir(path.dirname(feedbackDocPath), { recursive: true });
+  await fs.writeFile(feedbackDocPath, feedbackLines.join('\n'), 'utf-8');
+
   const correlator = new OpportunityCorrelator();
-  const clusters = correlator.correlate(storeResult.storedRecords);
+  const clusters = correlator.correlate(annotatedRecords);
   const clusterOutputPath = path.join(
     path.dirname(storeResult.filePath),
     'opportunity-clusters.json'
@@ -71,7 +95,7 @@ async function main() {
   await fs.writeFile(clusterOutputPath, JSON.stringify(clusters, null, 2), 'utf-8');
 
   const consolidator = new OpportunityConsolidator();
-  const consolidated = consolidator.consolidate(storeResult.storedRecords);
+  const consolidated = consolidator.consolidate(annotatedRecords);
   const consolidatedPath = path.join(
     path.dirname(storeResult.filePath),
     'consolidated-opportunities.json'
@@ -114,7 +138,8 @@ async function main() {
     },
     result.errors,
     compositeData,
-    qualitySummary
+    qualitySummary,
+    annotationResult.stats
   );
 
   if (result.errors.length > 0) {
@@ -124,6 +149,10 @@ async function main() {
         error,
       })),
     });
+  }
+
+  if (annotationResult.stats.stageOverrides || annotationResult.stats.priorityOverrides) {
+    logger.info('Applied annotations to opportunities', { annotationStats: annotationResult.stats });
   }
 }
 

@@ -107,6 +107,7 @@ Each milestone bakes in validation: local `npm test -- --runInBand`, targeted sc
 - Integration tests verifying `source:feedback` modifies composites + metrics and accuracy counters change accordingly.
 - Regression tests ensuring overrides persist across reruns (store applied annotations in metadata).
 - Manual sign-off: run CLI with sample feedback, ensure readiness report reflects adjustments.
+- **Status**: ✅ Annotation service + `source:feedback` CLI live; overrides update opportunities/metrics and publish `feedback-summary.json` / `docs/FEEDBACK_SUMMARY.md`.
 
 ### Milestone 6.3 - Continuous Improvement & Performance
 **Objectives**
@@ -141,6 +142,7 @@ Each milestone bakes in validation: local `npm test -- --runInBand`, targeted sc
 - `npm run source:quality` evaluates composites for completeness/conflicts/staleness and writes `quality-findings.json` for the readiness dashboard + report.
 - `npm run source:ci` runs process → export → quality → report sequentially; ideal for CI or scheduled automation after `source:sync`.
 - `npm run source:publish` snapshots metrics/quality history, generates `dashboard.json`, and publishes `docs/DASHBOARD.md` for stakeholders.
+- `npm run source:feedback` imports reviewer annotations (`uploads/opportunities/feedback/annotations.json`) and prints summaries so overrides feed the next pipeline run.
 - `npm run source:report` produces `uploads/opportunities/opportunity-readiness-report.md` and copies it to `docs/OPPORTUNITY_READINESS.md`. A scheduled GitHub Action (`.github/workflows/opportunity-report.yml`) runs `source:sync` plus `source:ci` daily to keep the published report current.
 
 See `docs/PHASE_3_SUMMARY.md` for detailed milestone results.

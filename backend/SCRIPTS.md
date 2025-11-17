@@ -131,6 +131,12 @@ Publishes dashboard artifacts and historical snapshots.
 - **Description**: Loads the latest readiness metrics, quality findings, and composites to (1) snapshot them into `uploads/opportunities/history/<run>`, (2) generate `uploads/opportunities/dashboard.json`, and (3) optionally render `docs/DASHBOARD.md` for sharing. Retains the most recent N snapshots (default 90) and powers dashboard trends.
 - **Prerequisites**: Run `npm run source:ci` (or the individual commands) so metrics/quality/composites are up to date.
 
+### `npm run source:feedback`
+Manages stakeholder annotations for opportunities.
+- **Usage**: `npm run source:feedback -- --import feedback.json [--reviewer "Name"]` or `npm run source:feedback -- --list`
+- **Description**: Imports reviewer annotations (stage/priority corrections, notes, verdicts) into `uploads/opportunities/feedback/annotations.json`. After importing, rerun `npm run source:ci` so overrides apply to opportunities/composites. Use `--list` to print the latest summary (`feedback-summary.json` / `docs/FEEDBACK_SUMMARY.md`).
+- **Prerequisites**: Annotation files must contain `opportunity_id` plus optional `stage`, `priority`, `notes`, `verdict`, `reviewer`, `reviewed_at`.
+
 ## Typical Workflow
 
 ### First-time Setup

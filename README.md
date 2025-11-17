@@ -122,6 +122,8 @@ After running the Google source sync (`npm run source:sync`) and processing mani
    - Runs the full ingestion → consolidation → quality → reporting pipeline (process/export/quality/report) used by CI and scheduled automations.
 7. `npm run source:publish`
    - Takes the latest metrics/quality/composite artifacts, snapshots them into history, generates `uploads/opportunities/dashboard.json`, and publishes `docs/DASHBOARD.md` for live dashboards.
+8. `npm run source:feedback`
+   - Imports stakeholder annotations (`opportunity_id`, stage/priority corrections, notes) and updates `feedback-summary.json` / `docs/FEEDBACK_SUMMARY.md`; rerun `source:ci` afterward to apply overrides to opportunities/composites.
 
 ## Development Roadmap
 
