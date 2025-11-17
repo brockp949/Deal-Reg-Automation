@@ -39,6 +39,16 @@ export interface OpportunityRecord {
     parser: string;
     confidence?: number;
     lastTouched?: string;
+    annotations?: {
+      originalStage?: OpportunityStage;
+      stageOverride?: OpportunityStage;
+      originalPriority?: OpportunityPriority;
+      priorityOverride?: OpportunityPriority;
+      reviewer?: string;
+      reviewed_at?: string;
+      notes?: string;
+      verdict?: string;
+    };
   };
 }
 

@@ -4,6 +4,7 @@ import logger from '../utils/logger';
 import { config } from '../config';
 import { OpportunityRecord, CompositeOpportunity } from '../opportunities/types';
 import type { QualitySummary } from './opportunityQuality';
+import type { AnnotationStats } from '../feedback/AnnotationService';
 
 interface MetricsOptions {
   file?: string;
@@ -44,6 +45,12 @@ export interface OpportunityMetrics {
     stale: number;
     averageScore: number;
   };
+  feedback?: {
+    total: number;
+    stageOverrides: number;
+    priorityOverrides: number;
+    notes: number;
+  };
 }
 
 function parseArgs(): MetricsOptions {
@@ -71,7 +78,8 @@ function summarize(
   clusters: any[],
   errors: Array<{ entry: { filePath: string }; error: string }>,
   composites?: CompositeOpportunity[],
-  quality?: QualitySummary
+  quality?: QualitySummary,
+  feedback?: AnnotationStats
 ): OpportunityMetrics {
   const stageBreakdown: Record<string, number> = {};
   const priorityBreakdown: Record<string, number> = {};
@@ -140,6 +148,14 @@ function summarize(
           averageScore: Number(quality.averageScore.toFixed(1)),
         }
       : undefined,
+    feedback: feedback
+      ? {
+          total: feedback.totalAnnotations,
+          stageOverrides: feedback.stageOverrides,
+          priorityOverrides: feedback.priorityOverrides,
+          notes: feedback.notesCount,
+        }
+      : undefined,
   };
 }
 
@@ -147,7 +163,8 @@ export async function main(
   optionsOverride?: MetricsOptions,
   errors?: Array<{ entry: { filePath: string }; error: string }>,
   composites?: CompositeOpportunity[],
-  quality?: QualitySummary
+  quality?: QualitySummary,
+  feedback?: AnnotationStats
 ) {
   const options = optionsOverride ?? parseArgs();
   const opportunitiesPath =
@@ -162,7 +179,7 @@ export async function main(
 
   const records = await loadJson<OpportunityRecord[]>(opportunitiesPath);
   const clusters = await loadJson<any[]>(clustersPath);
-  const metrics = summarize(records, clusters, errors ?? [], composites, quality);
+  const metrics = summarize(records, clusters, errors ?? [], composites, quality, feedback);
 
   await fs.writeFile(outputPath, JSON.stringify(metrics, null, 2), 'utf-8');
 
