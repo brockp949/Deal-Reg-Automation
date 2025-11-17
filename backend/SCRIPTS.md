@@ -125,6 +125,12 @@ Runs the full consolidation/quality/reporting pipeline for CI and scheduled auto
 - **Description**: Sequentially executes `source:process`, `source:export`, `source:quality`, and `source:report` so readiness artifacts (metrics, composites, quality findings, published report) are always in sync.
 - **Prerequisites**: Run `npm run source:sync` first (or ensure manifests already exist). Requires `GOOGLE_*` credentials when run in automation.
 
+### `npm run source:publish`
+Publishes dashboard artifacts and historical snapshots.
+- **Usage**: `npm run source:publish [-- --history-limit 60 --trend-limit 30 --publish docs/DASHBOARD.md]`
+- **Description**: Loads the latest readiness metrics, quality findings, and composites to (1) snapshot them into `uploads/opportunities/history/<run>`, (2) generate `uploads/opportunities/dashboard.json`, and (3) optionally render `docs/DASHBOARD.md` for sharing. Retains the most recent N snapshots (default 90) and powers dashboard trends.
+- **Prerequisites**: Run `npm run source:ci` (or the individual commands) so metrics/quality/composites are up to date.
+
 ## Typical Workflow
 
 ### First-time Setup

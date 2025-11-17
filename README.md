@@ -120,6 +120,8 @@ After running the Google source sync (`npm run source:sync`) and processing mani
    - Scores each composite for completeness, consistency, freshness, and structured action items (owners/dates), writing `quality-findings.json` that feeds readiness metrics/reports.
 6. `npm run source:ci`
    - Runs the full ingestion → consolidation → quality → reporting pipeline (process/export/quality/report) used by CI and scheduled automations.
+7. `npm run source:publish`
+   - Takes the latest metrics/quality/composite artifacts, snapshots them into history, generates `uploads/opportunities/dashboard.json`, and publishes `docs/DASHBOARD.md` for live dashboards.
 
 ## Development Roadmap
 
