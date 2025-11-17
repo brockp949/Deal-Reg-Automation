@@ -114,6 +114,8 @@ After running the Google source sync (`npm run source:sync`) and processing mani
    - Generates `uploads/opportunities/readiness-metrics.json`, summarizing per-stage totals, priority mix, and cluster coverage for dashboards/readiness docs.
 3. `npm run source:report`
    - Builds `uploads/opportunities/opportunity-readiness-report.md` and publishes a copy to `docs/OPPORTUNITY_READINESS.md` for easy sharing.
+4. `npm run source:export`
+   - Converts `consolidated-opportunities.json` into tracker-ready JSON/CSV composites (`composite-opportunities.json` / `.csv`) for downstream analytics.
 
 ## Development Roadmap
 

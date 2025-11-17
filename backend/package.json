@@ -17,7 +17,8 @@
     "source:show": "node -r tsx/cjs src/scripts/showOpportunities.ts",
     "source:metrics": "node -r tsx/cjs src/scripts/opportunityMetrics.ts",
     "source:report": "node -r tsx/cjs src/scripts/opportunityReport.ts --publish docs/OPPORTUNITY_READINESS.md",
-    "source:consolidate": "node -r tsx/cjs src/scripts/consolidateOpportunities.ts --log"
+    "source:consolidate": "node -r tsx/cjs src/scripts/consolidateOpportunities.ts --log",
+    "source:export": "node -r tsx/cjs src/scripts/exportCompositeOpportunities.ts"
   },
   "keywords": [
     "deal-registration",

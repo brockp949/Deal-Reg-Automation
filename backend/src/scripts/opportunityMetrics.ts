@@ -2,7 +2,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import logger from '../utils/logger';
 import { config } from '../config';
-import { OpportunityRecord } from '../opportunities/types';
+import { OpportunityRecord, CompositeOpportunity } from '../opportunities/types';
 
 interface MetricsOptions {
   file?: string;
@@ -19,6 +19,17 @@ export interface OpportunityMetrics {
   generatedAt: string;
   processingErrors: number;
   errorDetails: Array<{ filePath: string; error: string }>;
+  composites?: {
+    total: number;
+    withConflicts: number;
+    mixedSources: number;
+    conflictBreakdown: {
+      stages: number;
+      priorities: number;
+      vendors: number;
+      customers: number;
+    };
+  };
 }
 
 function parseArgs(): MetricsOptions {
@@ -44,7 +55,8 @@ async function loadJson<T>(filePath: string): Promise<T> {
 function summarize(
   records: OpportunityRecord[],
   clusters: any[],
-  errors: Array<{ entry: { filePath: string }; error: string }>
+  errors: Array<{ entry: { filePath: string }; error: string }>,
+  composites?: CompositeOpportunity[]
 ): OpportunityMetrics {
   const stageBreakdown: Record<string, number> = {};
   const priorityBreakdown: Record<string, number> = {};
@@ -75,12 +87,32 @@ function summarize(
       filePath: entry.filePath,
       error,
     })),
+    composites: composites
+      ? {
+          total: composites.length,
+          withConflicts: composites.filter(
+            (entry) =>
+              entry.conflicts.stages.length ||
+              entry.conflicts.priorities.length ||
+              entry.conflicts.vendors.length ||
+              entry.conflicts.customers.length
+          ).length,
+          mixedSources: composites.filter((entry) => entry.conflicts.has_mixed_sources).length,
+          conflictBreakdown: {
+            stages: composites.filter((entry) => entry.conflicts.stages.length > 1).length,
+            priorities: composites.filter((entry) => entry.conflicts.priorities.length > 1).length,
+            vendors: composites.filter((entry) => entry.conflicts.vendors.length > 1).length,
+            customers: composites.filter((entry) => entry.conflicts.customers.length > 1).length,
+          },
+        }
+      : undefined,
   };
 }
 
 export async function main(
   optionsOverride?: MetricsOptions,
-  errors?: Array<{ entry: { filePath: string }; error: string }>
+  errors?: Array<{ entry: { filePath: string }; error: string }>,
+  composites?: CompositeOpportunity[]
 ) {
   const options = optionsOverride ?? parseArgs();
   const opportunitiesPath =
@@ -95,7 +127,7 @@ export async function main(
 
   const records = await loadJson<OpportunityRecord[]>(opportunitiesPath);
   const clusters = await loadJson<any[]>(clustersPath);
-  const metrics = summarize(records, clusters, errors ?? []);
+  const metrics = summarize(records, clusters, errors ?? [], composites);
 
   await fs.writeFile(outputPath, JSON.stringify(metrics, null, 2), 'utf-8');
 

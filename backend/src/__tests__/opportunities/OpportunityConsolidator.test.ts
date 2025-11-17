@@ -46,11 +46,13 @@ describe('OpportunityConsolidator', () => {
     const consolidated = consolidator.consolidate([recordA, recordB]);
     expect(consolidated).toHaveLength(1);
     const entry = consolidated[0];
-    expect(entry.clusterId).toContain('cluster-');
-    expect(entry.opportunityIds).toEqual(['opp-a', 'opp-b']);
+    expect(entry.cluster_id).toContain('cluster-');
+    expect(entry.opportunity_ids).toEqual(['opp-a', 'opp-b']);
     expect(entry.stage).toBe('po_in_progress');
     expect(entry.priority).toBe('high');
     expect(entry.vendors).toEqual(['ClearLED']);
+    expect(entry.conflicts.stages.sort()).toEqual(['po_in_progress', 'rfq']);
+    expect(entry.conflicts.has_mixed_sources).toBe(false);
   });
 
   it('includes singletons for non-clustered opportunities', () => {
@@ -60,7 +62,38 @@ describe('OpportunityConsolidator', () => {
 
     const consolidated = consolidator.consolidate([recordA, recordB]);
     expect(consolidated).toHaveLength(2);
-    expect(consolidated[0].clusterId.startsWith('single-')).toBe(true);
-    expect(consolidated[1].clusterId.startsWith('single-')).toBe(true);
+    expect(consolidated[0].cluster_id.startsWith('single-')).toBe(true);
+    expect(consolidated[1].cluster_id.startsWith('single-')).toBe(true);
+  });
+
+  it('flags mixed connector sources', () => {
+    const consolidator = new OpportunityConsolidator({ minScore: 0 });
+    const recordA = buildRecord({
+      id: 'opp-a',
+      sourceSummary: [
+        {
+          parser: 'StandardizedMboxParser',
+          fileName: 'file.eml',
+          sourceType: 'email',
+          connector: 'gmail',
+          referenceIds: ['msg-1'],
+        },
+      ],
+    });
+    const recordB = buildRecord({
+      id: 'opp-b',
+      sourceSummary: [
+        {
+          parser: 'StandardizedTranscriptParser',
+          fileName: 'file.txt',
+          sourceType: 'transcript',
+          connector: 'drive',
+          referenceIds: ['drive-1'],
+        },
+      ],
+    });
+
+    const consolidated = consolidator.consolidate([recordA, recordB]);
+    expect(consolidated[0].conflicts.has_mixed_sources).toBe(true);
   });
 });

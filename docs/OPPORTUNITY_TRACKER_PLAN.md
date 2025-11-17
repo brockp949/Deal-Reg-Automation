@@ -18,6 +18,7 @@
 - Status: **In-flight** (Phase 3). Phases 1-2 are complete; Phase 3 CLI pipeline operational.
 - Latest metrics: see `uploads/opportunities/readiness-metrics.json`, `consolidated-opportunities.json`, and `opportunity-readiness-report.md` (also published under `docs/OPPORTUNITY_READINESS.md`).
 - Commands: `npm run source:process` (refresh data + metrics + report), `npm run source:show -- --clusters` (inspect), `npm run source:consolidate` (produce merged view), `npm run source:report` (regenerate/publish report). The GitHub workflow `opportunity-report` runs these on a schedule to keep reports current.
+- Phase 4 complete: consolidated composites, conflict detection, and automated reporting are live (see Phase 4 summary).
 ## Phase 1 – Connector-Aligned Ingestion
 1. Wrap Gmail search/read endpoints with predefined queries (keywords, participants, date ranges) that emit normalized thread objects with metadata (threadId, snippet, labels, timestamps).
 2. Build a Drive search/fetch workflow that tags documents/transcripts by meeting name, participants, and date; produce a manifest used by the transcript parser.
@@ -53,3 +54,5 @@
 - `npm run source:metrics` builds `readiness-metrics.json`, summarizing total opportunities, per-stage counts, priorities, and cluster coverage for dashboards.
 - `npm run source:consolidate` generates `consolidated-opportunities.json`, merging Gmail + Drive fragments into unified records using the latest correlation heuristics.
 - `npm run source:report` produces `uploads/opportunities/opportunity-readiness-report.md` and copies it to `docs/OPPORTUNITY_READINESS.md`. A scheduled GitHub Action (`.github/workflows/opportunity-report.yml`) runs `source:process`, `source:consolidate`, and `source:report` daily to keep the published report current.
+
+See `docs/PHASE_3_SUMMARY.md` for detailed milestone results.

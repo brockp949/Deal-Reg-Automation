@@ -7,6 +7,7 @@ import { config } from '../config';
 import { OpportunityStore } from '../opportunities/OpportunityStore';
 import { OpportunityCorrelator } from '../opportunities/OpportunityCorrelator';
 import { OpportunityConsolidator } from '../opportunities/OpportunityConsolidator';
+import { main as exportComposite } from './exportCompositeOpportunities';
 import { main as opportunityMetrics } from './opportunityMetrics';
 
 interface CliOptions {
@@ -75,6 +76,14 @@ async function main() {
     'consolidated-opportunities.json'
   );
   await fs.writeFile(consolidatedPath, JSON.stringify(consolidated, null, 2), 'utf-8');
+  const compositeJsonPath = path.join(path.dirname(storeResult.filePath), 'composite-opportunities.json');
+  const compositeCsvPath = path.join(path.dirname(storeResult.filePath), 'composite-opportunities.csv');
+  await exportComposite({
+    input: consolidatedPath,
+    outputJson: compositeJsonPath,
+    outputCsv: compositeCsvPath,
+  });
+  const compositeData = JSON.parse(await fs.readFile(compositeJsonPath, 'utf-8'));
 
   logger.info('Manifest processing complete', {
     filesProcessed: result.filesProcessed,
@@ -85,6 +94,8 @@ async function main() {
     clusters: clusters.length,
     clusterOutputPath,
     consolidatedPath,
+    compositeJsonPath,
+    compositeCsvPath,
   });
 
   await opportunityMetrics(
@@ -93,7 +104,8 @@ async function main() {
       clustersFile: clusterOutputPath,
       output: path.join(path.dirname(storeResult.filePath), 'readiness-metrics.json'),
     },
-    result.errors
+    result.errors,
+    compositeData
   );
 
   if (result.errors.length > 0) {

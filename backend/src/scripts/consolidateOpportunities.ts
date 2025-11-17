@@ -3,7 +3,7 @@ import path from 'path';
 import logger from '../utils/logger';
 import { config } from '../config';
 import { OpportunityConsolidator } from '../opportunities/OpportunityConsolidator';
-import { OpportunityRecord } from '../opportunities/types';
+import { OpportunityRecord, CompositeOpportunity } from '../opportunities/types';
 
 interface CliOptions {
   input?: string;
@@ -45,7 +45,7 @@ export async function main(options?: CliOptions) {
   const consolidator = new OpportunityConsolidator({
     minScore: cliOptions.minScore ?? 0.5,
   });
-  const consolidated = consolidator.consolidate(records);
+  const consolidated: CompositeOpportunity[] = consolidator.consolidate(records);
 
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
   await fs.writeFile(outputPath, JSON.stringify(consolidated, null, 2), 'utf-8');
@@ -53,11 +53,11 @@ export async function main(options?: CliOptions) {
   if (cliOptions.log) {
     consolidated.slice(0, 5).forEach((entry) => {
       logger.info('Consolidated opportunity', {
-        clusterId: entry.clusterId,
+        clusterId: entry.cluster_id,
         stage: entry.stage,
         priority: entry.priority,
         score: entry.score,
-        opportunityIds: entry.opportunityIds,
+        opportunityIds: entry.opportunity_ids,
       });
     });
   }

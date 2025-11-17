@@ -50,6 +50,17 @@ function renderReport(metrics: OpportunityMetrics): string {
   lines.push(
     `- Clustered opportunities: **${metrics.clusteredOpportunityCount}** (across ${metrics.clusterCount} clusters)`
   );
+  if (metrics.composites) {
+    lines.push(
+      `- Composite opportunities: **${metrics.composites.total}** (${metrics.composites.withConflicts} with conflicts, ${metrics.composites.mixedSources} mixed-source)`
+    );
+    if (metrics.composites.conflictBreakdown) {
+      const breakdown = metrics.composites.conflictBreakdown;
+      lines.push(
+        `  - Conflict breakdown: stages ${breakdown.stages}, priorities ${breakdown.priorities}, vendors ${breakdown.vendors}, customers ${breakdown.customers}`
+      );
+    }
+  }
   lines.push('');
   lines.push('## Stage Breakdown');
   Object.entries(metrics.stageBreakdown)
