@@ -168,3 +168,6 @@ MIT License - see [LICENSE](LICENSE) for details
 
 
 
+### API Access
+
+Set `OPPORTUNITY_API_KEY` in `backend/.env` and include the header `X-API-Key: <value>` when calling `/api/opportunities` (or any future API routes). Requests without the correct key receive `401 Unauthorized` responses.
