@@ -108,3 +108,6 @@ export const exportAPI = {
 export const reprocessAPI = {
   detailed: () => api.post('/reprocess/detailed'),
 };
+
+// ChroniclerClient SDK for meeting notes parsing
+export { chroniclerClient } from './chronicler-sdk';
