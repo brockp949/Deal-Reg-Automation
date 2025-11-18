@@ -171,7 +171,7 @@ Each milestone bakes in validation: local `npm test -- --runInBand`, targeted sc
 - Objectives: convert `structuredNextSteps` into automated tasks/alerts (Slack/Teams) and escalate high-risk conflicts automatically.
 - Deliverables: automation service listening to latest composites, Slack/Teams notification hooks, CLI `npm run insights:notify`, task export (CSV/API).
 - Validation: integration tests for notification delivery, throttling tests, manual QA of message formatting.
-- Status: 🔄 In progress — notification service + CLI produce `notifications.json` for downstream delivery.
+- Status: 🔄 In progress — notification service produces Slack-style payloads + CLI logs delivery-ready messages.
 
 ### Milestone 8.3 - Self-Service Analytics & API
 - Objectives: expose a secure API + BI schema so GTM teams can query opportunities directly.

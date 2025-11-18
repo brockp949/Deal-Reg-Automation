@@ -6,9 +6,19 @@ import { OpportunityInsightService } from '../insights/OpportunityInsightService
 import { OpportunityNotificationService } from '../insights/OpportunityNotificationService';
 import { OpportunityRecord } from '../opportunities/types';
 
-async function loadInsights(opportunitiesPath: string) {
-  const raw = await fs.readFile(opportunitiesPath, 'utf-8');
-  return JSON.parse(raw);
+async function ensureInsights(insightsPath: string, opportunitiesDir: string) {
+  try {
+    const raw = await fs.readFile(insightsPath, 'utf-8');
+    return JSON.parse(raw);
+  } catch (error: any) {
+    if (error.code !== 'ENOENT') throw error;
+    const oppsPath = path.join(opportunitiesDir, 'opportunities.json');
+    const records = JSON.parse(await fs.readFile(oppsPath, 'utf-8')) as OpportunityRecord[];
+    const generated = new OpportunityInsightService().generate(records);
+    await fs.writeFile(insightsPath, JSON.stringify(generated, null, 2), 'utf-8');
+    logger.warn('Insights missing; generated baseline insights before notification run', { insightsPath });
+    return generated;
+  }
 }
 
 export async function main() {
@@ -16,25 +26,24 @@ export async function main() {
   const insightsPath = path.join(opportunitiesDir, 'insights.json');
   const notificationsPath = path.join(opportunitiesDir, 'notifications.json');
 
-  let insightsData;
-  try {
-    insightsData = await loadInsights(insightsPath);
-  } catch (error: any) {
-    if (error.code === 'ENOENT') {
-      const oppsPath = path.join(opportunitiesDir, 'opportunities.json');
-      const records = JSON.parse(await fs.readFile(oppsPath, 'utf-8')) as OpportunityRecord[];
-      const service = new OpportunityInsightService();
-      const generated = service.generate(records);
-      insightsData = generated;
-      await fs.writeFile(insightsPath, JSON.stringify(generated, null, 2), 'utf-8');
-      logger.warn('Insights file missing; generated baseline insights before notification run', { insightsPath });
-    } else {
-      throw error;
-    }
-  }
+  const insightsData = await ensureInsights(insightsPath, opportunitiesDir);
+  const notificationService = new OpportunityNotificationService();
+  const notifications = notificationService.generate(insightsData.insights || []);
 
-  const notifications = new OpportunityNotificationService().generate(insightsData.insights || []);
-  await fs.writeFile(notificationsPath, JSON.stringify({ notifications, generatedAt: new Date().toISOString() }, null, 2));
+  await fs.writeFile(
+    notificationsPath,
+    JSON.stringify({ notifications, generatedAt: new Date().toISOString() }, null, 2),
+    'utf-8'
+  );
+
+  notifications.forEach((notification) => {
+    logger.info('Notification ready', {
+      opportunity: notification.opportunity_id,
+      severity: notification.severity,
+      channels: notification.channels,
+      message: notification.message,
+    });
+  });
 
   logger.info('Opportunity notifications generated', {
     totalNotifications: notifications.length,
