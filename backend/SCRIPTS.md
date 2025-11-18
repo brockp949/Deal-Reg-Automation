@@ -149,6 +149,12 @@ Computes opportunity insights (win probability, momentum) on top of consolidated
 - **Description**: Loads `uploads/opportunities/opportunities.json`, generates `uploads/opportunities/insights.json` containing per-opportunity scores plus a summary (high/medium/low win counts, average momentum), and logs a short summary.
 - **Prerequisites**: Run `npm run source:ci` first so opportunities are up to date.
 
+### `npm run insights:notify`
+Generates notification payloads based on the latest insights.
+- **Usage**: `npm run insights:notify`
+- **Description**: Reads `insights.json` (or regenerates if missing) and writes `notifications.json` with severity-flagged messages for risky opportunities (low win probability, stalled momentum) to feed downstream automation (Slack, tasks).
+- **Prerequisites**: Run `npm run insights:score` beforehand for freshest insights.
+
 ## Typical Workflow
 
 ### First-time Setup

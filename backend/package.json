@@ -36,7 +36,8 @@
     "smoke:zoom": "node -r tsx/cjs src/scripts/smokeTests.ts --connector zoom",
     "smoke:all": "node -r tsx/cjs src/scripts/smokeTests.ts --all",
     "load:test": "node -r tsx/cjs src/scripts/loadTest.ts",
-    "insights:score": "node -r tsx/cjs src/scripts/insightsScore.ts"
+    "insights:score": "node -r tsx/cjs src/scripts/insightsScore.ts",
+    "insights:notify": "node -r tsx/cjs src/scripts/insightsNotify.ts"
   },
   "keywords": [
     "deal-registration",
