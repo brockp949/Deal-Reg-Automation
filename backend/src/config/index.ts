@@ -66,6 +66,16 @@ const envSchema = z.object({
   DRIVE_SYNC_QUERIES: z.string().default('4IEC,meeting'),
   DRIVE_SYNC_MIME_TYPES: z.string().default('application/vnd.google-apps.document'),
   DRIVE_SYNC_PAGE_SIZE: z.string().default('20'),
+
+  // Notifications
+  NOTIFICATION_ENABLED: z.string().default('false'),
+  SLACK_WEBHOOK_URL: z.string().optional(),
+  NOTIFICATION_THROTTLE_WINDOW_MS: z.string().default('300000'), // 5 minutes
+  NOTIFICATION_MAX_PER_WINDOW: z.string().default('10'),
+  NOTIFICATION_RETRY_ATTEMPTS: z.string().default('3'),
+  NOTIFICATION_RETRY_DELAY_MS: z.string().default('2000'),
+  NOTIFICATION_EMAIL_RECIPIENTS: z.string().optional(),
+  NOTIFICATION_DRY_RUN: z.string().default('true'),
 });
 
 // Parse and validate environment variables
@@ -176,6 +186,17 @@ export const config = {
       mimeTypes: parseList(env.DRIVE_SYNC_MIME_TYPES),
       queries: parseNamedQueries(parseList(env.DRIVE_SYNC_QUERIES)),
     },
+  },
+
+  notifications: {
+    enabled: env.NOTIFICATION_ENABLED === 'true',
+    slackWebhookUrl: env.SLACK_WEBHOOK_URL,
+    throttleWindowMs: parseInt(env.NOTIFICATION_THROTTLE_WINDOW_MS, 10),
+    maxPerWindow: parseInt(env.NOTIFICATION_MAX_PER_WINDOW, 10),
+    retryAttempts: parseInt(env.NOTIFICATION_RETRY_ATTEMPTS, 10),
+    retryDelayMs: parseInt(env.NOTIFICATION_RETRY_DELAY_MS, 10),
+    emailRecipients: parseList(env.NOTIFICATION_EMAIL_RECIPIENTS),
+    dryRun: env.NOTIFICATION_DRY_RUN === 'true',
   },
 };
 
