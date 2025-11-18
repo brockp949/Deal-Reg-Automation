@@ -38,6 +38,7 @@
     "load:test": "node -r tsx/cjs src/scripts/loadTest.ts",
     "insights:score": "node -r tsx/cjs src/scripts/insightsScore.ts",
     "insights:notify": "node -r tsx/cjs src/scripts/insightsNotify.ts",
+    "insights:test": "node -r tsx/cjs src/scripts/notificationSelfTest.ts",
     "api:start": "node -r tsx/cjs src/server.ts"
   },
   "keywords": [
