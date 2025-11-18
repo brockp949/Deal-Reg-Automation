@@ -1,4 +1,4 @@
-﻿# Opportunity Tracker Enhancement Plan
+# Opportunity Tracker Enhancement Plan
 
 ## Phase 1-2 Progress Snapshot (Nov 14, 2025)
 - **Phase 1 – Connector-Aligned Ingestion**: ✅ Gmail/Drive connectors stabilized with service-account auth + per-file metadata manifests (sourceSync CLI + tests). Messages now ship .json sidecars carrying thread IDs, history IDs, labels, Drive owners, and timestamps for downstream traceability.
@@ -15,10 +15,10 @@
 - Introduced `OpportunityCorrelator` to group Gmail/Drive opportunities that share opportunity tags or vendor/customer fingerprints, laying the groundwork for Phase 4 consolidation (tests in `backend/src/__tests__/opportunities/OpportunityCorrelator.test.ts`).
 
 ### Readiness Summary
-- Status: **Phase 6 in progress**. Milestone 6.1 (dashboards/publishing) is live; Milestones 6.2-6.3 track feedback loops + performance prep next.
-- Latest metrics: see `uploads/opportunities/readiness-metrics.json`, `consolidated-opportunities.json`, `composite-opportunities.{json,csv}`, `dashboard.json`, and `opportunity-readiness-report.md` (also published under `docs/OPPORTUNITY_READINESS.md` + `docs/DASHBOARD.md`).
-- Commands: `npm run source:process` (refresh data + metrics + report), `npm run source:show -- --clusters` (inspect), `npm run source:consolidate` (produce merged view), `npm run source:export` (composite exports), `npm run source:report` (regenerate/publish report). The GitHub workflow `opportunity-report` runs these nightly to keep docs current.
-- Phase 4 complete: consolidated composites, conflict detection, and automated reporting are live (see Phase 4 summary).
+- Status: **Phase 7 complete**. Multi-connector ingestion (Gmail/Drive + CRM CSV + Teams/Zoom), dashboards, feedback loops, and deployment automation are in production.
+- Latest metrics/artifacts: `uploads/opportunities/readiness-metrics.json`, `consolidated-opportunities.json`, `composite-opportunities.{json,csv}`, `dashboard.json`, `pipeline-metrics.json`, `quality-findings.json`, `feedback-summary.json`, plus published docs (`docs/OPPORTUNITY_READINESS.md`, `docs/DASHBOARD.md`, `docs/FEEDBACK_SUMMARY.md`).
+- Key commands: `npm run source:process`, `source:export`, `source:quality`, `source:publish`, `source:feedback`, `source:history`, `source:report`, `source:sync:<connector>`, `smoke:<connector>`, `load:test`. GitHub Action `opportunity-report` runs sync → CI → publish nightly.
+- Phase 4–7 complete; Phase 8 planning outlined below.
 ## Phase 1 – Connector-Aligned Ingestion
 1. Wrap Gmail search/read endpoints with predefined queries (keywords, participants, date ranges) that emit normalized thread objects with metadata (threadId, snippet, labels, timestamps).
 2. Build a Drive search/fetch workflow that tags documents/transcripts by meeting name, participants, and date; produce a manifest used by the transcript parser.
@@ -136,50 +136,56 @@ Each milestone bakes in validation: local `npm test -- --runInBand`, targeted sc
 - Performance regression test (mock large manifest) to ensure instrumentation overhead is minimal.
 - **Status**: ✅ Pipeline metrics recorder, history JSONL, connector registry/stubs, and `source:history` CLI are in place with docs + tests.
 
+### Deployment Rollout Tasks (Phase 7 Ops)
+- Execute blue/green deployment per `DEPLOYMENT_CHECKLIST.md` (Sections "Blue/Green Deployment Strategy" / "Canary Deployment Option"), including health checks before traffic switch.
+- Configure alerting (`ALERTS_ENABLED`, `SLACK_WEBHOOK_URL`, `DATADOG_API_KEY`) and verify `npm run smoke:<connector>` for Gmail, Drive, CRM CSV, Teams, and Zoom before/after deployment.
+- Schedule `npm run load:test` runs (default 1000 sources) to confirm throughput stays near the documented benchmark (~16 sources/sec) and record stats via `pipeline-metrics.json`.
+- Keep `docs/CONNECTOR_READINESS.md` updated with connector-specific runbooks, issues, and remediation steps discovered during production rollout.
+
+## Phase 7 - Connector Expansion & Deployment Hardening (Complete)
+
+### Milestone 7.1 - CRM CSV Connector & Parsing
+- Objectives: land the first non-Google connector (CRM CSV) end-to-end: ingestion, parsing, validation, and mapping into OpportunityRecords.
+- Deliverables: CRM CSV ingestion job (SourceSync extension), StandardizedCSVParser updates, integration tests/fixtures, connector runbook (`docs/CONNECTOR_READINESS.md`).
+- Status: ✅ Live (CRM CSV sync + parser + mapper + tests merged on main).
+
+### Milestone 7.2 - Teams/Zoom Transcript Connector & NLP Enhancements
+- Objectives: add real-time meeting transcript ingestion from Teams/Zoom; enhance speaker/timestamp/action extraction.
+- Deliverables: Teams/Zoom connectors with token management + rate limiting, transcript normalizer, NLP improvements, fixtures, documentation.
+- Status: ✅ Live (connectors, fixtures, parser updates merged).
+
+### Milestone 7.3 - Deployment Hardening & Observability
+- Objectives: productionize multi-connector pipeline with smoke/load tests, blue/green deployment tooling, and alerting.
+- Deliverables: per-connector sync/smoke scripts, load test harness, pipeline metrics DB + alerting, blue/green/canary runbooks in `DEPLOYMENT_CHECKLIST.md`.
+- Status: ✅ Live (scripts + docs merged; ops tasks tracked above).
+
+## Phase 8 - Intelligent Insights & Automation (Planned)
+
+### Milestone 8.1 - Opportunity Insights & Scoring
+- Objectives: introduce AI-driven scoring (win probability, momentum, churn risk) using historical CRM + transcript signals.
+- Deliverables: feature store, scoring job (`npm run insights:score`), metrics/report updates showing insight badges, documentation of algorithm/thresholds.
+- Validation: backtests vs. closed deals, accuracy dashboards, unit tests for scoring helpers.
+- Status: 🔄 In progress — baseline heuristic scoring service + CLI emitting `uploads/opportunities/insights.json` is live.
+
+### Milestone 8.2 - Workflow Automations & Notifications
+- Objectives: convert `structuredNextSteps` into automated tasks/alerts (Slack/Teams) and escalate high-risk conflicts automatically.
+- Deliverables: automation service listening to latest composites, Slack/Teams notification hooks, CLI `npm run insights:notify`, task export (CSV/API).
+- Validation: integration tests for notification delivery, throttling tests, manual QA of message formatting.
+
+### Milestone 8.3 - Self-Service Analytics & API
+- Objectives: expose a secure API + BI schema so GTM teams can query opportunities directly.
+- Deliverables: `/api/opportunities` endpoints with filtering, API keys/roles, warehouse/dbt models, `docs/PHASE_8_SUMMARY.md`.
+- Validation: API contract tests, load tests (≥10 qps sustained), BI workbook smoke tests, security review sign-off.
+
 ### CLI Reference
 - `npm run source:show -- --filter clearled --clusters` shows stored opportunities (`uploads/opportunities/opportunities.json`) and correlated clusters (`opportunity-clusters.json`). Adjust `--limit` or `--file/--clusters-file` to point at custom locations.
 - `npm run source:metrics` builds `readiness-metrics.json`, summarizing total opportunities, per-stage counts, priorities, and cluster coverage for dashboards.
 - `npm run source:consolidate` generates `consolidated-opportunities.json`, merging Gmail + Drive fragments into unified records using the latest correlation heuristics.
 - `npm run source:quality` evaluates composites for completeness/conflicts/staleness and writes `quality-findings.json` for the readiness dashboard + report.
-- `npm run source:ci` runs process → export → quality → report sequentially; ideal for CI or scheduled automation after `source:sync`.
+- `npm run source:ci` runs process → export → quality → report → publish sequentially; ideal for CI or scheduled automation after `source:sync`.
 - `npm run source:publish` snapshots metrics/quality history, generates `dashboard.json`, and publishes `docs/DASHBOARD.md` for stakeholders.
 - `npm run source:feedback` imports reviewer annotations (`uploads/opportunities/feedback/annotations.json`) and prints summaries so overrides feed the next pipeline run.
 - `npm run source:history` queries `uploads/opportunities/history/metrics-history.jsonl` for trend snapshots (pass `--limit` / `--json`).
 - `npm run source:report` produces `uploads/opportunities/opportunity-readiness-report.md` and copies it to `docs/OPPORTUNITY_READINESS.md`. A scheduled GitHub Action (`.github/workflows/opportunity-report.yml`) runs `source:sync` plus `source:ci` daily to keep the published report current.
 
 See `docs/PHASE_3_SUMMARY.md` for detailed milestone results.
-
-## Phase 7 - Connector Expansion & Deployment Hardening (Planned)
-
-### Milestone 7.1 - CRM CSV Connector & Parsing
-**Objectives**
-- Land the first non-Google connector (CRM CSV) end-to-end: ingestion, parsing, validation, and mapping into OpportunityRecords.
-- Provide ops runbooks + config for nightly CRM drops.
-
-**Deliverables**
-1. CRM CSV ingestion job (either SourceSync extension or dedicated script) that reads `uploads/crm/*.csv`, converts to manifest entries, and persists metadata sidecars.
-2. Parser + mapper support for CRM fields (deal IDs, accounts, values, owners) with conflict detection against Gmail/Drive records.
-3. Tests: CSV fixtures in `src/__tests__/parsers`, integration run covering CSV + Gmail merge path, and pipeline validation ensuring CRM data flows to composites.
-4. Docs: update README/plan + `docs/CONNECTOR_READINESS.md` with CRM-specific runbook and troubleshooting.
-
-### Milestone 7.2 - Teams/Zoom Transcript Connector & NLP Enhancements
-**Objectives**
-- Add real-time meeting transcript ingestion from non-Google sources, ensuring parity with Drive transcript parser.
-- Enhance semantic extraction for Teams/Zoom quirks (speaker diarization, timestamps).
-
-**Deliverables**
-1. Connector harness (Graph API/Zoom) with token management, rate limiting, and manifest output (pointing to `uploads/transcripts`).
-2. Parser updates to normalize Teams/Zoom transcript format into semantic sections and RFQ signals.
-3. Tests: mocked transcript payloads covering speaker metadata, time ranges, action item detection; integration test verifying multi-source transcripts merge cleanly with Gmail/CRM.
-4. Docs/runbook describing credential setup, scheduling, and fallback plan.
-
-### Milestone 7.3 - Deployment Hardening & Observability
-**Objectives**
-- Move Phase 6 outputs into production by hardening deployment scripts, alerts, and dashboards.
-- Ensure multi-connector runs remain stable and observable.
-
-**Deliverables**
-1. GitHub Actions pipelines (or equivalent CI/CD) that run `source:sync` per connector, `source:ci`, `source:publish`, and push artifacts to production storage (S3/Sheets/BI).
-2. Alerting/monitoring integration using the new pipeline metrics (e.g., send Slack/Datadog notifications when durations exceed thresholds or connectors fail).
-3. Blue/green or canary deploy instructions plus rollback plan documented in `DEPLOYMENT_CHECKLIST.md`.
-4. Tests: smoke test scripts for each connector, load-test scenario (large manifest) to validate instrumentation and retention, plus documentation updates summarizing Phase 7 readiness.
