@@ -82,7 +82,7 @@ describe('CRM CSV Integration Pipeline', () => {
 
       const parserOutput = await parser.parse(salesforceCSV);
 
-      expect(parserOutput.success).toBe(true);
+      expect(parserOutput.errors.length).toBe(0);
       expect(parserOutput.entities.deals.length).toBeGreaterThan(0);
 
       // Map to opportunities
