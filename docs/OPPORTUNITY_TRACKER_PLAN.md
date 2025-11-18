@@ -177,6 +177,7 @@ Each milestone bakes in validation: local `npm test -- --runInBand`, targeted sc
 - Objectives: expose a secure API + BI schema so GTM teams can query opportunities directly.
 - Deliverables: `/api/opportunities` endpoints with filtering, API keys/roles, warehouse/dbt models, `docs/PHASE_8_SUMMARY.md`.
 - Validation: API contract tests, load tests (≥10 qps sustained), BI workbook smoke tests, security review sign-off.
+- Status: 🔄 In progress — baseline `/api/opportunities` route with stage/priority filters + tests landed.
 
 ### CLI Reference
 - `npm run source:show -- --filter clearled --clusters` shows stored opportunities (`uploads/opportunities/opportunities.json`) and correlated clusters (`opportunity-clusters.json`). Adjust `--limit` or `--file/--clusters-file` to point at custom locations.
@@ -188,5 +189,7 @@ Each milestone bakes in validation: local `npm test -- --runInBand`, targeted sc
 - `npm run source:feedback` imports reviewer annotations (`uploads/opportunities/feedback/annotations.json`) and prints summaries so overrides feed the next pipeline run.
 - `npm run source:history` queries `uploads/opportunities/history/metrics-history.jsonl` for trend snapshots (pass `--limit` / `--json`).
 - `npm run source:report` produces `uploads/opportunities/opportunity-readiness-report.md` and copies it to `docs/OPPORTUNITY_READINESS.md`. A scheduled GitHub Action (`.github/workflows/opportunity-report.yml`) runs `source:sync` plus `source:ci` daily to keep the published report current.
+- `npm run insights:score` generates opportunity insights (win probability/momentum) into `uploads/opportunities/insights.json`.
+- `npm run insights:notify` converts insights into `notifications.json` payloads for Slack/task automation.
 
 See `docs/PHASE_3_SUMMARY.md` for detailed milestone results.
