@@ -175,7 +175,7 @@ Each milestone bakes in validation: local `npm test -- --runInBand`, targeted sc
 
 ### Milestone 8.3 - Self-Service Analytics & API
 - Objectives: expose a secure API + BI schema so GTM teams can query opportunities directly.
-- Deliverables: `/api/opportunities` endpoints with filtering, API keys/roles, warehouse/dbt models, `docs/PHASE_8_SUMMARY.md`.
+- Deliverables: `/api/opportunities` endpoints with filtering, API keys/roles (`OPPORTUNITY_API_KEY` + `X-API-Key` header), warehouse/dbt models, `docs/PHASE_8_SUMMARY.md`.
 - Validation: API contract tests, load tests (≥10 qps sustained), BI workbook smoke tests, security review sign-off.
 - Status: 🔄 In progress — baseline `/api/opportunities` route with stage/priority filters + tests landed.
 
