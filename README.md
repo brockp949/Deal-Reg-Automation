@@ -126,6 +126,8 @@ After running the Google source sync (`npm run source:sync`) and processing mani
    - Imports stakeholder annotations (`opportunity_id`, stage/priority corrections, notes) and updates `feedback-summary.json` / `docs/FEEDBACK_SUMMARY.md`; rerun `source:ci` afterward to apply overrides to opportunities/composites.
 9. `npm run source:history`
    - Dumps the metrics/quality history snapshots stored under `uploads/opportunities/history/metrics-history.jsonl` for quick trend analysis.
+10. `npm run insights:score`
+    - Generates AI-style opportunity insights (win probability, momentum, risk flags) into `uploads/opportunities/insights.json` for reporting/dashboards.
 
 ## Development Roadmap
 

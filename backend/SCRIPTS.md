@@ -143,6 +143,12 @@ Queries the metrics/quality history snapshots for trend analysis.
 - **Description**: Reads `uploads/opportunities/history/metrics-history.jsonl` and prints the latest N entries (or emits JSON) for inspections, dashboards, or data science exports.
 - **Prerequisites**: Run `npm run source:publish` at least once to seed the history file.
 
+### `npm run insights:score`
+Computes opportunity insights (win probability, momentum) on top of consolidated data.
+- **Usage**: `npm run insights:score`
+- **Description**: Loads `uploads/opportunities/opportunities.json`, generates `uploads/opportunities/insights.json` containing per-opportunity scores plus a summary (high/medium/low win counts, average momentum), and logs a short summary.
+- **Prerequisites**: Run `npm run source:ci` first so opportunities are up to date.
+
 ## Typical Workflow
 
 ### First-time Setup
