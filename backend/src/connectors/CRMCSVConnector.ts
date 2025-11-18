@@ -199,14 +199,17 @@ export class CRMCSVConnector {
 
       // Basic CSV structure check (read first few lines)
       const content = await fs.readFile(filePath, 'utf-8');
-      const lines = content.split('\n').slice(0, 10);
+      const lines = content.split(/\r?\n/).slice(0, 10);
+      const nonEmptyLines = lines.filter((line) => line.trim().length > 0);
 
-      if (lines.length < 2) {
-        errors.push('File has fewer than 2 lines (header + at least one data row expected)');
+      if (nonEmptyLines.length < 2) {
+        errors.push(
+          'File has fewer than 2 lines (header + at least one data row expected; blank lines ignored)'
+        );
       }
 
-      // Check for common CSV delimiters
-      const firstLine = lines[0];
+      // Check for common CSV delimiters on header line
+      const firstLine = nonEmptyLines[0] ?? '';
       const hasComma = firstLine.includes(',');
       const hasSemicolon = firstLine.includes(';');
       const hasTab = firstLine.includes('\t');
