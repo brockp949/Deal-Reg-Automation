@@ -126,10 +126,14 @@ After running the Google source sync (`npm run source:sync`) and processing mani
    - Imports stakeholder annotations (`opportunity_id`, stage/priority corrections, notes) and updates `feedback-summary.json` / `docs/FEEDBACK_SUMMARY.md`; rerun `source:ci` afterward to apply overrides to opportunities/composites.
 9. `npm run source:history`
    - Dumps the metrics/quality history snapshots stored under `uploads/opportunities/history/metrics-history.jsonl` for quick trend analysis.
-10. `npm run insights:score`
-   - Generates AI-style opportunity insights (win probability, momentum, risk flags) into `uploads/opportunities/insights.json` for reporting/dashboards.
-11. `npm run insights:notify`
-    - Converts insight records into notification payloads (`notifications.json`) for Slack/email/task automation, flagging low-probability or stalled deals.
+10. `npm run insights:score` **(Phase 8.1)**
+    - Generates AI-driven opportunity insights (win probability, momentum, risk flags) into `uploads/opportunities/insights.json` for reporting/dashboards.
+11. `npm run insights:notify` **(Phase 8.2)**
+    - Generates and delivers notifications to Slack/Email/Tasks based on insights, with throttling and retry logic. Outputs `notifications.json` and `notification-delivery-log.json`.
+12. `npm run insights:test` **(Phase 8.2)**
+    - Runs self-test validation of notification system (configuration, throttling, delivery modes).
+13. `npm run api:start` **(Phase 8.3)**
+    - Starts the REST API server for querying opportunities with role-based authentication.
 
 ## Development Roadmap
 
@@ -168,6 +172,41 @@ MIT License - see [LICENSE](LICENSE) for details
 
 
 
-### API Access
+### API Access (Phase 8.3)
 
-Set `OPPORTUNITY_API_KEY` in `backend/.env` and include the header `X-API-Key: <value>` when calling `/api/opportunities` (or any future API routes). Requests without the correct key receive `401 Unauthorized` responses.
+**Authentication:**
+Configure API keys with roles in `backend/.env`:
+```bash
+# Format: KEY:role:description,KEY:role:description
+# Roles: read (GET only), write (GET/POST/PUT), admin (all operations)
+OPPORTUNITY_API_KEYS=abc123:read:BI Dashboard,xyz789:admin:Admin Key
+```
+
+**Usage:**
+```bash
+# List opportunities with filtering, sorting, and insights
+curl -H "X-API-Key: your-key" \
+  "http://localhost:4000/api/opportunities?priority=high&sortBy=createdAt&includeInsights=true"
+
+# Get single opportunity
+curl -H "X-API-Key: your-key" \
+  "http://localhost:4000/api/opportunities/opp-123?includeInsights=true"
+```
+
+**Features:**
+- Role-based authentication (read, write, admin)
+- Advanced filtering (stage, priority, date range, search)
+- Sorting (name, stage, priority, createdAt)
+- Insights integration (win probability, momentum, risks)
+- Pagination (limit/offset)
+- OpenAPI 3.0 documentation
+
+**Documentation:**
+- API Reference: `docs/API_DOCUMENTATION.yaml` (OpenAPI 3.0)
+- Full Guide: `docs/PHASE_8.3_API.md`
+
+**Legacy Support:**
+Single-key format still supported (defaults to admin role):
+```bash
+OPPORTUNITY_API_KEY=your-single-key
+```
