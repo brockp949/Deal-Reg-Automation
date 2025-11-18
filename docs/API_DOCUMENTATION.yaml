@@ -1,0 +1,562 @@
+openapi: 3.0.3
+info:
+  title: Opportunity Tracker API
+  description: |
+    RESTful API for querying and managing opportunity tracking data.
+
+    **Phase 8.3 Features:**
+    - Role-based authentication (read, write, admin)
+    - Advanced filtering (stage, priority, dates, search)
+    - Sorting by multiple fields
+    - Insights integration
+    - Pagination
+
+    **Authentication:**
+    All endpoints require an API key provided via the `X-API-Key` header.
+    Configure keys in `OPPORTUNITY_API_KEYS` environment variable with format:
+    `KEY:role:description,KEY:role:description`
+
+    **Roles:**
+    - `read`: Can GET opportunities (read-only access)
+    - `write`: Can GET/POST/PUT opportunities
+    - `admin`: Full access (GET/POST/PUT/DELETE)
+
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: support@dealreg.com
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:4000/api
+    description: Local development
+  - url: https://api.dealreg.com/api
+    description: Production
+
+security:
+  - ApiKeyAuth: []
+
+tags:
+  - name: opportunities
+    description: Opportunity management endpoints
+
+paths:
+  /opportunities:
+    get:
+      summary: List opportunities
+      description: |
+        Retrieve a paginated list of opportunities with optional filtering, sorting, and insights.
+
+        **Permissions:** read, write, or admin role
+
+        **Features:**
+        - Filter by stage, priority, creation date range
+        - Full-text search on name and ID
+        - Sort by name, stage, priority, or creation date
+        - Optionally include AI-generated insights
+        - Pagination with configurable limit/offset
+      operationId: listOpportunities
+      tags:
+        - opportunities
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: stage
+          in: query
+          description: Filter by opportunity stage
+          required: false
+          schema:
+            type: string
+            enum: [rfq, quote, po_in_progress, research_concept, integration]
+          example: rfq
+
+        - name: priority
+          in: query
+          description: Filter by priority level
+          required: false
+          schema:
+            type: string
+            enum: [high, medium, low]
+          example: high
+
+        - name: search
+          in: query
+          description: Search in opportunity name or ID (case-insensitive)
+          required: false
+          schema:
+            type: string
+          example: ClearLED
+
+        - name: createdAfter
+          in: query
+          description: Filter opportunities created after this date (ISO 8601)
+          required: false
+          schema:
+            type: string
+            format: date-time
+          example: "2025-01-01T00:00:00Z"
+
+        - name: createdBefore
+          in: query
+          description: Filter opportunities created before this date (ISO 8601)
+          required: false
+          schema:
+            type: string
+            format: date-time
+          example: "2025-12-31T23:59:59Z"
+
+        - name: sortBy
+          in: query
+          description: Field to sort by
+          required: false
+          schema:
+            type: string
+            enum: [name, stage, priority, createdAt]
+            default: createdAt
+          example: priority
+
+        - name: sortOrder
+          in: query
+          description: Sort order
+          required: false
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+          example: desc
+
+        - name: includeInsights
+          in: query
+          description: Include AI-generated insights (win probability, momentum, risks)
+          required: false
+          schema:
+            type: boolean
+            default: false
+          example: true
+
+        - name: limit
+          in: query
+          description: Maximum number of results to return (max 500)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+          example: 50
+
+        - name: offset
+          in: query
+          description: Number of results to skip (for pagination)
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          example: 0
+
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Opportunity'
+                  count:
+                    type: integer
+                    description: Number of opportunities in this response
+                    example: 10
+                  total:
+                    type: integer
+                    description: Total number of opportunities matching filters
+                    example: 42
+                  offset:
+                    type: integer
+                    example: 0
+                  limit:
+                    type: integer
+                    example: 100
+                  query:
+                    type: object
+                    description: Echo of query parameters
+                    properties:
+                      stage:
+                        type: string
+                        nullable: true
+                      priority:
+                        type: string
+                        nullable: true
+                      search:
+                        type: string
+                        nullable: true
+                      createdAfter:
+                        type: string
+                        nullable: true
+                      createdBefore:
+                        type: string
+                        nullable: true
+                      sortBy:
+                        type: string
+                      sortOrder:
+                        type: string
+                      includeInsights:
+                        type: boolean
+              examples:
+                basic:
+                  summary: Basic list response
+                  value:
+                    data:
+                      - id: opp-123
+                        name: ClearLED PDU Deal
+                        stage: rfq
+                        priority: high
+                        createdAt: "2025-01-15T10:30:00Z"
+                        units:
+                          min: 100
+                          max: 500
+                        pricing:
+                          min: 50000
+                          max: 250000
+                    count: 1
+                    total: 1
+                    offset: 0
+                    limit: 100
+                    query:
+                      stage: null
+                      priority: high
+                      sortBy: createdAt
+                      sortOrder: desc
+                      includeInsights: false
+
+                withInsights:
+                  summary: With insights included
+                  value:
+                    data:
+                      - id: opp-123
+                        name: ClearLED PDU Deal
+                        stage: rfq
+                        priority: high
+                        createdAt: "2025-01-15T10:30:00Z"
+                        insight:
+                          opportunity_id: opp-123
+                          winProbability: 0.75
+                          momentumScore: 0.82
+                          riskFlags: []
+                          notes: []
+                    count: 1
+                    total: 1
+                    offset: 0
+                    limit: 100
+
+        '400':
+          description: Bad request (invalid parameters)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                invalidSort:
+                  summary: Invalid sort field
+                  value:
+                    error: Invalid sortBy field
+                    validFields: ["name", "stage", "priority", "createdAt"]
+
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /opportunities/{id}:
+    get:
+      summary: Get opportunity by ID
+      description: |
+        Retrieve a single opportunity by its unique identifier.
+
+        **Permissions:** read, write, or admin role
+      operationId: getOpportunityById
+      tags:
+        - opportunities
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Opportunity ID
+          schema:
+            type: string
+          example: opp-123
+
+        - name: includeInsights
+          in: query
+          description: Include AI-generated insights
+          required: false
+          schema:
+            type: boolean
+            default: false
+          example: true
+
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Opportunity'
+              examples:
+                withoutInsights:
+                  summary: Opportunity without insights
+                  value:
+                    data:
+                      id: opp-123
+                      name: ClearLED PDU Deal
+                      stage: rfq
+                      priority: high
+                      createdAt: "2025-01-15T10:30:00Z"
+
+                withInsights:
+                  summary: Opportunity with insights
+                  value:
+                    data:
+                      id: opp-123
+                      name: ClearLED PDU Deal
+                      stage: rfq
+                      priority: high
+                      createdAt: "2025-01-15T10:30:00Z"
+                      insight:
+                        opportunity_id: opp-123
+                        winProbability: 0.75
+                        momentumScore: 0.82
+                        riskFlags: []
+
+        '404':
+          description: Opportunity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Opportunity not found
+
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: |
+        API key for authentication.
+        Format in environment: `KEY:role:description`
+        Roles: read, write, admin
+
+  schemas:
+    Opportunity:
+      type: object
+      required:
+        - id
+        - stage
+        - priority
+      properties:
+        id:
+          type: string
+          description: Unique opportunity identifier
+          example: opp-clearled-001
+
+        name:
+          type: string
+          description: Opportunity name
+          example: ClearLED PDU Integration Deal
+
+        stage:
+          type: string
+          enum: [rfq, quote, po_in_progress, research_concept, integration]
+          description: Current stage in sales pipeline
+          example: rfq
+
+        priority:
+          type: string
+          enum: [high, medium, low]
+          description: Priority level
+          example: high
+
+        units:
+          type: object
+          description: Unit range
+          properties:
+            min:
+              type: integer
+              example: 100
+            max:
+              type: integer
+              example: 500
+
+        pricing:
+          type: object
+          description: Pricing range
+          properties:
+            min:
+              type: number
+              example: 50000
+            max:
+              type: number
+              example: 250000
+
+        actors:
+          type: array
+          description: People involved
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              role:
+                type: string
+
+        nextSteps:
+          type: array
+          description: Action items
+          items:
+            type: object
+
+        backlinks:
+          type: array
+          description: Source references
+          items:
+            type: object
+
+        sourceIds:
+          type: array
+          description: Source file identifiers
+          items:
+            type: string
+
+        createdAt:
+          type: string
+          format: date-time
+          description: Creation timestamp
+          example: "2025-01-15T10:30:00Z"
+
+        insight:
+          $ref: '#/components/schemas/OpportunityInsight'
+          description: AI-generated insight (only when includeInsights=true)
+
+    OpportunityInsight:
+      type: object
+      properties:
+        opportunity_id:
+          type: string
+          example: opp-123
+
+        winProbability:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: Probability of winning the deal (0-1)
+          example: 0.75
+
+        momentumScore:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: Deal momentum score (0-1)
+          example: 0.82
+
+        riskFlags:
+          type: array
+          description: Identified risk factors
+          items:
+            type: string
+          example: ["stalled", "low_engagement"]
+
+        notes:
+          type: array
+          description: Additional notes
+          items:
+            type: string
+
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Error message
+          example: Invalid API key
+        message:
+          type: string
+          description: Detailed error message
+        required:
+          type: array
+          description: Required roles (for 403 errors)
+          items:
+            type: string
+        current:
+          type: string
+          description: Current user role (for 403 errors)
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid API key
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            missingKey:
+              summary: Missing API key
+              value:
+                error: Missing API key. Include X-API-Key header.
+            invalidKey:
+              summary: Invalid API key
+              value:
+                error: Invalid API key
+
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Insufficient permissions
+            required: ["admin", "write"]
+            current: read
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Failed to fetch opportunities
+            message: Database connection error
+
+externalDocs:
+  description: Full project documentation
+  url: https://github.com/your-org/deal-reg-automation/tree/main/docs
