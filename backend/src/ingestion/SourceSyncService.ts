@@ -76,7 +76,7 @@ export interface SourceManifestEntry {
   metadataPath: string;
   parser: 'StandardizedMboxParser' | 'StandardizedTranscriptParser' | 'StandardizedCSVParser';
   sourceType: SourceType;
-  connector: 'gmail' | 'drive' | 'crm_csv';
+  connector: 'gmail' | 'drive' | 'crm_csv' | 'teams_transcript' | 'zoom_transcript';
   queryName?: string;
   recordedAt: string;
   sourceMetadata: SourceMetadata;
@@ -389,9 +389,8 @@ export class SourceSyncService {
       parser: params.parser,
       sourceType: params.sourceType,
       connector: params.sourceMetadata.connector,
-      queryName: params.sourceMetadata.connector === 'gmail' || params.sourceMetadata.connector === 'drive'
-        ? params.sourceMetadata.queryName
-        : undefined,
+      queryName:
+        'queryName' in params.sourceMetadata ? params.sourceMetadata.queryName : undefined,
       recordedAt: new Date().toISOString(),
       sourceMetadata: params.sourceMetadata,
     };

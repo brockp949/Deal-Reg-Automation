@@ -54,6 +54,49 @@ export interface TeamsTranscriptSearchResult {
   totalCount: number;
 }
 
+interface GraphTokenResponse {
+  access_token: string;
+  expires_in: number;
+  token_type: string;
+}
+
+interface GraphCallRecord {
+  id: string;
+}
+
+interface GraphCallRecordsResponse {
+  value?: GraphCallRecord[];
+  '@odata.nextLink'?: string;
+}
+
+interface GraphMeetingResponse {
+  subject?: string;
+  organizer?: {
+    emailAddress?: {
+      address?: string;
+    };
+  };
+  startDateTime?: string;
+  endDateTime?: string;
+  participants?: {
+    attendees?: Array<{
+      identity?: {
+        displayName?: string;
+        user?: {
+          email?: string;
+        };
+      };
+      role?: string;
+    }>;
+  };
+}
+
+interface GraphTranscriptResponse {
+  value?: Array<{
+    id: string;
+  }>;
+}
+
 export class TeamsTranscriptConnector {
   private accessToken: TeamsAccessToken | null = null;
   private readonly authConfig: TeamsAuthConfig;
@@ -98,7 +141,7 @@ export class TeamsTranscriptConnector {
         throw new Error(`Authentication failed: ${response.status} - ${errorText}`);
       }
 
-      const data = await response.json();
+      const data = (await response.json()) as GraphTokenResponse;
 
       this.accessToken = {
         accessToken: data.access_token,
@@ -174,7 +217,7 @@ export class TeamsTranscriptConnector {
         throw new Error(`Failed to search transcripts: ${response.status}`);
       }
 
-      const data = await response.json();
+      const data = (await response.json()) as GraphCallRecordsResponse;
       const transcripts: TeamsMeetingTranscript[] = [];
 
       // For each meeting, fetch its transcript if available
@@ -225,7 +268,7 @@ export class TeamsTranscriptConnector {
         return null;
       }
 
-      const meetingData = await meetingResponse.json();
+      const meetingData = (await meetingResponse.json()) as GraphMeetingResponse;
 
       // Get meeting transcript
       const transcriptUrl = `https://graph.microsoft.com/v1.0/me/onlineMeetings/${meetingId}/transcripts`;
@@ -240,7 +283,7 @@ export class TeamsTranscriptConnector {
         return null;
       }
 
-      const transcriptData = await transcriptResponse.json();
+      const transcriptData = (await transcriptResponse.json()) as GraphTranscriptResponse;
 
       if (!transcriptData.value || transcriptData.value.length === 0) {
         return null;

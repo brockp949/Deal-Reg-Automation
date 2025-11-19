@@ -89,6 +89,7 @@ export type DriveSourceMetadata = {
 
 export type CRMCSVSourceMetadata = {
   connector: 'crm_csv';
+  queryName?: string;
   file: CRMCSVFileSummary;
 };
 

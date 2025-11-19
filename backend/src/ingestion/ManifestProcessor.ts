@@ -6,6 +6,7 @@ import { IParser, StandardizedParserOutput } from '../types/parsing';
 import logger from '../utils/logger';
 import { StandardizedMboxParser } from '../parsers/StandardizedMboxParser';
 import { StandardizedTranscriptParser } from '../parsers/StandardizedTranscriptParser';
+import { StandardizedCSVParser } from '../parsers/StandardizedCSVParser';
 
 type ParserName = SourceManifestEntry['parser'];
 
@@ -105,6 +106,7 @@ export class ManifestProcessor {
 const defaultParsers: Record<ParserName, () => IParser> = {
   StandardizedMboxParser: () => new StandardizedMboxParser(),
   StandardizedTranscriptParser: () => new StandardizedTranscriptParser(),
+  StandardizedCSVParser: () => new StandardizedCSVParser(),
 };
 
 export default ManifestProcessor;
