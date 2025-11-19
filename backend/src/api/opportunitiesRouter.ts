@@ -3,6 +3,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { config } from '../config';
 import { OpportunityRecord } from '../opportunities/types';
+import type { OpportunityInsight } from '../insights/OpportunityInsightService';
 import { requireRole } from './middleware/apiKeyAuth';
 
 const router = express.Router();
@@ -19,8 +20,16 @@ interface OpportunityQuery {
   sortBy?: SortField;
   sortOrder?: SortOrder;
   includeInsights?: boolean;
-  limit?: number;
-  offset?: number;
+  limit: number;
+  offset: number;
+}
+
+type EnrichedOpportunityRecord = OpportunityRecord & {
+  insight?: OpportunityInsight | null;
+};
+
+interface InsightFilePayload {
+  insights?: OpportunityInsight[];
 }
 
 /**
@@ -157,10 +166,10 @@ router.get('/', requireRole(['read', 'write', 'admin']), async (req, res) => {
     const totalAfterFilter = records.length;
 
     // Pagination
-    const paged = records.slice(query.offset, query.offset + query.limit!);
+    const paged = records.slice(query.offset, query.offset + query.limit);
 
     // Include insights if requested
-    let enrichedData = paged;
+    let enrichedData: EnrichedOpportunityRecord[] = paged as EnrichedOpportunityRecord[];
     if (query.includeInsights) {
       const insightsPath = path.resolve(
         config.upload.directory,
@@ -170,14 +179,14 @@ router.get('/', requireRole(['read', 'write', 'admin']), async (req, res) => {
 
       try {
         const insightsRaw = await fs.readFile(insightsPath, 'utf-8');
-        const insightsData = JSON.parse(insightsRaw);
-        const insightsMap = new Map(
-          (insightsData.insights || []).map((insight: any) => [insight.opportunity_id, insight])
+        const insightsData = JSON.parse(insightsRaw) as InsightFilePayload;
+        const insightsMap = new Map<string, OpportunityInsight>(
+          (insightsData.insights ?? []).map((insight) => [insight.opportunity_id, insight])
         );
 
-        enrichedData = paged.map((record) => ({
+        enrichedData = paged.map<EnrichedOpportunityRecord>((record) => ({
           ...record,
-          insight: insightsMap.get(record.id) || null,
+          insight: insightsMap.get(record.id) ?? null,
         }));
       } catch (error: any) {
         // Insights file not found, continue without insights
@@ -237,7 +246,7 @@ router.get('/:id', requireRole(['read', 'write', 'admin']), async (req, res) => 
       return res.status(404).json({ error: 'Opportunity not found' });
     }
 
-    let enrichedRecord = record;
+    let enrichedRecord: EnrichedOpportunityRecord = record;
 
     if (includeInsights) {
       const insightsPath = path.resolve(
@@ -248,14 +257,14 @@ router.get('/:id', requireRole(['read', 'write', 'admin']), async (req, res) => 
 
       try {
         const insightsRaw = await fs.readFile(insightsPath, 'utf-8');
-        const insightsData = JSON.parse(insightsRaw);
-        const insight = (insightsData.insights || []).find(
-          (i: any) => i.opportunity_id === id
+        const insightsData = JSON.parse(insightsRaw) as InsightFilePayload;
+        const insight = (insightsData.insights ?? []).find(
+          (i) => i.opportunity_id === id
         );
 
         enrichedRecord = {
           ...record,
-          insight: insight || null,
+          insight: insight ?? null,
         };
       } catch (error: any) {
         // Insights not found, continue without

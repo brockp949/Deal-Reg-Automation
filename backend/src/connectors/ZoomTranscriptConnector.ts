@@ -53,6 +53,37 @@ export interface ZoomTranscriptSearchResult {
   totalRecords: number;
 }
 
+interface ZoomTokenResponse {
+  access_token: string;
+  expires_in: number;
+  token_type: string;
+}
+
+interface ZoomMeetingsResponse {
+  meetings?: Array<{ id: number; uuid: string }>;
+  next_page_token?: string;
+  total_records?: number;
+}
+
+interface ZoomRecordingFile {
+  id?: string;
+  file_type?: string;
+  recording_type?: string;
+  file_extension?: string;
+  download_url: string;
+}
+
+interface ZoomMeetingRecordingResponse {
+  id: number | string;
+  topic: string;
+  start_time: string;
+  duration: number;
+  host_id: string;
+  host_email?: string;
+  participant_count?: number;
+  recording_files?: ZoomRecordingFile[];
+}
+
 export class ZoomTranscriptConnector {
   private accessToken: ZoomAccessToken | null = null;
   private readonly authConfig: ZoomAuthConfig;
@@ -107,7 +138,7 @@ export class ZoomTranscriptConnector {
         throw new Error(`Authentication failed: ${response.status} - ${errorText}`);
       }
 
-      const data = await response.json();
+      const data = (await response.json()) as ZoomTokenResponse;
 
       this.accessToken = {
         accessToken: data.access_token,
@@ -194,7 +225,7 @@ export class ZoomTranscriptConnector {
         throw new Error(`Failed to search meetings: ${response.status}`);
       }
 
-      const data = await response.json();
+      const data = (await response.json()) as ZoomMeetingsResponse;
       const transcripts: ZoomMeetingTranscript[] = [];
 
       // For each meeting with recordings, check for transcripts
@@ -251,7 +282,7 @@ export class ZoomTranscriptConnector {
         throw new Error(`Failed to get recordings: ${response.status}`);
       }
 
-      const recordingData = await response.json();
+      const recordingData = (await response.json()) as ZoomMeetingRecordingResponse;
 
       // Find transcript file in recording files
       const transcriptFile = recordingData.recording_files?.find(

@@ -14,7 +14,7 @@ export interface OpportunitySourceReference {
   parser: string;
   fileName: string;
   sourceType: SourceType;
-  connector?: 'gmail' | 'drive' | 'crm_csv';
+  connector?: 'gmail' | 'drive' | 'crm_csv' | 'teams_transcript' | 'zoom_transcript';
   queryName?: string;
   referenceIds: string[];
   manifestPath?: string;
@@ -25,6 +25,8 @@ export interface OpportunityRecord {
   name: string;
   stage: OpportunityStage;
   priority: OpportunityPriority;
+  createdAt?: string;
+  updatedAt?: string;
   yearlyUnitRange?: string;
   priceBand?: string;
   costUpsideNotes: string[];
