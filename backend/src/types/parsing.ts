@@ -124,6 +124,10 @@ export interface NormalizedDeal {
   pre_sales_efforts?: string;
   product_service_requirements?: string;
   notes?: string;
+  next_steps?: string[];
+  objections?: string[];
+  competitor_insights?: string[];
+  identified_competitors?: string[];
 
   // Metadata
   confidence_score?: number;               // 0.0 to 1.0

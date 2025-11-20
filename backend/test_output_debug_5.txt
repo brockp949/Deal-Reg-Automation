@@ -1,0 +1,33 @@
+
+> dealreg-backend@1.0.0 test
+> jest src/__tests__/parsers/ImprovedExtraction.test.ts --verbose
+
+FAIL src/__tests__/parsers/ImprovedExtraction.test.ts (10.637 s)
+  Improved Extraction Logic
+    MBOX Extraction
+      ΓêÜ should extract next steps and new currencies (32 ms)
+    Transcript Extraction
+      ├ù should extract objections and competitor insights (13 ms)
+
+  ΓùÅ Improved Extraction Logic ΓÇ║ Transcript Extraction ΓÇ║ should extract objections and competitor insights
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected value: "Salesforce Inc."
+    Received array: ["Salesforce Inc"]
+
+      88 |
+      89 |             // Check Competitor Insights
+    > 90 |             expect(deal?.identified_competitors).toContain('Salesforce Inc.');
+         |                                                  ^
+      91 |             expect(deal?.competitor_insights).toBeDefined();
+      92 |             expect(deal?.competitor_insights?.length).toBeGreaterThan(0);
+      93 |             expect(deal?.competitor_insights?.some(i => i.includes('Salesforce') && i.includes('cheaper'))).toBe(true);
+
+      at Object.<anonymous> (src/__tests__/parsers/ImprovedExtraction.test.ts:90:50)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 1 passed, 2 total
+Snapshots:   0 total
+Time:        10.913 s, estimated 15 s
+Ran all test suites matching src/__tests__/parsers/ImprovedExtraction.test.ts.

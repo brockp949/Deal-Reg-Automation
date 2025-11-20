@@ -202,6 +202,7 @@ export class StandardizedMboxParser extends BaseParser {
           pre_sales_efforts: deal.pre_sales_efforts,
           product_service_requirements: deal.product_service_requirements,
           notes: deal.pre_sales_efforts,
+          next_steps: deal.next_steps,
           confidence_score: deal.confidence_score || 0.5,
           extraction_method: 'keyword',
           source_email_id: deal.source_email_id,
