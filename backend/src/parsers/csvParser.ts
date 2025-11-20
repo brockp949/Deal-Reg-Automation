@@ -14,7 +14,14 @@ export async function parseCSVFile(filePath: string): Promise<ParsedCSVRow[]> {
     createReadStream(filePath)
       .pipe(csvParser())
       .on('data', (row) => {
-        rows.push(row);
+        // Normalize header keys: strip BOM, trim whitespace
+        const normalizedRow: ParsedCSVRow = Object.fromEntries(
+          Object.entries(row).map(([key, value]) => [
+            key.replace(/^\uFEFF/, '').trim(),
+            value,
+          ])
+        );
+        rows.push(normalizedRow);
       })
       .on('end', () => {
         logger.info(`Successfully parsed ${rows.length} rows from CSV file`);
