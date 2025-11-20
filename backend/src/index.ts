@@ -3,6 +3,25 @@ import { config } from './config';
 import logger from './utils/logger';
 import pool from './db';
 
+function registerDiagnostics() {
+  process.on('unhandledRejection', (reason: any) => {
+    logger.error('Unhandled promise rejection', {
+      reason: reason?.message || reason,
+      stack: reason?.stack,
+    });
+  });
+
+  process.on('uncaughtException', (error: Error) => {
+    logger.error('Uncaught exception', { error: error.message, stack: error.stack });
+  });
+
+  process.on('warning', (warning) => {
+    logger.warn('Process warning', { name: warning.name, message: warning.message, stack: warning.stack });
+  });
+}
+
+registerDiagnostics();
+
 // Start server
 const PORT = config.port;
 const server = app.listen(PORT, () => {
