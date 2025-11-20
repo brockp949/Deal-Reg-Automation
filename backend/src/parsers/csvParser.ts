@@ -16,10 +16,13 @@ export async function parseCSVFile(filePath: string): Promise<ParsedCSVRow[]> {
       .on('data', (row) => {
         // Normalize header keys: strip BOM, trim whitespace
         const normalizedRow: ParsedCSVRow = Object.fromEntries(
-          Object.entries(row).map(([key, value]) => [
-            key.replace(/^\uFEFF/, '').trim(),
-            value,
-          ])
+          Object.entries(row).map(([key, value]) => {
+            const cleanKey = key
+              .replace(/^\uFEFF/, '') // strip BOM
+              .replace(/^"+|"+$/g, '') // strip surrounding quotes
+              .trim();
+            return [cleanKey, value];
+          })
         );
         rows.push(normalizedRow);
       })
