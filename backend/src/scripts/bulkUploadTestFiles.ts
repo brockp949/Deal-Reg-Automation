@@ -83,9 +83,17 @@ async function main() {
     .map((name) => path.join(dir, name))
     .filter((p) => fs.statSync(p).isFile());
 
+  const allowedExt = new Set(['.mbox', '.csv', '.txt', '.pdf', '.docx', '.json']);
+
   console.log(`Found ${files.length} files in ${dir}`);
 
   for (const file of files) {
+    const ext = path.extname(file).toLowerCase();
+    if (!allowedExt.has(ext)) {
+      console.log(`Skipping ${path.basename(file)} (disallowed type ${ext})`);
+      continue;
+    }
+
     const sizeMb = fs.statSync(file).size / (1024 * 1024);
     if (sizeMb > maxSizeMb) {
       console.log(`Skipping ${path.basename(file)} (${sizeMb.toFixed(1)} MB) > max ${maxSizeMb} MB`);
