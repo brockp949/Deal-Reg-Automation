@@ -39,7 +39,8 @@
     "insights:score": "node -r tsx/cjs src/scripts/insightsScore.ts",
     "insights:notify": "node -r tsx/cjs src/scripts/insightsNotify.ts",
     "insights:test": "node -r tsx/cjs src/scripts/notificationSelfTest.ts",
-    "api:start": "npm start"
+    "api:start": "npm start",
+    "bulk:upload": "node -r tsx/cjs src/scripts/bulkUploadTestFiles.ts"
   },
   "keywords": [
     "deal-registration",
