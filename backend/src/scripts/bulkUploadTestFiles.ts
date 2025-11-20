@@ -42,8 +42,12 @@ async function uploadFile(filePath: string, api: string, apiKey?: string) {
   const stat = fs.statSync(filePath);
   const filename = path.basename(filePath);
 
+  // Read file into memory to create a Blob (works for sub-150MB defaults)
+  const data = await fs.promises.readFile(filePath);
+  const blob = new Blob([data]);
+
   const form = new FormData();
-  form.append('file', fs.createReadStream(filePath), filename);
+  form.append('file', blob, filename);
 
   const headers: Record<string, string> = {};
   if (apiKey) headers['x-api-key'] = apiKey;
