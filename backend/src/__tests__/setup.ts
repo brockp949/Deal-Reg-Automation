@@ -6,7 +6,7 @@
 // Set required environment variables for tests
 process.env.NODE_ENV = 'test';
 process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/test';
-process.env.JWT_SECRET = 'test-secret-key-for-testing';
+process.env.JWT_SECRET = 'test-secret-key-for-testing-must-be-32-chars';
 process.env.REDIS_URL = 'redis://localhost:6379';
 process.env.PORT = '4000';
 process.env.ANTHROPIC_API_KEY = 'test-api-key';

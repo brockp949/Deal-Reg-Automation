@@ -1,0 +1,44 @@
+
+> dealreg-backend@1.0.0 test
+> jest src/__tests__/parsers/ImprovedExtraction.test.ts --verbose
+
+  console.log
+    [DEBUG] parseSpeakerTurns input length: 666
+
+      at Function.parseSpeakerTurns (src/parsers/enhancedTranscriptParser.ts:280:13)
+
+  console.log
+    [DEBUG] First 100 chars: 
+    [00:01:00] Sales Rep: Hi, thanks for meeting with us.
+    [00:01:30] Prospect: Thanks. We are looking f
+
+      at Function.parseSpeakerTurns (src/parsers/enhancedTranscriptParser.ts:281:13)
+
+FAIL src/__tests__/parsers/ImprovedExtraction.test.ts (14.819 s)
+  Improved Extraction Logic
+    MBOX Extraction
+      ΓêÜ should extract next steps and new currencies (44 ms)
+    Transcript Extraction
+      ├ù should extract objections and competitor insights (43 ms)
+
+  ΓùÅ Improved Extraction Logic ΓÇ║ Transcript Extraction ΓÇ║ should extract objections and competitor insights
+
+    expect(received).toBeDefined()
+
+    Received: undefined
+
+      82 |
+      83 |             // Check Objections
+    > 84 |             expect(deal?.objections).toBeDefined();
+         |                                      ^
+      85 |             expect(deal?.objections?.length).toBeGreaterThan(0);
+      86 |             expect(deal?.objections?.some(o => o.includes('price is a concern'))).toBe(true);
+      87 |             expect(deal?.objections?.some(o => o.includes('need approval'))).toBe(true);
+
+      at Object.<anonymous> (src/__tests__/parsers/ImprovedExtraction.test.ts:84:38)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 1 passed, 2 total
+Snapshots:   0 total
+Time:        15.127 s
+Ran all test suites matching src/__tests__/parsers/ImprovedExtraction.test.ts.

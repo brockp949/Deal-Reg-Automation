@@ -117,13 +117,13 @@ export class StandardizedTranscriptParser extends BaseParser {
               contacts: [],
             };
           }
-      } else {
-        // Basic parsing - read text and extract
-        const parsedTranscript = parseTextTranscript(filePathToProcess);
-        transcriptText = parsedTranscript.text;
-        output.statistics.linesProcessed = transcriptText.split('\n').length;
-        extractedData = extractInfoFromTranscript(parsedTranscript);
-      }
+        } else {
+          // Basic parsing - read text and extract
+          const parsedTranscript = parseTextTranscript(filePathToProcess);
+          transcriptText = parsedTranscript.text;
+          output.statistics.linesProcessed = transcriptText.split('\n').length;
+          extractedData = extractInfoFromTranscript(parsedTranscript);
+        }
 
         opportunityAnalysis = analyzeOpportunitySignals(transcriptText || '');
         output.semanticSections = extractSemanticSections(transcriptText || '', opportunityAnalysis);
@@ -339,6 +339,9 @@ export class StandardizedTranscriptParser extends BaseParser {
       status: d.status || 'registered',
       notes: d.notes,
       project_name: d.project_name,
+      objections: d.objections,
+      competitor_insights: d.competitor_insights,
+      identified_competitors: d.identified_competitors,
       confidence_score: d.confidence_score || 0.6,
       extraction_method: 'regex',
       source_location: 'Transcript',
