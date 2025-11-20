@@ -1,0 +1,48 @@
+
+> dealreg-backend@1.0.0 test
+> jest src/__tests__/parsers/ImprovedExtraction.test.ts
+
+FAIL src/__tests__/parsers/ImprovedExtraction.test.ts (19.689 s)
+  Improved Extraction Logic
+    MBOX Extraction
+      ├ù should extract next steps and new currencies (66 ms)
+    Transcript Extraction
+      ├ù should extract objections and competitor insights (15 ms)
+
+  ΓùÅ Improved Extraction Logic ΓÇ║ MBOX Extraction ΓÇ║ should extract next steps and new currencies
+
+    expect(received).toBeDefined()
+
+    Received: undefined
+
+      50 |
+      51 |             expect(deal).toBeDefined();
+    > 52 |             expect(deal.deal_value).toBeDefined();
+         |                                     ^
+      53 |
+      54 |             expect(deal.next_steps).toBeDefined();
+      55 |             expect(deal.next_steps?.length).toBeGreaterThan(0);
+
+      at Object.<anonymous> (src/__tests__/parsers/ImprovedExtraction.test.ts:52:37)
+
+  ΓùÅ Improved Extraction Logic ΓÇ║ Transcript Extraction ΓÇ║ should extract objections and competitor insights
+
+    expect(received).toBeDefined()
+
+    Received: undefined
+
+      82 |
+      83 |             // Check Objections
+    > 84 |             expect(deal?.objections).toBeDefined();
+         |                                      ^
+      85 |             expect(deal?.objections?.length).toBeGreaterThan(0);
+      86 |             expect(deal?.objections?.some(o => o.includes('price is a concern'))).toBe(true);
+      87 |             expect(deal?.objections?.some(o => o.includes('need approval'))).toBe(true);
+
+      at Object.<anonymous> (src/__tests__/parsers/ImprovedExtraction.test.ts:84:38)
+
+Test Suites: 1 failed, 1 total
+Tests:       2 failed, 2 total
+Snapshots:   0 total
+Time:        20.12 s
+Ran all test suites matching src/__tests__/parsers/ImprovedExtraction.test.ts.

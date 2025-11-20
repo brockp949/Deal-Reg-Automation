@@ -1,0 +1,56 @@
+
+> dealreg-backend@1.0.0 test
+> jest src/__tests__/parsers/StandardizedIntegration.test.ts --verbose
+
+FAIL src/__tests__/parsers/StandardizedIntegration.test.ts
+  ΓùÅ Test suite failed to run
+
+    ZodError: [
+      {
+        "code": "too_small",
+        "minimum": 32,
+        "type": "string",
+        "inclusive": true,
+        "exact": false,
+        "message": "String must contain at least 32 character(s)",
+        "path": [
+          "JWT_SECRET"
+        ]
+      }
+    ]
+
+      80 |
+      81 | // Parse and validate environment variables
+    > 82 | const env = envSchema.parse(process.env);
+         |                       ^
+      83 |
+      84 | const parseList = (value?: string) =>
+      85 |   value
+
+      at Object.get error [as error] (node_modules/zod/v3/types.cjs:45:31)
+      at ZodObject.parse (node_modules/zod/v3/types.cjs:120:22)
+      at Object.<anonymous> (src/config/index.ts:82:23)
+      at Object.<anonymous> (src/utils/fileHelpers.ts:2:1)
+      at Object.<anonymous> (src/parsers/StandardizedMboxParser.ts:11:1)
+      at Object.<anonymous> (src/__tests__/parsers/StandardizedIntegration.test.ts:2:1)
+
+    Errors contained in AggregateError:
+     String must contain at least 32 character(s)
+
+            "code": "too_small",
+            "exact": false,
+            "inclusive": true,
+            "message": "String must contain at least 32 character(s)",
+            "minimum": 32,
+            "path": Array [
+              "JWT_SECRET",
+            ],
+            "type": "string",
+          }
+
+
+Test Suites: 1 failed, 1 total
+Tests:       0 total
+Snapshots:   0 total
+Time:        18.884 s
+Ran all test suites matching src/__tests__/parsers/StandardizedIntegration.test.ts.

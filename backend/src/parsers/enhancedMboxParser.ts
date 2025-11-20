@@ -55,6 +55,21 @@ export const TIER1_KEYWORDS = [
   'won the deal',
   'closed the deal',
   'contract executed',
+  'signed agreement',
+  'deal closed',
+];
+
+export const NEXT_STEPS_KEYWORDS = [
+  'next steps',
+  'action items',
+  'follow up',
+  'to do',
+  'action required',
+  'please provide',
+  'schedule a call',
+  'set up a meeting',
+  'moving forward',
+  'plan of action',
 ];
 
 export const TIER2_KEYWORDS = [
@@ -132,8 +147,10 @@ export const TIER3_KEYWORDS = [
 export const DEAL_TYPE_KEYWORDS = {
   'co-sell': ['co-sell', 'co sell', 'cosell', 'joint sell'],
   'partner-led': ['partner-led', 'partner led', 'partner driven'],
-  'rfp': ['rfp', 'request for proposal', 'tender', 'bid'],
-  'public-tender': ['public tender', 'government bid', 'public bid'],
+  'rfp': ['rfp', 'request for proposal', 'tender', 'bid', 'solicitation'],
+  'public-tender': ['public tender', 'government bid', 'public bid', 'public sector'],
+  'renewal': ['renewal', 'renew', 'extension', 'expiring'],
+  'expansion': ['expansion', 'upsell', 'cross-sell', 'add-on'],
 };
 
 export const PRICING_MODEL_KEYWORDS = {
@@ -155,6 +172,9 @@ export const REGEX_PATTERNS = {
     general: /(?:USD|EUR|GBP|CAD|AUD)?\s?\$?\s?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s?(?:USD|EUR|GBP|CAD|AUD)?/gi,
     withLabel: /(?:deal (?:size|value)|tcv|acv|contract value|amount):\s?\$?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/gi,
     abbreviated: /\$?(\d+)k/gi, // $75k format
+    jpy: /¥\s?(\d{1,3}(?:,\d{3})*)/g,
+    inr: /₹\s?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
+    cny: /¥\s?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
   },
 
   // Dates - multiple formats
@@ -222,6 +242,7 @@ export interface ExtractedDeal {
   deal_type?: string;
   project_name?: string;
   pre_sales_efforts?: string;
+  next_steps?: string[];
 
   // Metadata
   confidence_score: number;
