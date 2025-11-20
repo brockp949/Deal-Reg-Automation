@@ -77,6 +77,9 @@ const envSchema = z.object({
   NOTIFICATION_EMAIL_RECIPIENTS: z.string().optional(),
   NOTIFICATION_DRY_RUN: z.string().default('true'),
 
+  // Vendor intake
+  VENDOR_AUTO_APPROVE: z.string().default('true'),
+
   // Admin / maintenance
   CLEAR_ALL_ENDPOINT_ENABLED: z.string().default('false'),
   CLEAR_ALL_TOKEN: z.string().optional(),
@@ -206,6 +209,10 @@ export const config = {
   adminOps: {
     clearAllEnabled: env.CLEAR_ALL_ENDPOINT_ENABLED === 'true',
     clearAllToken: env.CLEAR_ALL_TOKEN,
+  },
+
+  vendor: {
+    autoApprove: env.VENDOR_AUTO_APPROVE === 'true',
   },
 };
 
