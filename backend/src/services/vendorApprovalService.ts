@@ -3,6 +3,7 @@ import { normalizeVendorName } from '../utils/fileHelpers';
 import logger from '../utils/logger';
 import { VendorApprovalPendingError, VendorApprovalDeniedError } from '../errors/vendorApprovalErrors';
 import { trackVendorProvenance } from './provenanceTracker';
+import { config } from '../config';
 
 export type VendorApprovalStatus = 'approved' | 'pending' | 'denied';
 
@@ -118,8 +119,38 @@ export async function ensureVendorApproved(
       throw new VendorApprovalDeniedError(vendorName);
     }
 
+    if (config.vendor.autoApprove) {
+      await query(
+        `UPDATE vendors
+         SET approval_status = 'approved',
+             approved_at = COALESCE(approved_at, CURRENT_TIMESTAMP),
+             approval_notes = COALESCE(approval_notes, 'Auto-approved by system')
+         WHERE id = $1`,
+        [vendor.id]
+      );
+      logger.info('Auto-approved existing vendor', { vendor: vendorName, vendorId: vendor.id });
+      return vendor.id;
+    }
+
     const alias = await upsertVendorReviewCandidate(vendorName, normalizedName, context);
     throw new VendorApprovalPendingError(vendorName, alias.id);
+  }
+
+  // Auto-approve path: create vendor immediately
+  if (config.vendor.autoApprove) {
+    const insertResult = await query(
+      `INSERT INTO vendors (name, normalized_name, status, approval_status, approved_at, origin)
+       VALUES ($1, $2, 'active', 'approved', CURRENT_TIMESTAMP, 'auto-ingest')
+       ON CONFLICT (normalized_name) DO UPDATE
+         SET approval_status = 'approved',
+             approved_at = COALESCE(vendors.approved_at, CURRENT_TIMESTAMP)
+       RETURNING id`,
+      [vendorName, normalizedName]
+    );
+
+    const vendorId = insertResult.rows[0].id;
+    logger.info('Auto-approved new vendor', { vendor: vendorName, vendorId });
+    return vendorId;
   }
 
   // Check review queue
