@@ -92,6 +92,35 @@ export const BUYING_SIGNALS = {
       /that\s+makes\s+sense/i,
     ],
   },
+
+  // Sales Objections (Risk Factors)
+  OBJECTIONS: {
+    price: [
+      /(too|very)\s+expensive/i,
+      /over\s+(our\s+)?budget/i,
+      /cost\s+is\s+(a\s+)?concern/i,
+      /price\s+is\s+(too\s+)?high/i,
+      /can'?t\s+afford/i,
+    ],
+    timing: [
+      /not\s+(the\s+right|a\s+good)\s+time/i,
+      /too\s+soon/i,
+      /wait\s+until\s+(next\s+)?(year|quarter)/i,
+      /busy\s+with\s+other\s+projects/i,
+    ],
+    authority: [
+      /need\s+approval/i,
+      /not\s+my\s+decision/i,
+      /speak\s+with\s+(my\s+)?boss/i,
+      /decision\s+maker/i,
+    ],
+    competition: [
+      /happy\s+with\s+(current|existing)/i,
+      /already\s+have\s+a\s+solution/i,
+      /competitor\s+is\s+cheaper/i,
+      /switching\s+costs/i,
+    ],
+  },
 };
 
 /**
@@ -108,6 +137,7 @@ export enum IntentType {
   BUDGET_DISCUSSION = 'budget_discussion',
   TIMELINE_INQUIRY = 'timeline_inquiry',
   FEATURE_INQUIRY = 'feature_inquiry',
+  RAISING_OBJECTION = 'raising_objection',
   OFF_TOPIC = 'off_topic',
 }
 
@@ -157,6 +187,8 @@ export interface EnhancedDealData {
   identified_competitors?: string[];
   potential_challenges?: string;
   requested_support?: string;
+  objections?: string[];
+  competitor_insights?: string[];
 
   // Confidence & Metadata
   confidence_score: number;
@@ -479,6 +511,15 @@ export class IntentClassifier {
   static classifyIntent(utterance: string): { intent: IntentType; confidence: number } {
     const lower = utterance.toLowerCase();
 
+    // Objections (HIGH PRIORITY - Check first to avoid misclassification)
+    for (const category of Object.values(BUYING_SIGNALS.OBJECTIONS)) {
+      for (const pattern of category) {
+        if (pattern.test(utterance)) {
+          return { intent: IntentType.RAISING_OBJECTION, confidence: 0.85 };
+        }
+      }
+    }
+
     // Pricing/Budget inquiries (HIGH PRIORITY)
     if (/(price|cost|pricing|budget|spend|investment)/i.test(utterance)) {
       if (/\b(price|cost|pricing)\b/i.test(utterance)) {
@@ -496,7 +537,7 @@ export class IntentClassifier {
 
     // Dissatisfaction with current solution
     if (/(current|existing|incumbent).*\b(slow|expensive|limited|lacking|poor)/i.test(utterance) ||
-        /(frustrated|unhappy|dissatisfied|not\s+happy)\s+with/i.test(utterance)) {
+      /(frustrated|unhappy|dissatisfied|not\s+happy)\s+with/i.test(utterance)) {
       return { intent: IntentType.EXPRESSING_DISSATISFACTION, confidence: 0.85 };
     }
 
@@ -510,8 +551,10 @@ export class IntentClassifier {
       return { intent: IntentType.TIMELINE_INQUIRY, confidence: 0.8 };
     }
 
+
+
     // Competitor comparison
-    if (/(compare|versus|vs\.|different\s+from|advantage\s+over|better\s+than|why\s+choose)/i.test(utterance)) {
+    if (/(compare|versus|vs\.|different\s+from|advantage\s+over|better\s+than|why\s+choose|cheaper|more\s+expensive)/i.test(utterance)) {
       return { intent: IntentType.COMPETITOR_COMPARISON, confidence: 0.85 };
     }
 
@@ -529,6 +572,8 @@ export class IntentClassifier {
     if (/(how\s+does|technical|integration|api|architecture|infrastructure|security)/i.test(utterance)) {
       return { intent: IntentType.TECHNICAL_QUESTION, confidence: 0.75 };
     }
+
+
 
     // Default: off-topic
     return { intent: IntentType.OFF_TOPIC, confidence: 0.5 };
@@ -596,8 +641,8 @@ export class BuyingSignalDetector {
     const engagementScore = Math.min(engagementCount / 4, 1.0); // 4+ engagement markers = max
 
     score = (explicitScore * weights.explicit) +
-            (implicitScore * weights.implicit) +
-            (engagementScore * weights.engagement);
+      (implicitScore * weights.implicit) +
+      (engagementScore * weights.engagement);
 
     logger.info('Buying signal analysis', {
       score: score.toFixed(2),
@@ -714,9 +759,9 @@ export class DataSynthesizer {
     let entityConfidenceScore = 0.75; // Default good confidence
 
     const finalScore = (buyingSignalScore * weights.buying_signals) +
-                       (completenessScore * weights.data_completeness) +
-                       (corroborationScore * weights.corroboration) +
-                       (entityConfidenceScore * weights.entity_confidence);
+      (completenessScore * weights.data_completeness) +
+      (corroborationScore * weights.corroboration) +
+      (entityConfidenceScore * weights.entity_confidence);
 
     return Math.min(finalScore, 1.0);
   }
@@ -741,6 +786,20 @@ export class DataSynthesizer {
       // Additional organizations might be competitors or current vendors
       if (organizations.length > 1) {
         dealData.identified_competitors = organizations.slice(1).map(o => o.text);
+
+        // Extract competitor insights (context around mentions)
+        const competitorInsights: string[] = [];
+        for (const competitor of organizations.slice(1)) {
+          const mentions = turns.filter(t => t.utterance.includes(competitor.text));
+          mentions.forEach(m => {
+            if (m.intent === IntentType.COMPETITOR_COMPARISON || m.intent === IntentType.RAISING_OBJECTION) {
+              competitorInsights.push(`${competitor.text}: ${m.utterance}`);
+            }
+          });
+        }
+        if (competitorInsights.length > 0) {
+          dealData.competitor_insights = competitorInsights;
+        }
       }
     }
 
@@ -794,6 +853,12 @@ export class DataSynthesizer {
       if (currentVendorMention) {
         dealData.current_vendor = currentVendorMention[1];
       }
+    }
+
+    // Extract objections
+    const objectionStatements = turns.filter(t => t.intent === IntentType.RAISING_OBJECTION);
+    if (objectionStatements.length > 0) {
+      dealData.objections = objectionStatements.map(t => t.utterance);
     }
 
     // Generate deal description from conversation

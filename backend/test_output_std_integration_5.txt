@@ -1,0 +1,34 @@
+
+> dealreg-backend@1.0.0 test
+> jest src/__tests__/parsers/StandardizedIntegration.test.ts --verbose
+
+FAIL src/__tests__/parsers/StandardizedIntegration.test.ts (25.347 s)
+  Standardized Parser Integration
+    StandardizedMboxParser
+      ΓêÜ should map next_steps to NormalizedDeal (73 ms)
+    StandardizedTranscriptParser
+      ├ù should map objections and competitor insights to NormalizedDeal (27 ms)
+
+  ΓùÅ Standardized Parser Integration ΓÇ║ StandardizedTranscriptParser ΓÇ║ should map objections and competitor insights to NormalizedDeal
+
+    expect(received).toContain(expected) // indexOf
+
+    Matcher error: received value must not be null nor undefined
+
+    Received has value: undefined
+
+      69 |             expect(deal.objections).toBeDefined();
+      70 |             expect(deal.objections?.some(o => o.includes('price is a concern'))).toBe(true);
+    > 71 |             expect(deal.identified_competitors).toContain('Salesforce Inc');
+         |                                                 ^
+      72 |         });
+      73 |     });
+      74 | });
+
+      at Object.<anonymous> (src/__tests__/parsers/StandardizedIntegration.test.ts:71:49)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 1 passed, 2 total
+Snapshots:   0 total
+Time:        25.965 s
+Ran all test suites matching src/__tests__/parsers/StandardizedIntegration.test.ts.

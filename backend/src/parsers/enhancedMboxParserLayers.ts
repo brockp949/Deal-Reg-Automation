@@ -3,7 +3,7 @@
  * Regex Extraction and Confidence Scoring
  */
 
-import { REGEX_PATTERNS, TIER1_KEYWORDS, TIER2_KEYWORDS, TIER3_KEYWORDS, ExtractedDeal, ParsedEmailMessage, EmailThread } from './enhancedMboxParser';
+import { REGEX_PATTERNS, TIER1_KEYWORDS, TIER2_KEYWORDS, TIER3_KEYWORDS, NEXT_STEPS_KEYWORDS, DEAL_TYPE_KEYWORDS, PRICING_MODEL_KEYWORDS, ExtractedDeal, ParsedEmailMessage, EmailThread } from './enhancedMboxParser';
 import logger from '../utils/logger';
 import {
   extractValueWithContext,
@@ -30,6 +30,33 @@ export function extractFinancialData(text: string): { value: number; currency: s
     const value = parseFloat(match[1].replace(/,/g, ''));
     if (!isNaN(value)) {
       results.push({ value, currency: 'USD' });
+    }
+  }
+
+  // Try JPY patterns
+  matches = text.matchAll(REGEX_PATTERNS.currency.jpy);
+  for (const match of matches) {
+    const value = parseFloat(match[1].replace(/,/g, ''));
+    if (!isNaN(value)) {
+      results.push({ value, currency: 'JPY' });
+    }
+  }
+
+  // Try INR patterns
+  matches = text.matchAll(REGEX_PATTERNS.currency.inr);
+  for (const match of matches) {
+    const value = parseFloat(match[1].replace(/,/g, ''));
+    if (!isNaN(value)) {
+      results.push({ value, currency: 'INR' });
+    }
+  }
+
+  // Try CNY patterns
+  matches = text.matchAll(REGEX_PATTERNS.currency.cny);
+  for (const match of matches) {
+    const value = parseFloat(match[1].replace(/,/g, ''));
+    if (!isNaN(value)) {
+      results.push({ value, currency: 'CNY' });
     }
   }
 
@@ -305,24 +332,10 @@ export function applyLayer2Extraction(message: ParsedEmailMessage): Partial<Extr
 export function identifyDealType(text: string): string | undefined {
   const textLower = text.toLowerCase();
 
-  // Check for co-sell
-  if (textLower.match(/co[-\s]?sell|joint[-\s]?sell/i)) {
-    return 'co-sell';
-  }
-
-  // Check for partner-led
-  if (textLower.match(/partner[-\s]?led|partner[-\s]?driven/i)) {
-    return 'partner-led';
-  }
-
-  // Check for RFP/tender
-  if (textLower.match(/\brfp\b|request for proposal|tender|bid/i)) {
-    return 'rfp';
-  }
-
-  // Check for public tender
-  if (textLower.match(/public[-\s]?tender|government[-\s]?bid/i)) {
-    return 'public-tender';
+  for (const [type, keywords] of Object.entries(DEAL_TYPE_KEYWORDS)) {
+    if (keywords.some(keyword => textLower.includes(keyword))) {
+      return type;
+    }
   }
 
   return undefined;
@@ -334,16 +347,10 @@ export function identifyDealType(text: string): string | undefined {
 export function identifyPricingModel(text: string): string | undefined {
   const textLower = text.toLowerCase();
 
-  if (textLower.match(/subscription|saas|monthly|annual subscription/i)) {
-    return 'subscription';
-  }
-
-  if (textLower.match(/perpetual|one[-\s]?time|permanent license/i)) {
-    return 'perpetual';
-  }
-
-  if (textLower.match(/pay[-\s]?as[-\s]?you[-\s]?go|payg|usage[-\s]?based|consumption/i)) {
-    return 'pay-as-you-go';
+  for (const [model, keywords] of Object.entries(PRICING_MODEL_KEYWORDS)) {
+    if (keywords.some(keyword => textLower.includes(keyword))) {
+      return model;
+    }
   }
 
   return undefined;
@@ -403,6 +410,48 @@ export function extractPreSalesEfforts(text: string): string | undefined {
 }
 
 /**
+ * Extract next steps
+ */
+export function extractNextSteps(text: string): string[] | undefined {
+  const steps: string[] = [];
+  const textLower = text.toLowerCase();
+
+  // Check if any next steps keywords are present
+  const hasKeywords = NEXT_STEPS_KEYWORDS.some(keyword => textLower.includes(keyword));
+  if (!hasKeywords) return undefined;
+
+  // Extract sentences or bullet points containing the keywords
+  const lines = text.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    const lineLower = line.toLowerCase();
+
+    if (NEXT_STEPS_KEYWORDS.some(keyword => lineLower.includes(keyword))) {
+      // Found a header or sentence with keyword
+      // If it's a header (short, ends with colon), grab following lines
+      if (line.length < 50 && (line.endsWith(':') || i < lines.length - 1)) {
+        // Grab up to 5 following lines that look like list items or short sentences
+        for (let j = 1; j <= 5; j++) {
+          if (i + j >= lines.length) break;
+          const nextLine = lines[i + j].trim();
+          if (!nextLine) continue;
+          if (nextLine.match(/^[-*•\d.]/) || nextLine.length < 100) {
+            steps.push(nextLine);
+          } else {
+            break; // Stop at first non-list-item looking line
+          }
+        }
+      } else {
+        // It's a sentence containing the keyword
+        steps.push(line);
+      }
+    }
+  }
+
+  return steps.length > 0 ? steps : undefined;
+}
+
+/**
  * Apply Layer 3 contextual extraction
  */
 export function applyLayer3Extraction(message: ParsedEmailMessage): Partial<ExtractedDeal> {
@@ -413,6 +462,7 @@ export function applyLayer3Extraction(message: ParsedEmailMessage): Partial<Extr
   extracted.pricing_model = identifyPricingModel(text);
   extracted.deployment_environment = extractDeploymentEnvironment(text);
   extracted.pre_sales_efforts = extractPreSalesEfforts(text);
+  extracted.next_steps = extractNextSteps(text);
 
   return extracted;
 }
@@ -544,8 +594,8 @@ export function processThread(thread: EmailThread): ExtractedDeal[] {
   for (const message of thread.messages) {
     // Skip if no keywords found at all
     if (message.tier1_matches.length === 0 &&
-        message.tier2_matches.length === 0 &&
-        message.tier3_matches.length === 0) {
+      message.tier2_matches.length === 0 &&
+      message.tier3_matches.length === 0) {
       continue;
     }
 
