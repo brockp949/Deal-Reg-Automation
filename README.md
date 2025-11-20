@@ -78,6 +78,17 @@ docker-compose up -d
 - Backend API: http://localhost:4000
 - API Docs: http://localhost:4000/api-docs
 
+### Notes / Ops tips
+- The backend now auto-runs DB migrations on startup if tables are missing—no manual step needed for a clean DB.
+- Vendor auto-approval is enabled by default (`VENDOR_AUTO_APPROVE=true`). Set it to `false` in `backend/.env` if you want the legacy review queue behavior.
+- Bulk upload helper for local test files:
+  ```bash
+  cd backend
+  npm run bulk:upload -- --dir "C:\\path\\to\\files" --max-size-mb 1500
+  # set API_KEY env if your API requires it
+  ```
+  Only allowed types (.mbox, .csv, .txt, .pdf, .docx, .json) are uploaded; others are skipped.
+
 ### Vendor Approval Workflow
 
 1. Upload your official vendor roster first (CSV/Excel import or manual add). These vendors are automatically marked as `approved`.
