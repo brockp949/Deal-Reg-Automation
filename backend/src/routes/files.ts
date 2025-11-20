@@ -9,6 +9,8 @@ import { ApiResponse, SourceFile } from '../types';
 import logger from '../utils/logger';
 import { computeFileChecksum, performVirusScan, recordFileSecurityEvent } from '../services/fileSecurity';
 import { storeConfigFile } from '../services/configStorage';
+import { createRateLimiter } from '../middleware/rateLimiter';
+import { requireRole } from '../api/middleware/apiKeyAuth';
 
 const router = Router();
 
@@ -54,6 +56,33 @@ function resolveOperatorId(req: Request): string {
   );
 }
 
+function validateUploadRequest(req: Request): { valid: boolean; error?: string } {
+  const { intent, source, configName } = req.body || {};
+  const allowedIntents = ['update-config', 'ingest', 'test', undefined, null, ''];
+  if (!allowedIntents.includes(intent)) {
+    return { valid: false, error: 'Invalid intent. Use update-config, ingest, or test.' };
+  }
+  if (source && typeof source !== 'string') {
+    return { valid: false, error: 'source must be a string if provided.' };
+  }
+  if (configName && typeof configName !== 'string') {
+    return { valid: false, error: 'configName must be a string if provided.' };
+  }
+  return { valid: true };
+}
+
+const uploadLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: 'Upload rate limit exceeded. Please try again later.',
+});
+
+const batchUploadLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: 'Batch upload rate limit exceeded. Please try again later.',
+});
+
 function buildUploadMetadata(req: Request, originalName: string, extras?: Record<string, any>) {
   return {
     ip: req.ip,
@@ -84,8 +113,13 @@ async function findDuplicateByChecksum(checksum: string): Promise<SourceFile | n
  * POST /api/files/upload
  * Upload a single file
  */
-router.post('/upload', upload.single('file'), async (req: Request, res: Response) => {
+router.post('/upload', uploadLimiter, upload.single('file'), async (req: Request, res: Response) => {
   try {
+    const validation = validateUploadRequest(req);
+    if (!validation.valid) {
+      return res.status(400).json({ success: false, error: validation.error });
+    }
+
     if (!req.file) {
       return res.status(400).json({
         success: false,
@@ -316,8 +350,13 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
  * POST /api/files/batch-upload
  * Upload multiple files
  */
-router.post('/batch-upload', upload.array('files', 10), async (req: Request, res: Response) => {
+router.post('/batch-upload', batchUploadLimiter, upload.array('files', 10), async (req: Request, res: Response) => {
   try {
+    const validation = validateUploadRequest(req);
+    if (!validation.valid) {
+      return res.status(400).json({ success: false, error: validation.error });
+    }
+
     const files = req.files as Express.Multer.File[];
 
     if (!files || files.length === 0) {
@@ -678,9 +717,32 @@ router.get('/:id', async (req: Request, res: Response) => {
  * DELETE /api/files/clear-all
  * Clear all data and files from the system (use with caution!)
  */
-router.delete('/clear-all', async (req: Request, res: Response) => {
+router.delete('/clear-all', requireRole(['admin']), async (req: Request, res: Response) => {
   try {
-    logger.warn('Clear all data operation initiated');
+    if (!config.adminOps.clearAllEnabled) {
+      return res.status(403).json({
+        success: false,
+        error: 'Clear-all operation is disabled. Set CLEAR_ALL_ENDPOINT_ENABLED=true to allow.',
+      });
+    }
+
+    const token = (req.header('x-admin-token') || req.header('x-api-key')) ?? '';
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        error: 'Missing admin token (X-Admin-Token).',
+      });
+    }
+
+    if (!config.adminOps.clearAllToken || token !== config.adminOps.clearAllToken) {
+      logger.warn('Unauthorized clear-all attempt', { actor: resolveOperatorId(req) });
+      return res.status(403).json({
+        success: false,
+        error: 'Invalid admin token.',
+      });
+    }
+
+    logger.warn('Clear all data operation initiated', { actor: resolveOperatorId(req) });
 
     // Step 1: Delete all records from tables (in reverse order of dependencies)
     const deleteStats = {
@@ -787,9 +849,10 @@ router.delete('/clear-all', async (req: Request, res: Response) => {
  * DELETE /api/files/:id
  * Delete a file
  */
-router.delete('/:id', async (req: Request, res: Response) => {
+router.delete('/:id', requireRole(['admin']), async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const actor = resolveOperatorId(req);
 
     const result = await query('DELETE FROM source_files WHERE id = $1 RETURNING id', [id]);
 
@@ -799,6 +862,8 @@ router.delete('/:id', async (req: Request, res: Response) => {
         error: 'File not found',
       });
     }
+
+    logger.info('File deleted', { fileId: id, actor });
 
     // TODO: Delete physical file from storage
 
@@ -819,9 +884,10 @@ router.delete('/:id', async (req: Request, res: Response) => {
  * POST /api/files/:id/process
  * Trigger file processing
  */
-router.post('/:id/process', async (req: Request, res: Response) => {
+router.post('/:id/process', requireRole(['write', 'admin']), async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const actor = resolveOperatorId(req);
 
     // Check if file exists
     const fileResult = await query('SELECT * FROM source_files WHERE id = $1', [id]);
@@ -845,6 +911,8 @@ router.post('/:id/process', async (req: Request, res: Response) => {
     // Add file to processing queue
     const { addFileProcessingJob } = await import('../queues/fileProcessingQueue');
     const job = await addFileProcessingJob(id);
+
+    logger.info('Manual file processing requested', { fileId: id, actor, jobId: job.id });
 
     res.json({
       success: true,

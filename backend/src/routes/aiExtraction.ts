@@ -18,8 +18,19 @@ import {
 } from '../services/validationEngine';
 import { query } from '../db';
 import logger from '../utils/logger';
+import { createRateLimiter } from '../middleware/rateLimiter';
+import { requireRole } from '../api/middleware/apiKeyAuth';
 
 const router = Router();
+
+// Basic rate limiting on AI endpoints to prevent abuse
+const aiLimiter = createRateLimiter({
+  windowMs: 60_000,
+  max: 30,
+  message: 'Rate limit exceeded for AI endpoints. Please slow down.',
+});
+
+router.use(aiLimiter);
 
 /**
  * POST /api/ai/extract
@@ -220,16 +231,57 @@ router.post('/extract/value', async (req: Request, res: Response) => {
  */
 router.get('/usage', async (req: Request, res: Response) => {
   try {
-    const { startDate, endDate, extractionType } = req.query;
+    const startDate = req.query.startDate as string | undefined;
+    const endDate = req.query.endDate as string | undefined;
+    const extractionType = req.query.extractionType as string | undefined;
+
+    const validExtractionTypes = ['deal', 'vendor', 'contact', 'all'];
+    const isValidDate = (value?: string) =>
+      !value || !Number.isNaN(Date.parse(value));
+
+    if (!isValidDate(startDate) || !isValidDate(endDate)) {
+      return res.status(400).json({
+        error: 'Invalid date format',
+        message: 'startDate/endDate must be ISO-8601 parseable dates',
+      });
+    }
+
+    if (extractionType && !validExtractionTypes.includes(extractionType)) {
+      return res.status(400).json({
+        error: 'Invalid extraction type',
+        message: `Extraction type must be one of: ${validExtractionTypes.join(', ')}`,
+      });
+    }
 
     const stats = await getAIUsageStats({
-      startDate: startDate as string | undefined,
-      endDate: endDate as string | undefined,
-      extractionType: extractionType as string | undefined,
+      startDate,
+      endDate,
+      extractionType: extractionType === 'all' ? undefined : extractionType,
     });
 
-    // Also get summary stats
-    const summaryResult = await query(`
+    // Build parameterized summary query to avoid SQL injection
+    const summaryParams: any[] = [];
+    const summaryFilters: string[] = [];
+
+    if (startDate) {
+      summaryFilters.push(`date >= $${summaryParams.length + 1}`);
+      summaryParams.push(startDate);
+    }
+    if (endDate) {
+      summaryFilters.push(`date <= $${summaryParams.length + 1}`);
+      summaryParams.push(endDate);
+    }
+    if (extractionType && extractionType !== 'all') {
+      summaryFilters.push(`extraction_type = $${summaryParams.length + 1}`);
+      summaryParams.push(extractionType);
+    }
+
+    const whereClause = summaryFilters.length > 0
+      ? `WHERE ${summaryFilters.join(' AND ')}`
+      : '';
+
+    const summaryResult = await query(
+      `
       SELECT
         SUM(total_requests) AS total_requests,
         SUM(total_tokens) AS total_tokens,
@@ -237,11 +289,10 @@ router.get('/usage', async (req: Request, res: Response) => {
         ROUND(AVG(average_confidence)::numeric, 2) AS avg_confidence,
         ROUND(AVG(success_rate)::numeric, 2) AS avg_success_rate
       FROM ai_usage_stats
-      WHERE 1=1
-        ${startDate ? `AND date >= '${startDate}'` : ''}
-        ${endDate ? `AND date <= '${endDate}'` : ''}
-        ${extractionType ? `AND extraction_type = '${extractionType}'` : ''}
-    `);
+      ${whereClause}
+    `,
+      summaryParams
+    );
 
     const summary = summaryResult.rows[0] || {};
 
@@ -415,9 +466,13 @@ router.get('/logs', async (req: Request, res: Response) => {
  * POST /api/ai/reprocess/:sourceFileId
  * Reprocess a file with AI extraction
  */
-router.post('/reprocess/:sourceFileId', async (req: Request, res: Response) => {
+router.post('/reprocess/:sourceFileId', requireRole(['write', 'admin']), async (req: Request, res: Response) => {
   try {
     const { sourceFileId } = req.params;
+    const actor =
+      (req.header('x-requested-by') as string) ||
+      (req.header('x-operator-id') as string) ||
+      req.ip;
 
     // Get source file
     const fileResult = await query(
@@ -434,6 +489,8 @@ router.post('/reprocess/:sourceFileId', async (req: Request, res: Response) => {
 
     // TODO: Implement reprocessing queue
     // For now, return a placeholder response
+
+    logger.info('AI reprocess request queued', { sourceFileId, actor });
 
     res.json({
       success: true,
@@ -453,7 +510,7 @@ router.post('/reprocess/:sourceFileId', async (req: Request, res: Response) => {
  * DELETE /api/ai/cache
  * Clear AI extraction cache
  */
-router.delete('/cache', async (req: Request, res: Response) => {
+router.delete('/cache', requireRole(['admin']), async (req: Request, res: Response) => {
   try {
     const deletedCount = await clearAICache();
 

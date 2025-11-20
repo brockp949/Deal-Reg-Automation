@@ -76,6 +76,10 @@ const envSchema = z.object({
   NOTIFICATION_RETRY_DELAY_MS: z.string().default('2000'),
   NOTIFICATION_EMAIL_RECIPIENTS: z.string().optional(),
   NOTIFICATION_DRY_RUN: z.string().default('true'),
+
+  // Admin / maintenance
+  CLEAR_ALL_ENDPOINT_ENABLED: z.string().default('false'),
+  CLEAR_ALL_TOKEN: z.string().optional(),
 });
 
 // Parse and validate environment variables
@@ -197,6 +201,11 @@ export const config = {
     retryDelayMs: parseInt(env.NOTIFICATION_RETRY_DELAY_MS, 10),
     emailRecipients: parseList(env.NOTIFICATION_EMAIL_RECIPIENTS),
     dryRun: env.NOTIFICATION_DRY_RUN === 'true',
+  },
+
+  adminOps: {
+    clearAllEnabled: env.CLEAR_ALL_ENDPOINT_ENABLED === 'true',
+    clearAllToken: env.CLEAR_ALL_TOKEN,
   },
 };
 
