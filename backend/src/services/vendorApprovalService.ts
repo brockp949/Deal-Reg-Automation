@@ -141,9 +141,6 @@ export async function ensureVendorApproved(
     const insertResult = await query(
       `INSERT INTO vendors (name, normalized_name, status, approval_status, approved_at, origin)
        VALUES ($1, $2, 'active', 'approved', CURRENT_TIMESTAMP, 'auto-ingest')
-       ON CONFLICT (normalized_name) DO UPDATE
-         SET approval_status = 'approved',
-             approved_at = COALESCE(vendors.approved_at, CURRENT_TIMESTAMP)
        RETURNING id`,
       [vendorName, normalizedName]
     );
