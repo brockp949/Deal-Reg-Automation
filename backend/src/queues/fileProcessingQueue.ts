@@ -78,10 +78,20 @@ fileProcessingQueue.on('stalled', (job) => {
 
 // Add a job to the queue
 export async function addFileProcessingJob(fileId: string): Promise<Bull.Job> {
+  // If a job with this ID already exists (completed/failed), remove it to allow reprocessing
+  const existing = await fileProcessingQueue.getJob(`file-${fileId}`);
+  if (existing) {
+    const state = await existing.getState();
+    if (state === 'completed' || state === 'failed' || state === 'delayed') {
+      await existing.remove();
+      logger.info('Removed existing job to allow reprocessing', { fileId, state });
+    }
+  }
+
   const job = await fileProcessingQueue.add(
     { fileId },
     {
-      jobId: `file-${fileId}`,
+      jobId: `file-${fileId}-${Date.now()}`, // ensure uniqueness for reprocess
       priority: 1,
     }
   );
