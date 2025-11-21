@@ -4,6 +4,8 @@ import logger from '../utils/logger';
 import { VendorApprovalPendingError, VendorApprovalDeniedError } from '../errors/vendorApprovalErrors';
 import { trackVendorProvenance } from './provenanceTracker';
 import { config } from '../config';
+import { findVendorMatch } from './vendorIntelligence';
+import { promotePendingDealsForReview } from './pendingDealService';
 
 export type VendorApprovalStatus = 'approved' | 'pending' | 'denied';
 
@@ -12,6 +14,8 @@ export interface VendorDetectionContext {
   detection_source?: string;
   sample_text?: string;
   metadata?: Record<string, any>;
+  confidence_score?: number;
+  confidence_factors?: string[];
 }
 
 export interface VendorReviewItem {
@@ -57,9 +61,46 @@ function buildContextPayload(context?: VendorDetectionContext) {
     sample_text: context?.sample_text || null,
     metadata: context?.metadata || null,
     observed_at: new Date().toISOString(),
+    confidence_score: context?.confidence_score || null,
+    confidence_factors: context?.confidence_factors || [],
   };
 
   return payload;
+}
+
+function computeDetectionConfidence(vendorName: string, normalizedName: string, context?: VendorDetectionContext, matchConfidence?: number): { score: number; factors: string[] } {
+  let score = typeof matchConfidence === 'number' ? matchConfidence : 0.45;
+  const factors: string[] = [];
+
+  if (typeof matchConfidence === 'number') {
+    factors.push(`match:${matchConfidence.toFixed(2)}`);
+  }
+
+  if (context?.detection_source === 'email' || context?.detection_source === 'transcript') {
+    score += 0.1;
+    factors.push(`source:${context.detection_source}`);
+  }
+
+  const domain = context?.metadata?.email_domain || context?.metadata?.domain;
+  if (domain) {
+    score += 0.1;
+    factors.push('email_domain');
+  }
+
+  if (context?.sample_text && context.sample_text.toLowerCase().includes(normalizedName)) {
+    score += 0.05;
+    factors.push('mentioned_in_context');
+  }
+
+  if (context?.metadata?.known_vendor === true) {
+    score += 0.1;
+    factors.push('known_vendor_hint');
+  }
+
+  // Clamp between 0 and 1
+  score = Math.max(0, Math.min(1, score));
+
+  return { score, factors };
 }
 
 async function upsertVendorReviewCandidate(
@@ -98,6 +139,20 @@ export async function ensureVendorApproved(
   }
 
   const normalizedName = normalizeVendorName(vendorName);
+  const match = await findVendorMatch(vendorName).catch(() => null);
+  const detection = computeDetectionConfidence(vendorName, normalizedName, context, match?.confidence);
+  const contextWithConfidence: VendorDetectionContext = {
+    ...context,
+    confidence_score: detection.score,
+    confidence_factors: detection.factors,
+    metadata: {
+      ...(context?.metadata || {}),
+      confidence_score: detection.score,
+      confidence_factors: detection.factors,
+    },
+  };
+  const allowAuto = config.vendor.autoApprove || detection.score >= 0.85;
+  const needsReview = detection.score >= 0.6;
 
   // Check existing vendors
   const existingResult = await query(
@@ -119,7 +174,7 @@ export async function ensureVendorApproved(
       throw new VendorApprovalDeniedError(vendorName);
     }
 
-    if (config.vendor.autoApprove) {
+    if (allowAuto) {
       await query(
         `UPDATE vendors
          SET approval_status = 'approved',
@@ -128,26 +183,54 @@ export async function ensureVendorApproved(
          WHERE id = $1`,
         [vendor.id]
       );
-      logger.info('Auto-approved existing vendor', { vendor: vendorName, vendorId: vendor.id });
+      logger.info('Auto-approved existing vendor', { vendor: vendorName, vendorId: vendor.id, score: detection.score });
       return vendor.id;
     }
 
-    const alias = await upsertVendorReviewCandidate(vendorName, normalizedName, context);
+    const alias = await upsertVendorReviewCandidate(vendorName, normalizedName, contextWithConfidence);
     throw new VendorApprovalPendingError(vendorName, alias.id);
   }
 
-  // Auto-approve path: create vendor immediately
-  if (config.vendor.autoApprove) {
-    const insertResult = await query(
-      `INSERT INTO vendors (name, normalized_name, status, approval_status, approved_at, origin)
-       VALUES ($1, $2, 'active', 'approved', CURRENT_TIMESTAMP, 'auto-ingest')
-       RETURNING id`,
-      [vendorName, normalizedName]
+  // Attempt match by intelligence map (fuzzy/alias)
+  if (match?.vendor_id) {
+    const matchedVendorResult = await query(
+      `SELECT id, approval_status FROM vendors WHERE id = $1 LIMIT 1`,
+      [match.vendor_id]
     );
 
-    const vendorId = insertResult.rows[0].id;
-    logger.info('Auto-approved new vendor', { vendor: vendorName, vendorId });
-    return vendorId;
+    if (matchedVendorResult.rows.length > 0) {
+      const vendor = matchedVendorResult.rows[0];
+
+      if (!vendor.approval_status || vendor.approval_status === 'approved') {
+        logger.info('Matched vendor via intelligence map', {
+          input: vendorName,
+          matchedVendorId: vendor.id,
+          confidence: match.confidence,
+        });
+        return vendor.id;
+      }
+
+      if (vendor.approval_status === 'denied') {
+        throw new VendorApprovalDeniedError(vendorName);
+      }
+
+      if (allowAuto) {
+        await query(
+          `UPDATE vendors
+           SET approval_status = 'approved',
+               approved_at = COALESCE(approved_at, CURRENT_TIMESTAMP),
+               approval_notes = COALESCE(approval_notes, 'Auto-approved by intelligence match')
+           WHERE id = $1`,
+          [vendor.id]
+        );
+        logger.info('Auto-approved pending vendor via intelligence match', {
+          vendor: vendorName,
+          vendorId: vendor.id,
+          confidence: match.confidence,
+        });
+        return vendor.id;
+      }
+    }
   }
 
   // Check review queue
@@ -170,14 +253,44 @@ export async function ensureVendorApproved(
       throw new VendorApprovalDeniedError(vendorName);
     }
 
-    await upsertVendorReviewCandidate(vendorName, normalizedName, context);
+    await upsertVendorReviewCandidate(vendorName, normalizedName, contextWithConfidence);
     throw new VendorApprovalPendingError(vendorName, review.id);
   }
 
-  const alias = await upsertVendorReviewCandidate(vendorName, normalizedName, context);
-  logger.info('Vendor requires approval before use', {
+  if (allowAuto) {
+    const insertResult = await query(
+      `INSERT INTO vendors (name, normalized_name, status, approval_status, approved_at, origin)
+       VALUES ($1, $2, 'active', 'approved', CURRENT_TIMESTAMP, 'auto-ingest')
+       RETURNING id`,
+      [vendorName, normalizedName]
+    );
+
+    const vendorId = insertResult.rows[0].id;
+    logger.info('Auto-approved new vendor', { vendor: vendorName, vendorId, score: detection.score });
+    return vendorId;
+  }
+
+  if (needsReview) {
+    const alias = await upsertVendorReviewCandidate(vendorName, normalizedName, contextWithConfidence);
+    logger.info('Vendor requires approval before use', {
+      vendor: vendorName,
+      reviewId: alias.id,
+      confidence: detection.score,
+    });
+    throw new VendorApprovalPendingError(vendorName, alias.id);
+  }
+
+  const alias = await upsertVendorReviewCandidate(vendorName, normalizedName, {
+    ...contextWithConfidence,
+    metadata: {
+      ...(contextWithConfidence.metadata || {}),
+      quarantined: true,
+    },
+  });
+  logger.warn('Vendor quarantined for low confidence, pending review', {
     vendor: vendorName,
     reviewId: alias.id,
+    confidence: detection.score,
   });
   throw new VendorApprovalPendingError(vendorName, alias.id);
 }
@@ -199,7 +312,15 @@ export async function listVendorReviewQueue(
   const listResult = await query(
     `SELECT * FROM vendor_review_queue
      WHERE status = $1
-     ORDER BY last_detected_at DESC
+     ORDER BY
+       COALESCE((metadata->>'potential_value')::numeric, 0) DESC,
+       detection_count DESC,
+       CASE
+         WHEN latest_context->>'detection_source' IN ('email','transcript') THEN 2
+         WHEN latest_context->>'detection_source' = 'csv' THEN 1
+         ELSE 0
+       END DESC,
+       last_detected_at DESC
      LIMIT $2 OFFSET $3`,
     [status, limit, offset]
   );
@@ -325,6 +446,32 @@ export async function resolveVendorReviewItem(
        RETURNING *`,
       [id, vendorId, payload.notes || null, payload.resolved_by || 'system']
     );
+
+    if (vendorId) {
+      try {
+        const promotion = await promotePendingDealsForReview(id, vendorId);
+        if (promotion.created > 0) {
+          logger.info('Promoted pending deals after vendor approval', {
+            reviewId: id,
+            vendorId,
+            dealsCreated: promotion.created,
+          });
+        }
+        if (promotion.failed > 0) {
+          logger.warn('Some pending deals failed to promote after vendor approval', {
+            reviewId: id,
+            vendorId,
+            errors: promotion.errors,
+          });
+        }
+      } catch (promotionError: any) {
+        logger.error('Failed to promote pending deals after vendor approval', {
+          reviewId: id,
+          vendorId,
+          error: promotionError.message,
+        });
+      }
+    }
 
     return updateResult.rows[0];
   }

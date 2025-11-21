@@ -137,6 +137,8 @@ export interface NormalizedDeal {
   source_tags?: string[];
   rfq_signals?: RfqSignals;
   stage_hints?: string[];
+  deal_name_features?: any;
+  deal_name_candidates?: string[];
 }
 
 export interface NormalizedContact {

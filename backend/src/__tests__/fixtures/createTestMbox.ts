@@ -209,3 +209,11 @@ if (require.main === module) {
 
   console.log('Test fixtures created successfully!');
 }
+
+// Keep Jest satisfied with at least one test in this file
+describe('createTestMbox fixtures', () => {
+  it('should generate sample mbox content', () => {
+    const content = createSampleMbox(2);
+    expect(content).toContain('Test Email 1');
+  });
+});

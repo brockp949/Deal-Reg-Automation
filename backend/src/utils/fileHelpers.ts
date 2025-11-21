@@ -323,6 +323,26 @@ type DealNameContext = {
   notes?: string;
   product_name?: string;
   product_service_requirements?: string;
+  source_subject?: string;
+  source_filename?: string;
+  deal_stage?: string | null;
+  expected_close_date?: Date | null;
+  version_hint?: string;
+};
+
+export type DealNameFeatures = {
+  customerIncluded: boolean;
+  vendorIncluded: boolean;
+  commodity?: string | null;
+  scope?: string | null;
+  valueBand?: string | null;
+  stageHint?: string | null;
+  subjectSnippet?: string | null;
+  projectSnippet?: string | null;
+  formattedValue?: string | null;
+  scoreBreakdown: Record<string, number>;
+  finalScore: number;
+  candidates: string[];
 };
 
 const SPEC_PATTERNS: Array<{ regex: RegExp; formatter: (match: RegExpMatchArray) => string }> = [
@@ -495,19 +515,83 @@ function combineUniqueParts(parts: Array<string | null | undefined>): string {
   return unique.join(' - ');
 }
 
+function deriveStageHint(dealData: DealNameContext): string | null {
+  const haystack = [
+    dealData.deal_stage,
+    dealData.notes,
+    dealData.project_name,
+    dealData.deal_name,
+    dealData.source_subject,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  if (!haystack) return null;
+
+  const stageKeywords: Array<{ regex: RegExp; label: string }> = [
+    { regex: /\brfq|\brfp|\btender|\bbid\b/, label: 'RFQ' },
+    { regex: /\bpoc\b|\bpilot\b/, label: 'Pilot' },
+    { regex: /\brenewal|\brenewel|\bextension/, label: 'Renewal' },
+    { regex: /\bupgrade|\bphase\s*\d+/, label: 'Expansion' },
+    { regex: /\bco\-?sell|\bpartner\b/, label: 'Co-Sell' },
+  ];
+
+  for (const { regex, label } of stageKeywords) {
+    if (regex.test(haystack)) return label;
+  }
+
+  return null;
+}
+
+function buildSubjectSnippet(context: DealNameContext): string | null {
+  const subject = context.source_subject || context.project_name || context.deal_name;
+  return shortenDescriptor(subject, 45);
+}
+
+function pickValueBand(value?: number): string | null {
+  const descriptor = deriveDealSizeDescriptor(value);
+  return descriptor || null;
+}
+
+function scoreCandidate(
+  candidateParts: { customer?: string | null; vendor?: string | null; commodity?: string | null; scope?: string | null; valueBand?: string | null; subject?: string | null; stage?: string | null },
+  breakdown: Record<string, number>
+): number {
+  let score = 0;
+
+  if (candidateParts.customer) {
+    score += 0.35;
+    breakdown.customer = 0.35;
+  }
+  if (candidateParts.commodity || candidateParts.scope) {
+    score += 0.25;
+    breakdown.commodity_scope = 0.25;
+  }
+  if (candidateParts.valueBand) {
+    score += 0.15;
+    breakdown.value_band = 0.15;
+  }
+  if (candidateParts.vendor) {
+    score += 0.1;
+    breakdown.vendor = 0.1;
+  }
+  if (candidateParts.subject) {
+    score += 0.1;
+    breakdown.subject = 0.1;
+  }
+  if (candidateParts.stage) {
+    score += 0.05;
+    breakdown.stage = 0.05;
+  }
+
+  return score;
+}
+
 /**
  * Generate a descriptive deal name from deal data
- * Priority order:
- * 1. "{Customer} - {Commodity}" if both available
- * 2. "{Customer} - {Vendor} - ${Value}" if all available
- * 3. "{Customer} - {Vendor}" if both available
- * 4. "{Commodity} - ${Value}" if both available
- * 5. "{Project Name}" if available
- * 6. "{Customer} - ${Value}" if both available
- * 7. "{Vendor} - {Commodity}" if both available
- * 8. "{Vendor} Opportunity - {Date}" as fallback
  */
-export function generateDealName(dealData: DealNameContext): string {
+export function generateDealNameWithFeatures(dealData: DealNameContext): { name: string; features: DealNameFeatures } {
   const customer = dealData.customer_name || dealData.end_user_name;
   const vendor = dealData.vendor_name;
   const project = dealData.project_name;
@@ -524,68 +608,116 @@ export function generateDealName(dealData: DealNameContext): string {
 
   const specDetail = extractSpecDetail(dealData);
   const scopeDescriptor = extractScopeDescriptor(dealData);
-  const sizeDescriptor = deriveDealSizeDescriptor(value);
+  const valueBand = pickValueBand(value);
   const formattedValue = formatDealValue(value);
+  const stageHint = deriveStageHint(dealData);
+  const subjectSnippet = buildSubjectSnippet(dealData);
+  const projectSnippet = shortenDescriptor(project, 60);
+  const scopeOrCommodity = commodity || scopeDescriptor;
 
   const commodityHeadline = [commodity, specDetail].filter(Boolean).join(' ').trim() || null;
 
-  const advancedName = combineUniqueParts([
-    commodityHeadline || scopeDescriptor,
-    sizeDescriptor,
-    scopeDescriptor && scopeDescriptor !== commodityHeadline ? scopeDescriptor : null,
-    shortenDescriptor(project, 60),
-    shortenDescriptor(customer || vendor, 40),
-  ]);
+  const baseCandidates: Array<{ label: string; text: string; parts: { customer?: string | null; vendor?: string | null; commodity?: string | null; scope?: string | null; valueBand?: string | null; subject?: string | null; stage?: string | null } }> = [];
 
-  if (advancedName) {
-    return advancedName;
+  const customerOrVendor = customer || vendor;
+  const safeCustomer = shortenDescriptor(customer, 40);
+  const safeVendor = shortenDescriptor(vendor, 40);
+
+  // Candidate 1: Customer | Commodity/Scope | Value
+  if (safeCustomer && (commodityHeadline || scopeDescriptor)) {
+    baseCandidates.push({
+      label: 'customer-commodity-value',
+      text: combineUniqueParts([safeCustomer, commodityHeadline || scopeDescriptor, valueBand]),
+      parts: { customer: safeCustomer, commodity: commodityHeadline, scope: scopeDescriptor, valueBand, stage: stageHint },
+    });
   }
 
-  if (customer && commodity) {
-    return `${customer} - ${commodity}`;
+  // Candidate 2: Customer | Commodity | Vendor
+  if (safeCustomer && (commodityHeadline || scopeDescriptor) && safeVendor) {
+    baseCandidates.push({
+      label: 'customer-commodity-vendor',
+      text: combineUniqueParts([safeCustomer, commodityHeadline || scopeDescriptor, safeVendor]),
+      parts: { customer: safeCustomer, commodity: commodityHeadline, scope: scopeDescriptor, vendor: safeVendor, stage: stageHint },
+    });
   }
 
-  if (customer && vendor && formattedValue) {
-    return `${customer} - ${vendor} - ${formattedValue}`;
+  // Candidate 3: Customer/Vendor | Subject snippet
+  if (customerOrVendor && subjectSnippet) {
+    baseCandidates.push({
+      label: 'subject-led',
+      text: combineUniqueParts([shortenDescriptor(customerOrVendor, 45), subjectSnippet, valueBand]),
+      parts: { customer: customerOrVendor, vendor: vendor, subject: subjectSnippet, valueBand, stage: stageHint },
+    });
   }
 
-  if (customer && vendor) {
-    return `${customer} - ${vendor}`;
+  // Candidate 4: Commodity | Value | Month
+  const monthMarker = date.toLocaleString('en-US', { month: 'short', year: '2-digit' });
+  if (scopeOrCommodity || valueBand) {
+    baseCandidates.push({
+      label: 'commodity-value-month',
+      text: combineUniqueParts([scopeOrCommodity, valueBand, monthMarker]),
+      parts: { commodity: scopeOrCommodity, valueBand, stage: stageHint },
+    });
   }
 
-  if (commodity && formattedValue) {
-    return `${commodity} - ${formattedValue}`;
+  // Candidate 5: Project headline with customer
+  if (projectSnippet) {
+    baseCandidates.push({
+      label: 'project',
+      text: combineUniqueParts([shortenDescriptor(customerOrVendor, 45), projectSnippet, valueBand]),
+      parts: { customer: customerOrVendor, vendor: vendor, subject: projectSnippet, valueBand, stage: stageHint },
+    });
   }
 
-  if (project && project.length > 5 && project !== 'Unknown') {
-    return project;
+  // Fallback candidate
+  baseCandidates.push({
+    label: 'fallback',
+    text: combineUniqueParts([
+      commodityHeadline || scopeDescriptor || 'Opportunity',
+      safeCustomer || safeVendor || 'Unspecified',
+      valueBand || formattedValue || date.toLocaleString('en-US', { month: 'short', day: 'numeric' }),
+    ]),
+    parts: { commodity: commodityHeadline || scopeDescriptor, customer: safeCustomer || safeVendor, valueBand, stage: stageHint },
+  });
+
+  let bestCandidate = baseCandidates[0];
+  let bestScore = -1;
+  let bestBreakdown: Record<string, number> = {};
+
+  for (const candidate of baseCandidates) {
+    const breakdown: Record<string, number> = {};
+    const score = scoreCandidate(candidate.parts, breakdown);
+    if (score > bestScore) {
+      bestScore = score;
+      bestCandidate = candidate;
+      bestBreakdown = breakdown;
+    }
   }
 
-  if (customer && formattedValue) {
-    return `${customer} - ${formattedValue}`;
-  }
+  const truncated = bestCandidate.text.length > 90 ? `${bestCandidate.text.slice(0, 87).trim()}...` : bestCandidate.text;
+  const versioned = dealData.version_hint ? combineUniqueParts([truncated, dealData.version_hint]) : truncated;
 
-  if (vendor && commodity) {
-    return `${vendor} - ${commodity}`;
-  }
+  const features: DealNameFeatures = {
+    customerIncluded: Boolean(customer),
+    vendorIncluded: Boolean(vendor),
+    commodity: commodityHeadline || null,
+    scope: scopeDescriptor || null,
+    valueBand,
+    stageHint,
+    subjectSnippet,
+    projectSnippet,
+    formattedValue,
+    scoreBreakdown: bestBreakdown,
+    finalScore: bestScore,
+    candidates: baseCandidates.map((c) => c.text),
+  };
 
-  if (vendor && customer) {
-    return `${vendor} - ${customer}`;
-  }
+  return { name: versioned, features };
+}
 
-  if (customer && customer !== 'Unknown') {
-    return `${customer} Deal`;
-  }
-
-  if (commodity) {
-    return `${commodity} Deal`;
-  }
-
-  if (vendor && vendor !== 'Unknown') {
-    const monthYear = date.toLocaleString('en-US', { month: 'short', year: 'numeric' });
-    return `${vendor} - ${monthYear}`;
-  }
-
-  const monthDay = date.toLocaleString('en-US', { month: 'short', day: 'numeric' });
-  return `Deal Registration - ${monthDay}`;
+/**
+ * Backwards-compatible string-only generator
+ */
+export function generateDealName(dealData: DealNameContext): string {
+  return generateDealNameWithFeatures(dealData).name;
 }

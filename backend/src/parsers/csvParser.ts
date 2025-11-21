@@ -21,7 +21,13 @@ export async function parseCSVFile(filePath: string): Promise<ParsedCSVRow[]> {
               .replace(/^\uFEFF/, '') // strip BOM
               .replace(/^"+|"+$/g, '') // strip surrounding quotes
               .trim();
-            return [cleanKey, value];
+            const typedValue =
+              typeof value === 'string' || typeof value === 'number' || value === null
+                ? value
+                : value === undefined
+                  ? null
+                  : String(value);
+            return [cleanKey, typedValue];
           })
         );
         rows.push(normalizedRow);

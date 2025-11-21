@@ -26,7 +26,7 @@ import {
   extractTimeline,
   calculateEnhancedConfidence,
 } from '../parsers/enhancedExtraction';
-import { normalizeCompanyName, generateDealName } from '../utils/fileHelpers';
+import { normalizeCompanyName, generateDealNameWithFeatures } from '../utils/fileHelpers';
 import { ensureVendorApproved, VendorDetectionContext } from './vendorApprovalService';
 import { VendorApprovalPendingError, VendorApprovalDeniedError } from '../errors/vendorApprovalErrors';
 
@@ -369,7 +369,7 @@ async function createDealWithVendors(
   }
 
   // Generate deal name
-  const dealName = generateDealName({
+  const dealNameResult = generateDealNameWithFeatures({
     customer_name: customerName,
     vendor_name: vendor.name,
     deal_value: deal.deal_value,
@@ -378,7 +378,10 @@ async function createDealWithVendors(
     notes: deal.pre_sales_efforts || deal.notes,
     product_name: deal.product_name,
     product_service_requirements: deal.product_service_requirements,
+    source_subject: deal.project_name || deal.deal_name,
+    deal_stage: deal.deal_stage,
   });
+  const dealName = dealNameResult.name;
 
   // Create deal
   const dealResult = await query(
