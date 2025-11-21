@@ -8,7 +8,7 @@
 
 import { BaseParser } from './BaseParser';
 import { parseEnhancedMboxFile } from './enhancedMboxMain';
-import { normalizeCompanyName, domainToCompanyName, generateDealName } from '../utils/fileHelpers';
+import { normalizeCompanyName, domainToCompanyName, generateDealNameWithFeatures } from '../utils/fileHelpers';
 import {
   StandardizedParserOutput,
   MboxParserOptions,
@@ -165,7 +165,7 @@ export class StandardizedMboxParser extends BaseParser {
           : undefined;
 
         // Generate descriptive deal name
-        const dealName = generateDealName({
+        const dealNameResult = generateDealNameWithFeatures({
           customer_name: normalizedCustomerName,
           vendor_name: vendorName,
           project_name: deal.project_name,
@@ -175,7 +175,11 @@ export class StandardizedMboxParser extends BaseParser {
           notes: deal.pre_sales_efforts,
           product_name: deal.product_name,
           product_service_requirements: deal.product_service_requirements,
+          source_subject: deal.project_name || deal.deal_name || deal.source_email_subject,
+          deal_stage: deal.deal_stage,
+          source_filename: fileName,
         });
+        const dealName = dealNameResult.name;
 
         // Create normalized deal
         const normalizedDeal: NormalizedDeal = {
@@ -207,6 +211,8 @@ export class StandardizedMboxParser extends BaseParser {
           extraction_method: 'keyword',
           source_email_id: deal.source_email_id,
           source_location: `Email from ${deal.source_email_from || 'unknown'}`,
+          deal_name_features: dealNameResult.features,
+          deal_name_candidates: dealNameResult.features.candidates?.slice(0, 5),
         };
 
         const dealTags = new Set(baseTags);

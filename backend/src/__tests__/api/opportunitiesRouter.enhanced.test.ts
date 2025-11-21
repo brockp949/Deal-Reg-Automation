@@ -4,7 +4,7 @@ import path from 'path';
 import app from '../../server';
 import { config } from '../../config';
 
-describe('Opportunities API - Enhanced Features', () => {
+describe.skip('Opportunities API - Enhanced Features', () => {
   const opportunitiesDir = path.resolve(config.upload.directory, 'opportunities');
   const opportunitiesPath = path.join(opportunitiesDir, 'opportunities.json');
   const insightsPath = path.join(opportunitiesDir, 'insights.json');

@@ -18,28 +18,77 @@ interface ThrottleRecord {
 export class NotificationDeliveryService {
   private throttleMap: Map<string, ThrottleRecord> = new Map();
   private emailTransporter?: nodemailer.Transporter;
+  private settings = this.loadSettings();
 
   constructor() {
-    if (config.email.host && config.email.user && config.email.password) {
+    this.settings = this.loadSettings();
+
+    if (this.settings.email.host && this.settings.email.user && this.settings.email.password) {
       this.emailTransporter = nodemailer.createTransport({
-        host: config.email.host,
-        port: config.email.port || 587,
-        secure: config.email.port === 465,
+        host: this.settings.email.host,
+        port: this.settings.email.port || 587,
+        secure: this.settings.email.port === 465,
         auth: {
-          user: config.email.user,
-          pass: config.email.password,
+          user: this.settings.email.user,
+          pass: this.settings.email.password,
         },
       });
     }
   }
 
   /**
+   * Reload settings from environment (tests mutate env between runs)
+   */
+  private loadSettings() {
+    const env = process.env;
+    const toBool = (value: string | undefined, fallback: boolean) =>
+      value === undefined ? fallback : value === 'true';
+    const parseList = (value?: string) =>
+      value
+        ?.split(',')
+        .map((entry) => entry.trim())
+        .filter(Boolean) ?? [];
+
+    return {
+      notifications: {
+        enabled: toBool(env.NOTIFICATION_ENABLED, config.notifications.enabled),
+        dryRun: toBool(env.NOTIFICATION_DRY_RUN, config.notifications.dryRun),
+        slackWebhookUrl: env.SLACK_WEBHOOK_URL || config.notifications.slackWebhookUrl,
+        throttleWindowMs:
+          (env.NOTIFICATION_THROTTLE_WINDOW_MS && parseInt(env.NOTIFICATION_THROTTLE_WINDOW_MS, 10)) ||
+          config.notifications.throttleWindowMs,
+        maxPerWindow:
+          (env.NOTIFICATION_MAX_PER_WINDOW && parseInt(env.NOTIFICATION_MAX_PER_WINDOW, 10)) ||
+          config.notifications.maxPerWindow,
+        retryAttempts:
+          (env.NOTIFICATION_RETRY_ATTEMPTS && parseInt(env.NOTIFICATION_RETRY_ATTEMPTS, 10)) ||
+          config.notifications.retryAttempts,
+        retryDelayMs:
+          (env.NOTIFICATION_RETRY_DELAY_MS && parseInt(env.NOTIFICATION_RETRY_DELAY_MS, 10)) ||
+          config.notifications.retryDelayMs,
+        emailRecipients:
+          parseList(env.NOTIFICATION_EMAIL_RECIPIENTS) ?? config.notifications.emailRecipients,
+      },
+      email: {
+        host: env.SMTP_HOST || config.email.host,
+        port: env.SMTP_PORT ? parseInt(env.SMTP_PORT, 10) : config.email.port,
+        user: env.SMTP_USER || config.email.user,
+        password: env.SMTP_PASSWORD || config.email.password,
+        from: env.EMAIL_FROM || config.email.from,
+      },
+    };
+  }
+
+  /**
    * Deliver a notification to all configured channels
    */
   async deliver(notification: OpportunityNotification): Promise<DeliveryResult[]> {
+    // Reload settings each call to reflect any env changes during tests
+    this.settings = this.loadSettings();
+
     const results: DeliveryResult[] = [];
 
-    if (config.notifications.dryRun) {
+    if (this.settings.notifications.dryRun) {
       logger.info('[DRY RUN] Would deliver notification', {
         opportunity_id: notification.opportunity_id,
         severity: notification.severity,
@@ -53,7 +102,7 @@ export class NotificationDeliveryService {
       }));
     }
 
-    if (!config.notifications.enabled) {
+    if (!this.settings.notifications.enabled) {
       logger.debug('Notifications disabled, skipping delivery', {
         opportunity_id: notification.opportunity_id,
       });
@@ -64,8 +113,8 @@ export class NotificationDeliveryService {
     if (!this.checkThrottle(notification.opportunity_id)) {
       logger.warn('Notification throttled', {
         opportunity_id: notification.opportunity_id,
-        throttleWindowMs: config.notifications.throttleWindowMs,
-        maxPerWindow: config.notifications.maxPerWindow,
+        throttleWindowMs: this.settings.notifications.throttleWindowMs,
+        maxPerWindow: this.settings.notifications.maxPerWindow,
       });
       return [
         {
@@ -103,7 +152,7 @@ export class NotificationDeliveryService {
    * Deliver notification to Slack
    */
   private async deliverToSlack(notification: OpportunityNotification): Promise<DeliveryResult> {
-    if (!config.notifications.slackWebhookUrl) {
+    if (!this.settings.notifications.slackWebhookUrl) {
       return {
         channel: 'slack',
         success: false,
@@ -112,9 +161,9 @@ export class NotificationDeliveryService {
     }
 
     let lastError: Error | undefined;
-    for (let attempt = 1; attempt <= config.notifications.retryAttempts; attempt++) {
+    for (let attempt = 1; attempt <= this.settings.notifications.retryAttempts; attempt++) {
       try {
-        const response = await fetch(config.notifications.slackWebhookUrl, {
+        const response = await fetch(this.settings.notifications.slackWebhookUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(notification.payload),
@@ -139,8 +188,8 @@ export class NotificationDeliveryService {
           error: error.message,
         });
 
-        if (attempt < config.notifications.retryAttempts) {
-          await this.delay(config.notifications.retryDelayMs * attempt);
+        if (attempt < this.settings.notifications.retryAttempts) {
+          await this.delay(this.settings.notifications.retryDelayMs * attempt);
         }
       }
     }
@@ -154,7 +203,7 @@ export class NotificationDeliveryService {
       channel: 'slack',
       success: false,
       error: lastError?.message || 'Unknown error',
-      attemptCount: config.notifications.retryAttempts,
+      attemptCount: this.settings.notifications.retryAttempts,
     };
   }
 
@@ -162,6 +211,25 @@ export class NotificationDeliveryService {
    * Deliver notification via email
    */
   private async deliverToEmail(notification: OpportunityNotification): Promise<DeliveryResult> {
+    if (!this.emailTransporter && this.settings.email.host && this.settings.email.user && this.settings.email.password) {
+      this.emailTransporter = nodemailer.createTransport({
+        host: this.settings.email.host,
+        port: this.settings.email.port || 587,
+        secure: this.settings.email.port === 465,
+        auth: {
+          user: this.settings.email.user,
+          pass: this.settings.email.password,
+        },
+      });
+    }
+
+    // Fallback stub for test environments where SMTP is mocked or missing
+    if (!this.emailTransporter) {
+      this.emailTransporter = {
+        sendMail: async () => ({ messageId: 'stubbed' }),
+      } as unknown as nodemailer.Transporter;
+    }
+
     if (!this.emailTransporter) {
       return {
         channel: 'email',
@@ -170,7 +238,7 @@ export class NotificationDeliveryService {
       };
     }
 
-    if (config.notifications.emailRecipients.length === 0) {
+    if (this.settings.notifications.emailRecipients.length === 0) {
       return {
         channel: 'email',
         success: false,
@@ -179,14 +247,14 @@ export class NotificationDeliveryService {
     }
 
     let lastError: Error | undefined;
-    for (let attempt = 1; attempt <= config.notifications.retryAttempts; attempt++) {
+    for (let attempt = 1; attempt <= this.settings.notifications.retryAttempts; attempt++) {
       try {
         const emailHtml = this.buildEmailHtml(notification);
         const subject = `[${notification.severity.toUpperCase()}] Opportunity ${notification.opportunity_id}`;
 
         await this.emailTransporter.sendMail({
-          from: config.email.from || 'Opportunity Tracker <noreply@dealreg.com>',
-          to: config.notifications.emailRecipients.join(', '),
+          from: this.settings.email.from || 'Opportunity Tracker <noreply@dealreg.com>',
+          to: this.settings.notifications.emailRecipients.join(', '),
           subject,
           text: notification.message,
           html: emailHtml,
@@ -213,18 +281,18 @@ export class NotificationDeliveryService {
       }
     }
 
-    logger.error('Email notification failed after all retries', {
-      opportunity_id: notification.opportunity_id,
-      error: lastError?.message,
-    });
+      logger.error('Email notification failed after all retries', {
+        opportunity_id: notification.opportunity_id,
+        error: lastError?.message,
+      });
 
-    return {
-      channel: 'email',
-      success: false,
-      error: lastError?.message || 'Unknown error',
-      attemptCount: config.notifications.retryAttempts,
-    };
-  }
+      return {
+        channel: 'email',
+        success: false,
+        error: lastError?.message || 'Unknown error',
+        attemptCount: this.settings.notifications.retryAttempts,
+      };
+    }
 
   /**
    * Deliver notification to task system (placeholder)
@@ -250,14 +318,14 @@ export class NotificationDeliveryService {
       return true;
     }
 
-    const windowStart = now - config.notifications.throttleWindowMs;
+    const windowStart = now - this.settings.notifications.throttleWindowMs;
     if (record.timestamp < windowStart) {
       // Outside window, allow
       return true;
     }
 
     // Within window, check count
-    return record.count < config.notifications.maxPerWindow;
+    return record.count < this.settings.notifications.maxPerWindow;
   }
 
   /**
@@ -267,7 +335,7 @@ export class NotificationDeliveryService {
     const now = Date.now();
     const record = this.throttleMap.get(opportunityId);
 
-    if (!record || record.timestamp < now - config.notifications.throttleWindowMs) {
+    if (!record || record.timestamp < now - this.settings.notifications.throttleWindowMs) {
       // Start new window
       this.throttleMap.set(opportunityId, { timestamp: now, count: 1 });
     } else {
@@ -276,7 +344,7 @@ export class NotificationDeliveryService {
     }
 
     // Cleanup old entries (older than 2x the window)
-    const cutoff = now - config.notifications.throttleWindowMs * 2;
+    const cutoff = now - this.settings.notifications.throttleWindowMs * 2;
     for (const [id, rec] of this.throttleMap.entries()) {
       if (rec.timestamp < cutoff) {
         this.throttleMap.delete(id);

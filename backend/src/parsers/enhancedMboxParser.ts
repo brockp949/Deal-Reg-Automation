@@ -218,6 +218,7 @@ export interface ExtractedDeal {
   decision_maker_contact?: string;
   decision_maker_email?: string;
   decision_maker_phone?: string;
+  source_email_subject?: string;
 
   // Product/Service
   deal_name?: string;
@@ -225,6 +226,7 @@ export interface ExtractedDeal {
   product_service_requirements?: string;
   solution_category?: string;
   deployment_environment?: string;
+  deal_stage?: string;
 
   // Financial
   deal_value?: number;

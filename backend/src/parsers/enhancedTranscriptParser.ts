@@ -176,6 +176,7 @@ export interface EnhancedDealData {
   currency?: string;
   expected_close_date?: Date;
   deal_expiration_date?: Date;
+  deal_stage?: string;
   product_service_requirements?: string;
   product_line?: string;
   new_or_existing_customer?: boolean;

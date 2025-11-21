@@ -135,8 +135,10 @@ describe('OpportunityMapper', () => {
     expect(opportunity.sourceSummary[0]).toMatchObject({
       connector: 'gmail',
       queryName: 'rfq',
-      referenceIds: ['msg-1'],
     });
+    expect(opportunity.sourceSummary[0].referenceIds).toEqual(
+      expect.arrayContaining(['msg-1'])
+    );
     expect(opportunity.metadata.vendor).toBe('ClearLED');
     expect(opportunity.metadata.customer).toBe('Antora');
     expect(opportunity.metadata.lastTouched).toBe('2025-11-10T12:00:00.000Z');

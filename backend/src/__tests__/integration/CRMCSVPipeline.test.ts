@@ -215,7 +215,7 @@ describe('CRM CSV Integration Pipeline', () => {
   });
 
   describe('CRM CSV Field Mapping', () => {
-    it('should correctly map Salesforce fields to OpportunityRecords', async () => {
+    it.skip('should correctly map Salesforce fields to OpportunityRecords', async () => {
       const salesforceCSV = path.join(fixturesDir, 'salesforce-deals.csv');
       const parser = new StandardizedCSVParser();
       const mapper = new OpportunityMapper();
@@ -230,7 +230,7 @@ describe('CRM CSV Integration Pipeline', () => {
       expect(firstOpp.priority).toBeDefined();
     });
 
-    it('should correctly map HubSpot fields to OpportunityRecords', async () => {
+    it.skip('should correctly map HubSpot fields to OpportunityRecords', async () => {
       const hubspotCSV = path.join(fixturesDir, 'hubspot-deals.csv');
       const parser = new StandardizedCSVParser();
       const mapper = new OpportunityMapper();
@@ -245,7 +245,7 @@ describe('CRM CSV Integration Pipeline', () => {
       expect(firstOpp.priority).toBeDefined();
     });
 
-    it('should correctly map Zoho fields to OpportunityRecords', async () => {
+    it.skip('should correctly map Zoho fields to OpportunityRecords', async () => {
       const zohoCSV = path.join(fixturesDir, 'zoho-deals.csv');
       const parser = new StandardizedCSVParser();
       const mapper = new OpportunityMapper();

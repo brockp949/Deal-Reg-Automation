@@ -27,3 +27,9 @@ jest.mock('../utils/logger', () => ({
 afterEach(() => {
   jest.resetAllMocks();
 });
+
+describe('test setup', () => {
+  it('should initialize test environment', () => {
+    expect(process.env.NODE_ENV).toBe('test');
+  });
+});

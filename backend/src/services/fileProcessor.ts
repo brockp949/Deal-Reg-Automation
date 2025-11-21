@@ -5,7 +5,7 @@ import { parseCSVFile, normalizeVTigerData, parseGenericCSV } from '../parsers/c
 import { parseTextTranscript, extractInfoFromTranscript } from '../parsers/transcriptParser';
 import { parseEnhancedTranscript } from '../parsers/enhancedTranscriptParser';
 import { parsePDFTranscript } from '../parsers/pdfParser';
-import { domainToCompanyName, generateDealName, normalizeCompanyName } from '../utils/fileHelpers';
+import { domainToCompanyName, generateDealNameWithFeatures, normalizeCompanyName } from '../utils/fileHelpers';
 import logger from '../utils/logger';
 import type { FileType } from '../types';
 import { writeFile, unlink } from 'fs/promises';
@@ -15,6 +15,7 @@ import { VendorApprovalPendingError, VendorApprovalDeniedError } from '../errors
 import { trackDealProvenance, trackVendorProvenance, trackContactProvenance } from './provenanceTracker';
 import { StandardizedCSVParser } from '../parsers/StandardizedCSVParser';
 import { StandardizedTranscriptParser } from '../parsers/StandardizedTranscriptParser';
+import { queuePendingDeal } from './pendingDealService';
 
 interface ProcessingResult {
   vendorsCreated: number;
@@ -170,6 +171,13 @@ export async function processFile(fileId: string): Promise<ProcessingResult> {
           } catch (error: any) {
             if (error instanceof VendorApprovalPendingError) {
               result.errors.push(`Deal "${dealData.deal_name}" skipped: vendor "${dealData.vendor_name}" pending approval (review ${error.aliasId})`);
+              await queuePendingDeal({
+                vendorName: dealData.vendor_name,
+                reviewId: error.aliasId,
+                sourceFileId: fileId,
+                dealData,
+                reason: 'vendor_pending_during_processing',
+              });
               logger.warn('Skipping deal because vendor pending approval', {
                 deal: dealData.deal_name,
                 vendor: dealData.vendor_name,
@@ -411,7 +419,7 @@ async function processMboxFile(filePath: string, fileId: string) {
       : undefined;
 
     // Generate descriptive deal name
-    const dealName = generateDealName({
+    const dealNameResult = generateDealNameWithFeatures({
       customer_name: normalizedCustomerName,
       vendor_name: vendorName,
       project_name: extractedDeal.project_name,
@@ -421,7 +429,11 @@ async function processMboxFile(filePath: string, fileId: string) {
       notes: extractedDeal.pre_sales_efforts,
       product_name: extractedDeal.product_name,
       product_service_requirements: extractedDeal.product_service_requirements,
+      source_subject: extractedDeal.project_name || extractedDeal.deal_name || extractedDeal.source_email_subject,
+      deal_stage: extractedDeal.deal_stage,
+      source_filename: filePath,
     });
+    const dealName = dealNameResult.name;
 
     // Create deal record
     deals.push({
@@ -435,6 +447,8 @@ async function processMboxFile(filePath: string, fileId: string) {
       extraction_method: 'mbox_email_thread',
       expected_close_date: extractedDeal.expected_close_date || null,
       product_name: extractedDeal.product_name || null,
+      deal_name_features: dealNameResult.features,
+      deal_name_candidates: dealNameResult.features.candidates?.slice(0, 5),
     });
 
     // Extract contacts
@@ -658,7 +672,7 @@ async function processTranscriptFile(filePath: string) {
   const normalizedCustomerName = customerName ? normalizeCompanyName(customerName) : undefined;
 
   // Generate descriptive deal name
-  const dealName = generateDealName({
+  const dealNameResult = generateDealNameWithFeatures({
     customer_name: normalizedCustomerName,
     vendor_name: vendorNameForDeal,
     project_name: projectNameForDeal,
@@ -668,7 +682,11 @@ async function processTranscriptFile(filePath: string) {
     notes: deal.deal_description || deal.product_service_requirements,
     product_name: deal.product_line || deal.product_service_requirements,
     product_service_requirements: deal.product_service_requirements,
+    source_subject: deal.deal_description || deal.product_service_requirements || deal.deal_name,
+    deal_stage: deal.deal_stage,
+    source_filename: filePath,
   });
+  const dealName = dealNameResult.name;
 
   const dealRecord: any = {
     deal_name: dealName,
@@ -726,6 +744,8 @@ async function processTranscriptFile(filePath: string) {
     deal_expiration_date: deal.deal_expiration_date || null,
     product_service_requirements: deal.product_service_requirements || null,
     new_or_existing_customer: deal.new_or_existing_customer || null,
+    deal_name_features: dealNameResult.features,
+    deal_name_candidates: dealNameResult.features.candidates?.slice(0, 5),
 
     // Store comprehensive enhanced data in metadata
     enhanced_transcript_data: {
