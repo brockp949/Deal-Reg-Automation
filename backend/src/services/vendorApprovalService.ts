@@ -1,5 +1,5 @@
 import { query } from '../db';
-import { normalizeVendorName } from '../utils/fileHelpers';
+import { normalizeVendorName, extractEmailDomain } from '../utils/fileHelpers';
 import logger from '../utils/logger';
 import { VendorApprovalPendingError, VendorApprovalDeniedError } from '../errors/vendorApprovalErrors';
 import { trackVendorProvenance } from './provenanceTracker';
@@ -68,7 +68,12 @@ function buildContextPayload(context?: VendorDetectionContext) {
   return payload;
 }
 
-function computeDetectionConfidence(vendorName: string, normalizedName: string, context?: VendorDetectionContext, matchConfidence?: number): { score: number; factors: string[] } {
+function computeDetectionConfidence(
+  vendorName: string,
+  normalizedName: string,
+  context?: VendorDetectionContext,
+  matchConfidence?: number
+): { score: number; factors: string[] } {
   let score = typeof matchConfidence === 'number' ? matchConfidence : 0.45;
   const factors: string[] = [];
 
@@ -103,6 +108,43 @@ function computeDetectionConfidence(vendorName: string, normalizedName: string, 
   return { score, factors };
 }
 
+function extractCandidateDomains(context?: VendorDetectionContext): string[] {
+  const domains = new Set<string>();
+  const vendorMeta = (context?.metadata as any)?.vendor || {};
+
+  const domainHints = [vendorMeta.email_domain, vendorMeta.emailDomain, vendorMeta.domain];
+
+  domainHints.forEach((domain: string | undefined) => {
+    if (typeof domain === 'string' && domain.trim()) {
+      domains.add(domain.trim().toLowerCase());
+    }
+  });
+
+  if (typeof vendorMeta.email === 'string') {
+    const parsed = extractEmailDomain(vendorMeta.email);
+    if (parsed) {
+      domains.add(parsed);
+    }
+  }
+
+  if (typeof vendorMeta.website === 'string') {
+    try {
+      const url = vendorMeta.website.startsWith('http') ? vendorMeta.website : `https://${vendorMeta.website}`;
+      const hostname = new URL(url).hostname.replace(/^www\./, '');
+      if (hostname) {
+        domains.add(hostname.toLowerCase());
+      }
+    } catch (err) {
+      logger.debug('Skipping invalid vendor website for domain extraction', {
+        website: vendorMeta.website,
+        error: (err as Error).message,
+      });
+    }
+  }
+
+  return Array.from(domains);
+}
+
 async function upsertVendorReviewCandidate(
   aliasName: string,
   normalizedAlias: string,
@@ -130,6 +172,125 @@ async function upsertVendorReviewCandidate(
   return result.rows[0];
 }
 
+async function findVendorByAlias(
+  normalizedAlias: string
+): Promise<(VendorReviewItem & { vendor_id: string; alias_id: string; alias_type?: string; confidence?: number; approval_status?: VendorApprovalStatus | null }) | null> {
+  const result = await query(
+    `SELECT v.id as vendor_id, v.approval_status, va.id as alias_id, va.alias as alias_name, va.alias_type, va.confidence
+     FROM vendor_aliases va
+     JOIN vendors v ON v.id = va.vendor_id
+     WHERE va.normalized_alias = $1
+     ORDER BY va.confidence DESC, va.last_used_at DESC NULLS LAST
+     LIMIT 1`,
+    [normalizedAlias]
+  );
+
+  if (result.rows.length === 0) {
+    return null;
+  }
+
+  return result.rows[0];
+}
+
+async function findVendorByDomain(
+  domain: string
+): Promise<{ id: string; approval_status: VendorApprovalStatus | null } | null> {
+  const result = await query(
+    `SELECT id, approval_status
+     FROM vendors
+     WHERE $1 = ANY(email_domains)
+     ORDER BY match_count DESC NULLS LAST, created_at DESC
+     LIMIT 1`,
+    [domain.toLowerCase()]
+  );
+
+  if (result.rows.length === 0) {
+    return null;
+  }
+
+  return result.rows[0];
+}
+
+async function recordAliasUsage(
+  vendorId: string,
+  alias: string,
+  normalizedAlias: string,
+  aliasType: string,
+  confidence = 0.9
+) {
+  await query(
+    `INSERT INTO vendor_aliases (
+      vendor_id, alias, normalized_alias, alias_type, confidence, source, usage_count, last_used_at
+    )
+    VALUES ($1, $2, $3, $4, $5, 'auto_ingest', 1, NOW())
+    ON CONFLICT (vendor_id, normalized_alias)
+    DO UPDATE
+      SET usage_count = vendor_aliases.usage_count + 1,
+          last_used_at = NOW(),
+          confidence = GREATEST(vendor_aliases.confidence, EXCLUDED.confidence)`,
+    [vendorId, alias, normalizedAlias, aliasType, confidence]
+  );
+}
+
+async function resolveExistingVendor(
+  vendor: { id: string; approval_status?: VendorApprovalStatus | null },
+  vendorName: string,
+  normalizedName: string,
+  allowAuto: boolean,
+  context?: VendorDetectionContext,
+  aliasMeta?: { alias: string; normalizedAlias: string; aliasType: string; confidence?: number }
+): Promise<string> {
+  const status = vendor.approval_status;
+
+  if (!status || status === 'approved') {
+    if (aliasMeta) {
+      await recordAliasUsage(
+        vendor.id,
+        aliasMeta.alias,
+        aliasMeta.normalizedAlias,
+        aliasMeta.aliasType,
+        aliasMeta.confidence ?? 0.9
+      );
+    }
+    return vendor.id;
+  }
+
+  if (status === 'denied') {
+    throw new VendorApprovalDeniedError(vendorName);
+  }
+
+  if (allowAuto) {
+    await query(
+      `UPDATE vendors
+       SET approval_status = 'approved',
+           approved_at = COALESCE(approved_at, CURRENT_TIMESTAMP),
+           approval_notes = COALESCE(approval_notes, 'Auto-approved by system')
+       WHERE id = $1`,
+      [vendor.id]
+    );
+    logger.info('Auto-approved existing vendor', {
+      vendor: vendorName,
+      vendorId: vendor.id,
+      reason: aliasMeta ? 'matched_alias_or_domain' : 'normalized_match',
+    });
+
+    if (aliasMeta) {
+      await recordAliasUsage(
+        vendor.id,
+        aliasMeta.alias,
+        aliasMeta.normalizedAlias,
+        aliasMeta.aliasType,
+        aliasMeta.confidence ?? 0.9
+      );
+    }
+
+    return vendor.id;
+  }
+
+  const alias = await upsertVendorReviewCandidate(vendorName, normalizedName, context);
+  throw new VendorApprovalPendingError(vendorName, alias.id);
+}
+
 export async function ensureVendorApproved(
   vendorName: string,
   context?: VendorDetectionContext
@@ -153,6 +314,7 @@ export async function ensureVendorApproved(
   };
   const allowAuto = config.vendor.autoApprove || detection.score >= 0.85;
   const needsReview = detection.score >= 0.6;
+  const candidateDomains = extractCandidateDomains(context);
 
   // Check existing vendors
   const existingResult = await query(
@@ -164,31 +326,44 @@ export async function ensureVendorApproved(
   );
 
   if (existingResult.rows.length > 0) {
-    const vendor = existingResult.rows[0];
+    return resolveExistingVendor(
+      existingResult.rows[0],
+      vendorName,
+      normalizedName,
+      allowAuto,
+      contextWithConfidence
+    );
+  }
 
-    if (!vendor.approval_status || vendor.approval_status === 'approved') {
-      return vendor.id;
+  // Try alias match
+  const aliasMatch = await findVendorByAlias(normalizedName);
+  if (aliasMatch) {
+    return resolveExistingVendor(
+      { id: aliasMatch.vendor_id, approval_status: aliasMatch.approval_status },
+      vendorName,
+      normalizedName,
+      allowAuto,
+      contextWithConfidence,
+      {
+        alias: aliasMatch.alias_name || vendorName,
+        normalizedAlias: normalizeVendorName(aliasMatch.alias_name || vendorName),
+        aliasType: aliasMatch.alias_type || 'alias',
+        confidence: aliasMatch.confidence || 0.9,
+      }
+    );
+  }
+
+  // Try domain match from context metadata
+  for (const domain of candidateDomains) {
+    const domainMatch = await findVendorByDomain(domain);
+    if (domainMatch) {
+      return resolveExistingVendor(domainMatch, vendorName, normalizedName, allowAuto, contextWithConfidence, {
+        alias: domain,
+        normalizedAlias: normalizeVendorName(domain),
+        aliasType: 'domain',
+        confidence: 0.8,
+      });
     }
-
-    if (vendor.approval_status === 'denied') {
-      throw new VendorApprovalDeniedError(vendorName);
-    }
-
-    if (allowAuto) {
-      await query(
-        `UPDATE vendors
-         SET approval_status = 'approved',
-             approved_at = COALESCE(approved_at, CURRENT_TIMESTAMP),
-             approval_notes = COALESCE(approval_notes, 'Auto-approved by system')
-         WHERE id = $1`,
-        [vendor.id]
-      );
-      logger.info('Auto-approved existing vendor', { vendor: vendorName, vendorId: vendor.id, score: detection.score });
-      return vendor.id;
-    }
-
-    const alias = await upsertVendorReviewCandidate(vendorName, normalizedName, contextWithConfidence);
-    throw new VendorApprovalPendingError(vendorName, alias.id);
   }
 
   // Attempt match by intelligence map (fuzzy/alias)
@@ -200,36 +375,19 @@ export async function ensureVendorApproved(
 
     if (matchedVendorResult.rows.length > 0) {
       const vendor = matchedVendorResult.rows[0];
-
-      if (!vendor.approval_status || vendor.approval_status === 'approved') {
-        logger.info('Matched vendor via intelligence map', {
-          input: vendorName,
-          matchedVendorId: vendor.id,
+      return resolveExistingVendor(
+        vendor,
+        vendorName,
+        normalizedName,
+        allowAuto,
+        contextWithConfidence,
+        {
+          alias: vendorName,
+          normalizedAlias: normalizedName,
+          aliasType: 'alias',
           confidence: match.confidence,
-        });
-        return vendor.id;
-      }
-
-      if (vendor.approval_status === 'denied') {
-        throw new VendorApprovalDeniedError(vendorName);
-      }
-
-      if (allowAuto) {
-        await query(
-          `UPDATE vendors
-           SET approval_status = 'approved',
-               approved_at = COALESCE(approved_at, CURRENT_TIMESTAMP),
-               approval_notes = COALESCE(approval_notes, 'Auto-approved by intelligence match')
-           WHERE id = $1`,
-          [vendor.id]
-        );
-        logger.info('Auto-approved pending vendor via intelligence match', {
-          vendor: vendorName,
-          vendorId: vendor.id,
-          confidence: match.confidence,
-        });
-        return vendor.id;
-      }
+        }
+      );
     }
   }
 
@@ -266,7 +424,24 @@ export async function ensureVendorApproved(
     );
 
     const vendorId = insertResult.rows[0].id;
-    logger.info('Auto-approved new vendor', { vendor: vendorName, vendorId, score: detection.score });
+
+    // Register any domain aliases for future matches
+    for (const domain of candidateDomains) {
+      await recordAliasUsage(
+        vendorId,
+        domain,
+        normalizeVendorName(domain),
+        'domain',
+        0.75
+      );
+    }
+
+    logger.info('Auto-approved new vendor', {
+      vendor: vendorName,
+      vendorId,
+      domains: candidateDomains,
+      score: detection.score,
+    });
     return vendorId;
   }
 
@@ -447,32 +622,6 @@ export async function resolveVendorReviewItem(
       [id, vendorId, payload.notes || null, payload.resolved_by || 'system']
     );
 
-    if (vendorId) {
-      try {
-        const promotion = await promotePendingDealsForReview(id, vendorId);
-        if (promotion.created > 0) {
-          logger.info('Promoted pending deals after vendor approval', {
-            reviewId: id,
-            vendorId,
-            dealsCreated: promotion.created,
-          });
-        }
-        if (promotion.failed > 0) {
-          logger.warn('Some pending deals failed to promote after vendor approval', {
-            reviewId: id,
-            vendorId,
-            errors: promotion.errors,
-          });
-        }
-      } catch (promotionError: any) {
-        logger.error('Failed to promote pending deals after vendor approval', {
-          reviewId: id,
-          vendorId,
-          error: promotionError.message,
-        });
-      }
-    }
-
     return updateResult.rows[0];
   }
 
@@ -487,6 +636,9 @@ export async function resolveVendorReviewItem(
      RETURNING *`,
     [id, payload.notes || null, payload.resolved_by || 'system']
   );
+
+  // When denying a vendor suggestion, also queue any pending deals back for manual review
+  await promotePendingDealsForReview();
 
   return denyResult.rows[0];
 }

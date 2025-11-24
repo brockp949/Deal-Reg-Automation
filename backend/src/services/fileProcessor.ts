@@ -16,6 +16,7 @@ import { trackDealProvenance, trackVendorProvenance, trackContactProvenance } fr
 import { StandardizedCSVParser } from '../parsers/StandardizedCSVParser';
 import { StandardizedTranscriptParser } from '../parsers/StandardizedTranscriptParser';
 import { queuePendingDeal } from './pendingDealService';
+import { matchVendor } from './vendorMatcher';
 
 interface ProcessingResult {
   vendorsCreated: number;
@@ -333,30 +334,7 @@ async function processMboxFile(filePath: string, fileId: string) {
   const vendorSet = new Set<string>();
   const vendorsToCreate = new Set<string>(); // Only vendors with deals
 
-  // Helper function to find matching vendor
-  function findMatchingVendor(companyName: string): string | null {
-    if (!companyName || companyName === 'Unknown Vendor') return null;
-
-    const normalizedSearch = companyName.toLowerCase().trim();
-
-    // Exact match
-    for (const vendor of existingVendors) {
-      if (vendor.name.toLowerCase().trim() === normalizedSearch) {
-        return vendor.name;
-      }
-    }
-
-    // Partial match (company name contains vendor name or vice versa)
-    for (const vendor of existingVendors) {
-      const normalizedVendor = vendor.name.toLowerCase().trim();
-      if (normalizedSearch.includes(normalizedVendor) || normalizedVendor.includes(normalizedSearch)) {
-        logger.info('Fuzzy matched vendor', { searched: companyName, matched: vendor.name });
-        return vendor.name;
-      }
-    }
-
-    return null;
-  }
+  // Helper function removed in favor of matchVendor service
 
   for (const extractedDeal of result.extractedDeals) {
     // Extract vendor from email sender domain
@@ -391,7 +369,13 @@ async function processMboxFile(filePath: string, fileId: string) {
     }
 
     // Try to match to existing vendor first
-    const matchedVendor = findMatchingVendor(extractedVendorName);
+    const matchResult = await matchVendor({
+      extractedName: extractedVendorName,
+      emailDomain: emailDomain || undefined,
+      existingVendors: existingVendors
+    });
+    
+    const matchedVendor = matchResult.matched ? matchResult.vendor.name : null;
     const vendorName = matchedVendor || extractedVendorName;
 
     // Only create new vendor if there's NO match AND we haven't added it yet
@@ -418,7 +402,7 @@ async function processMboxFile(filePath: string, fileId: string) {
       ? normalizeCompanyName(extractedDeal.end_user_name)
       : undefined;
 
-    // Generate descriptive deal name
+    // Generate descriptive deal name with features
     const dealNameResult = generateDealNameWithFeatures({
       customer_name: normalizedCustomerName,
       vendor_name: vendorName,
@@ -526,30 +510,7 @@ async function processTranscriptFile(filePath: string) {
 
   logger.info('Loaded existing vendors for matching', { count: existingVendors.length });
 
-  // Helper function to find matching vendor
-  function findMatchingVendor(companyName: string): string | null {
-    if (!companyName || companyName === 'Unknown' || companyName === 'Unknown Vendor') return null;
-
-    const normalizedSearch = companyName.toLowerCase().trim();
-
-    // Exact match
-    for (const vendor of existingVendors) {
-      if (vendor.name.toLowerCase().trim() === normalizedSearch) {
-        return vendor.name;
-      }
-    }
-
-    // Partial match (company name contains vendor name or vice versa)
-    for (const vendor of existingVendors) {
-      const normalizedVendor = vendor.name.toLowerCase().trim();
-      if (normalizedSearch.includes(normalizedVendor) || normalizedVendor.includes(normalizedSearch)) {
-        logger.info('Fuzzy matched vendor (transcript)', { searched: companyName, matched: vendor.name });
-        return vendor.name;
-      }
-    }
-
-    return null;
-  }
+  // Helper function removed in favor of matchVendor service
 
   // Use enhanced 5-stage NLP parser
   const { deal, turns, isRegisterable, buyingSignalScore } = await parseEnhancedTranscript(filePath, {
@@ -592,7 +553,12 @@ async function processTranscriptFile(filePath: string) {
   // Extract partner/vendor information
   if (deal.partner_company_name) {
     // Try to match to existing vendor first
-    const matchedVendor = findMatchingVendor(deal.partner_company_name);
+    const matchResult = await matchVendor({
+      extractedName: deal.partner_company_name,
+      emailDomain: deal.partner_email ? deal.partner_email.split('@')[1] : undefined,
+      existingVendors: existingVendors
+    });
+    const matchedVendor = matchResult.matched ? matchResult.vendor.name : null;
     partnerVendorName = matchedVendor || deal.partner_company_name;
 
     // Only create new vendor if there's NO match AND we haven't added it yet
@@ -629,7 +595,12 @@ async function processTranscriptFile(filePath: string) {
   // Extract prospect/customer vendor (if different from partner)
   if (deal.prospect_company_name && deal.prospect_company_name !== deal.partner_company_name) {
     // Try to match to existing vendor first
-    const matchedVendor = findMatchingVendor(deal.prospect_company_name);
+    const matchResult = await matchVendor({
+      extractedName: deal.prospect_company_name,
+      emailDomain: deal.prospect_website ? new URL(deal.prospect_website).hostname : undefined,
+      existingVendors: existingVendors
+    });
+    const matchedVendor = matchResult.matched ? matchResult.vendor.name : null;
     prospectVendorName = matchedVendor || deal.prospect_company_name;
 
     // Only create new vendor if there's NO match, it's different from partner, and we haven't added it yet
