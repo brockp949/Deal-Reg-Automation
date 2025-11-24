@@ -328,6 +328,7 @@ type DealNameContext = {
   deal_stage?: string | null;
   expected_close_date?: Date | null;
   version_hint?: string;
+  ai_suggested_name?: string;
 };
 
 export type DealNameFeatures = {
@@ -549,175 +550,180 @@ function buildSubjectSnippet(context: DealNameContext): string | null {
   return shortenDescriptor(subject, 45);
 }
 
-function pickValueBand(value?: number): string | null {
-  const descriptor = deriveDealSizeDescriptor(value);
-  return descriptor || null;
+function sanitizeDealPart(value?: string | null): string | null {
+  if (!value) return null;
+  const cleaned = value
+    .replace(/\s+/g, ' ')
+    .replace(/[|]+/g, '-')
+    .trim();
+
+  if (!cleaned || cleaned.length < 3) return null;
+
+  const blocked = ['unknown', 'untitled', 'deal', 'opportunity', 'n/a'];
+  if (blocked.includes(cleaned.toLowerCase())) {
+    return null;
+  }
+
+  return cleaned;
 }
 
-function scoreCandidate(
-  candidateParts: { customer?: string | null; vendor?: string | null; commodity?: string | null; scope?: string | null; valueBand?: string | null; subject?: string | null; stage?: string | null },
-  breakdown: Record<string, number>
-): number {
-  let score = 0;
-
-  if (candidateParts.customer) {
-    score += 0.35;
-    breakdown.customer = 0.35;
+function clampDealName(value: string, maxLength = 120): string {
+  if (value.length <= maxLength) {
+    return value;
   }
-  if (candidateParts.commodity || candidateParts.scope) {
-    score += 0.25;
-    breakdown.commodity_scope = 0.25;
-  }
-  if (candidateParts.valueBand) {
-    score += 0.15;
-    breakdown.value_band = 0.15;
-  }
-  if (candidateParts.vendor) {
-    score += 0.1;
-    breakdown.vendor = 0.1;
-  }
-  if (candidateParts.subject) {
-    score += 0.1;
-    breakdown.subject = 0.1;
-  }
-  if (candidateParts.stage) {
-    score += 0.05;
-    breakdown.stage = 0.05;
-  }
-
-  return score;
+  return `${value.slice(0, maxLength - 3).trim()}...`;
 }
+
+function formatRegistrationWindow(date?: Date): string | null {
+  if (!date) return null;
+  const parsed = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  return parsed.toLocaleString('en-US', { month: 'short', year: 'numeric' });
+}
+
+type CandidateName = {
+  value: string;
+  score: number;
+};
 
 /**
- * Generate a descriptive deal name from deal data
+ * Generate a descriptive deal name with feature metadata
  */
 export function generateDealNameWithFeatures(dealData: DealNameContext): { name: string; features: DealNameFeatures } {
-  const customer = dealData.customer_name || dealData.end_user_name;
-  const vendor = dealData.vendor_name;
-  const project = dealData.project_name;
+  const aiName = sanitizeDealPart(dealData.ai_suggested_name);
+  const candidateNames: CandidateName[] = [];
+
+  const customer = sanitizeDealPart(dealData.customer_name || dealData.end_user_name);
+  const vendor = sanitizeDealPart(dealData.vendor_name);
+  const project = sanitizeDealPart(shortenDescriptor(dealData.project_name || dealData.deal_name, 80));
   const value = dealData.deal_value;
-  const date = dealData.registration_date || new Date();
+  const date = dealData.registration_date instanceof Date
+    ? dealData.registration_date
+    : dealData.registration_date
+      ? new Date(dealData.registration_date)
+      : new Date();
 
-  const commodity = extractCommodityType({
-    deal_name: dealData.deal_name,
-    project_name: dealData.project_name,
-    notes: dealData.notes,
-    product_name: dealData.product_name,
-    product_service_requirements: dealData.product_service_requirements,
-  });
+  const commodity = sanitizeDealPart(
+    extractCommodityType({
+      deal_name: dealData.deal_name,
+      project_name: dealData.project_name,
+      notes: dealData.notes,
+      product_name: dealData.product_name,
+      product_service_requirements: dealData.product_service_requirements,
+    })
+  );
 
-  const specDetail = extractSpecDetail(dealData);
-  const scopeDescriptor = extractScopeDescriptor(dealData);
-  const valueBand = pickValueBand(value);
-  const formattedValue = formatDealValue(value);
-  const stageHint = deriveStageHint(dealData);
-  const subjectSnippet = buildSubjectSnippet(dealData);
-  const projectSnippet = shortenDescriptor(project, 60);
-  const scopeOrCommodity = commodity || scopeDescriptor;
+  const specDetail = sanitizeDealPart(extractSpecDetail(dealData));
+  const scopeDescriptor = sanitizeDealPart(extractScopeDescriptor(dealData));
+  const sizeDescriptor = sanitizeDealPart(deriveDealSizeDescriptor(value));
+  const formattedValue = sanitizeDealPart(formatDealValue(value));
+  const registrationWindow = formatRegistrationWindow(date);
 
-  const commodityHeadline = [commodity, specDetail].filter(Boolean).join(' ').trim() || null;
+  const productDescriptor = sanitizeDealPart(
+    shortenDescriptor(dealData.product_name || dealData.product_service_requirements, 60)
+  );
 
-  const baseCandidates: Array<{ label: string; text: string; parts: { customer?: string | null; vendor?: string | null; commodity?: string | null; scope?: string | null; valueBand?: string | null; subject?: string | null; stage?: string | null } }> = [];
+  const commodityHeadline = sanitizeDealPart(
+    combineUniqueParts([
+      commodity && specDetail ? `${commodity} ${specDetail}` : commodity,
+      !commodity ? specDetail : null,
+    ])
+  );
 
-  const customerOrVendor = customer || vendor;
-  const safeCustomer = shortenDescriptor(customer, 40);
-  const safeVendor = shortenDescriptor(vendor, 40);
+  const useCase = sanitizeDealPart(
+    combineUniqueParts([
+      commodityHeadline,
+      scopeDescriptor,
+      productDescriptor,
+      shortenDescriptor(dealData.notes, 50),
+    ])
+  ) || project || commodityHeadline;
 
-  // Candidate 1: Customer | Commodity/Scope | Value
-  if (safeCustomer && (commodityHeadline || scopeDescriptor)) {
-    baseCandidates.push({
-      label: 'customer-commodity-value',
-      text: combineUniqueParts([safeCustomer, commodityHeadline || scopeDescriptor, valueBand]),
-      parts: { customer: safeCustomer, commodity: commodityHeadline, scope: scopeDescriptor, valueBand, stage: stageHint },
-    });
-  }
+  const counterpart = customer && vendor && customer.toLowerCase() !== vendor.toLowerCase()
+    ? vendor
+    : null;
 
-  // Candidate 2: Customer | Commodity | Vendor
-  if (safeCustomer && (commodityHeadline || scopeDescriptor) && safeVendor) {
-    baseCandidates.push({
-      label: 'customer-commodity-vendor',
-      text: combineUniqueParts([safeCustomer, commodityHeadline || scopeDescriptor, safeVendor]),
-      parts: { customer: safeCustomer, commodity: commodityHeadline, scope: scopeDescriptor, vendor: safeVendor, stage: stageHint },
-    });
-  }
+  const sizeOrValue = sizeDescriptor || formattedValue;
 
-  // Candidate 3: Customer/Vendor | Subject snippet
-  if (customerOrVendor && subjectSnippet) {
-    baseCandidates.push({
-      label: 'subject-led',
-      text: combineUniqueParts([shortenDescriptor(customerOrVendor, 45), subjectSnippet, valueBand]),
-      parts: { customer: customerOrVendor, vendor: vendor, subject: subjectSnippet, valueBand, stage: stageHint },
-    });
-  }
+  const addCandidate = (parts: Array<string | null | undefined>, weight: number) => {
+    const normalizedParts = parts
+      .map((part) => sanitizeDealPart(part))
+      .filter((part): part is string => Boolean(part));
 
-  // Candidate 4: Commodity | Value | Month
-  const monthMarker = date.toLocaleString('en-US', { month: 'short', year: '2-digit' });
-  if (scopeOrCommodity || valueBand) {
-    baseCandidates.push({
-      label: 'commodity-value-month',
-      text: combineUniqueParts([scopeOrCommodity, valueBand, monthMarker]),
-      parts: { commodity: scopeOrCommodity, valueBand, stage: stageHint },
-    });
-  }
-
-  // Candidate 5: Project headline with customer
-  if (projectSnippet) {
-    baseCandidates.push({
-      label: 'project',
-      text: combineUniqueParts([shortenDescriptor(customerOrVendor, 45), projectSnippet, valueBand]),
-      parts: { customer: customerOrVendor, vendor: vendor, subject: projectSnippet, valueBand, stage: stageHint },
-    });
-  }
-
-  // Fallback candidate
-  baseCandidates.push({
-    label: 'fallback',
-    text: combineUniqueParts([
-      commodityHeadline || scopeDescriptor || 'Opportunity',
-      safeCustomer || safeVendor || 'Unspecified',
-      valueBand || formattedValue || date.toLocaleString('en-US', { month: 'short', day: 'numeric' }),
-    ]),
-    parts: { commodity: commodityHeadline || scopeDescriptor, customer: safeCustomer || safeVendor, valueBand, stage: stageHint },
-  });
-
-  let bestCandidate = baseCandidates[0];
-  let bestScore = -1;
-  let bestBreakdown: Record<string, number> = {};
-
-  for (const candidate of baseCandidates) {
-    const breakdown: Record<string, number> = {};
-    const score = scoreCandidate(candidate.parts, breakdown);
-    if (score > bestScore) {
-      bestScore = score;
-      bestCandidate = candidate;
-      bestBreakdown = breakdown;
+    if (normalizedParts.length === 0) {
+      return;
     }
+
+    const combined = combineUniqueParts(normalizedParts);
+    if (!combined) {
+      return;
+    }
+
+    const scoredValue = clampDealName(combined);
+    const coverageScore = normalizedParts.length * 3;
+    const lengthPenalty = Math.max(0, scoredValue.length - 90) * 0.1;
+
+    candidateNames.push({
+      value: scoredValue,
+      score: weight + coverageScore - lengthPenalty,
+    });
+  };
+
+  if (aiName && aiName.length >= 8) {
+    addCandidate([aiName], 30);
   }
 
-  const truncated = bestCandidate.text.length > 90 ? `${bestCandidate.text.slice(0, 87).trim()}...` : bestCandidate.text;
-  const versioned = dealData.version_hint ? combineUniqueParts([truncated, dealData.version_hint]) : truncated;
+  addCandidate([customer, useCase, counterpart, sizeOrValue], 22);
+  addCandidate([customer, useCase, sizeOrValue], 20);
+  addCandidate([customer, useCase, registrationWindow, counterpart], 18);
+  addCandidate([customer, project, counterpart, sizeOrValue], 17);
+  addCandidate([customer, scopeDescriptor, counterpart, formattedValue], 16);
+  addCandidate([useCase, counterpart, sizeOrValue], 15);
+  addCandidate([customer, counterpart, sizeOrValue], 14);
+  addCandidate([useCase, sizeOrValue, registrationWindow], 13);
+  addCandidate([project, counterpart, registrationWindow], 12);
+  addCandidate([customer, project], 11);
+  addCandidate([customer, formattedValue], 10);
+  addCandidate([counterpart, formattedValue], 9);
 
+  let best: CandidateName | null = null;
+  if (candidateNames.length > 0) {
+    candidateNames.sort((a, b) => b.score - a.score);
+    best = candidateNames[0];
+  }
+
+  const name =
+    best?.value ||
+    (customer && useCase && clampDealName(`${customer} - ${useCase}`)) ||
+    (customer && formattedValue && clampDealName(`${customer} - ${formattedValue}`)) ||
+    (vendor && useCase && clampDealName(`${vendor} - ${useCase}`)) ||
+    (customer && customer !== 'Unknown' && clampDealName(`${customer} Deal`)) ||
+    (commodity && clampDealName(`${commodity} Deal`)) ||
+    (vendor && vendor !== 'Unknown'
+      ? `${vendor} - ${date.toLocaleString('en-US', { month: 'short', year: 'numeric' })}`
+      : `Deal Registration - ${date.toLocaleString('en-US', { month: 'short', day: 'numeric' })}`);
+
+  const stageHint = deriveStageHint(dealData);
   const features: DealNameFeatures = {
     customerIncluded: Boolean(customer),
     vendorIncluded: Boolean(vendor),
     commodity: commodityHeadline || null,
     scope: scopeDescriptor || null,
-    valueBand,
+    valueBand: sizeDescriptor || formattedValue,
     stageHint,
-    subjectSnippet,
-    projectSnippet,
+    subjectSnippet: buildSubjectSnippet(dealData),
+    projectSnippet: shortenDescriptor(dealData.project_name, 60),
     formattedValue,
-    scoreBreakdown: bestBreakdown,
-    finalScore: bestScore,
-    candidates: baseCandidates.map((c) => c.text),
+    scoreBreakdown: { composite: best?.score ?? 0 },
+    finalScore: best?.score ?? 0,
+    candidates: candidateNames.map((c) => c.value),
   };
 
-  return { name: versioned, features };
+  return { name, features };
 }
 
-/**
- * Backwards-compatible string-only generator
- */
 export function generateDealName(dealData: DealNameContext): string {
   return generateDealNameWithFeatures(dealData).name;
 }
