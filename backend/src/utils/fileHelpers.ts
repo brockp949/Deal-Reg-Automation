@@ -656,6 +656,10 @@ export function generateDealNameWithFeatures(dealData: DealNameContext): { name:
       return;
     }
 
+    if (normalizedParts.length === 1 && weight < 25) {
+      return;
+    }
+
     const combined = combineUniqueParts(normalizedParts);
     if (!combined) {
       return;
@@ -687,11 +691,22 @@ export function generateDealNameWithFeatures(dealData: DealNameContext): { name:
   addCandidate([customer, project], 11);
   addCandidate([customer, formattedValue], 10);
   addCandidate([counterpart, formattedValue], 9);
+  if (vendor) {
+    addCandidate([vendor, registrationWindow || date.toLocaleString('en-US', { month: 'short', year: 'numeric' })], 12);
+  }
 
   let best: CandidateName | null = null;
   if (candidateNames.length > 0) {
     candidateNames.sort((a, b) => b.score - a.score);
     best = candidateNames[0];
+  }
+
+  if (!best && vendor) {
+    const monthYear = registrationWindow || date.toLocaleString('en-US', { month: 'short', year: 'numeric' });
+    best = {
+      value: clampDealName(combineUniqueParts([vendor, monthYear])),
+      score: 0.5,
+    };
   }
 
   const name =
