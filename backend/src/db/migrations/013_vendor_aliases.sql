@@ -347,6 +347,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trigger_update_vendor_alias_timestamp ON vendor_aliases;
 CREATE TRIGGER trigger_update_vendor_alias_timestamp
   BEFORE UPDATE ON vendor_aliases
   FOR EACH ROW

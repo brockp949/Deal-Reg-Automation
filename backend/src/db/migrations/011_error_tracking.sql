@@ -160,6 +160,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trigger_error_logs_updated_at ON error_logs;
 CREATE TRIGGER trigger_error_logs_updated_at
   BEFORE UPDATE ON error_logs
   FOR EACH ROW

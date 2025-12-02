@@ -1,0 +1,39 @@
+
+> dealreg-backend@1.0.0 db:migrate
+> node -r tsx/cjs src/db/migrate.ts
+
+Running database migrations...
+Running base schema...
+2025-12-02 14:54:06 [[32minfo[39m]: Database connection established
+Γ£ô Base schema applied
+Running migration: 002_enhance_deal_schema.sql...
+Γ£ô 002_enhance_deal_schema.sql completed
+Running migration: 003_add_transcript_fields.sql...
+Γ£ô 003_add_transcript_fields.sql completed
+Running migration: 004_multiple_vendors_per_deal.sql...
+Γ£ô 004_multiple_vendors_per_deal.sql completed
+Running migration: 005_vendor_approval_workflow.sql...
+Γ£ô 005_vendor_approval_workflow.sql completed
+Running migration: 006_field_provenance.sql...
+Γ£ù Migration failed: error: trigger "trigger_supersede_provenance" for relation "field_provenance" already exists
+    at C:\Users\brock\Documents\Deal Reg Automation\Deal-Reg-Automation\backend\node_modules\pg-pool\index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async runMigrations (C:\Users\brock\Documents\Deal Reg Automation\Deal-Reg-Automation\backend\src\db\migrate.ts:24:7) {
+  length: 152,
+  severity: 'ERROR',
+  code: '42710',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'trigger.c',
+  line: '773',
+  routine: 'CreateTriggerFiringOn'
+}

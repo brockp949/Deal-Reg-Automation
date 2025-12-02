@@ -1,0 +1,50 @@
+time="2025-12-02T11:19:16-08:00" level=warning msg="c:\\Users\\brock\\Documents\\Deal Reg Automation\\Deal-Reg-Automation\\docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+
+> dealreg-backend@1.0.0 db:migrate
+> node -r tsx/cjs src/db/migrate.ts
+
+Running database migrations...
+Running base schema...
+2025-12-02 19:19:18 [[32minfo[39m]: Database connection established
+✓ Base schema applied
+Running migration: 002_enhance_deal_schema.sql...
+✓ 002_enhance_deal_schema.sql completed
+Running migration: 003_add_transcript_fields.sql...
+✓ 003_add_transcript_fields.sql completed
+Running migration: 004_multiple_vendors_per_deal.sql...
+✓ 004_multiple_vendors_per_deal.sql completed
+Running migration: 005_vendor_approval_workflow.sql...
+✓ 005_vendor_approval_workflow.sql completed
+Running migration: 006_field_provenance.sql...
+✓ 006_field_provenance.sql completed
+Running migration: 007_file_security_audit.sql...
+✓ 007_file_security_audit.sql completed
+Running migration: 008_file_dedupe.sql...
+✓ 008_file_dedupe.sql completed
+Running migration: 009_config_snapshots.sql...
+✓ 009_config_snapshots.sql completed
+Running migration: 010_config_apply_tracking.sql...
+✓ 010_config_apply_tracking.sql completed
+Running migration: 010_error_tracking.sql...
+✗ Migration failed: error: relation "idx_error_logs_category_severity" already exists
+    at /app/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async runMigrations (/app/src/db/migrate.ts:24:7) {
+  length: 114,
+  severity: 'ERROR',
+  code: '42P07',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'index.c',
+  line: '873',
+  routine: 'index_create'
+}

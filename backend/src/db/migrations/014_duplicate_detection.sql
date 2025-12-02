@@ -36,15 +36,15 @@ CREATE TABLE IF NOT EXISTS duplicate_detections (
   CONSTRAINT valid_entity_type CHECK (entity_type IN ('deal', 'vendor', 'contact'))
 );
 
-CREATE INDEX idx_duplicate_detections_entity1 ON duplicate_detections(entity_id_1);
-CREATE INDEX idx_duplicate_detections_entity2 ON duplicate_detections(entity_id_2);
-CREATE INDEX idx_duplicate_detections_status ON duplicate_detections(status);
-CREATE INDEX idx_duplicate_detections_confidence ON duplicate_detections(confidence_level DESC);
-CREATE INDEX idx_duplicate_detections_detected_at ON duplicate_detections(detected_at DESC);
-CREATE INDEX idx_duplicate_detections_entity_type ON duplicate_detections(entity_type);
+CREATE INDEX IF NOT EXISTS idx_duplicate_detections_entity1 ON duplicate_detections(entity_id_1);
+CREATE INDEX IF NOT EXISTS idx_duplicate_detections_entity2 ON duplicate_detections(entity_id_2);
+CREATE INDEX IF NOT EXISTS idx_duplicate_detections_status ON duplicate_detections(status);
+CREATE INDEX IF NOT EXISTS idx_duplicate_detections_confidence ON duplicate_detections(confidence_level DESC);
+CREATE INDEX IF NOT EXISTS idx_duplicate_detections_detected_at ON duplicate_detections(detected_at DESC);
+CREATE INDEX IF NOT EXISTS idx_duplicate_detections_entity_type ON duplicate_detections(entity_type);
 
 -- Composite index for finding high-confidence duplicates
-CREATE INDEX idx_duplicate_high_confidence ON duplicate_detections(entity_type, status, confidence_level DESC)
+CREATE INDEX IF NOT EXISTS idx_duplicate_high_confidence ON duplicate_detections(entity_type, status, confidence_level DESC)
 WHERE status = 'pending' AND confidence_level >= 0.85;
 
 COMMENT ON TABLE duplicate_detections IS 'Tracks all duplicate detection results with confidence scores';
@@ -80,14 +80,14 @@ CREATE TABLE IF NOT EXISTS duplicate_clusters (
   CONSTRAINT valid_cluster_entity_type CHECK (entity_type IN ('deal', 'vendor', 'contact'))
 );
 
-CREATE INDEX idx_duplicate_clusters_entity_type ON duplicate_clusters(entity_type);
-CREATE INDEX idx_duplicate_clusters_status ON duplicate_clusters(status);
-CREATE INDEX idx_duplicate_clusters_confidence ON duplicate_clusters(confidence_score DESC);
-CREATE INDEX idx_duplicate_clusters_created_at ON duplicate_clusters(created_at DESC);
-CREATE INDEX idx_duplicate_clusters_master ON duplicate_clusters(master_entity_id);
+CREATE INDEX IF NOT EXISTS idx_duplicate_clusters_entity_type ON duplicate_clusters(entity_type);
+CREATE INDEX IF NOT EXISTS idx_duplicate_clusters_status ON duplicate_clusters(status);
+CREATE INDEX IF NOT EXISTS idx_duplicate_clusters_confidence ON duplicate_clusters(confidence_score DESC);
+CREATE INDEX IF NOT EXISTS idx_duplicate_clusters_created_at ON duplicate_clusters(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_duplicate_clusters_master ON duplicate_clusters(master_entity_id);
 
 -- GIN index for entity_ids array queries
-CREATE INDEX idx_duplicate_clusters_entity_ids ON duplicate_clusters USING GIN(entity_ids);
+CREATE INDEX IF NOT EXISTS idx_duplicate_clusters_entity_ids ON duplicate_clusters USING GIN(entity_ids);
 
 COMMENT ON TABLE duplicate_clusters IS 'Groups of duplicate entities identified through detection';
 COMMENT ON COLUMN duplicate_clusters.cluster_key IS 'Deterministic key: pipe-separated sorted entity IDs';
@@ -129,14 +129,14 @@ CREATE TABLE IF NOT EXISTS merge_history (
   )
 );
 
-CREATE INDEX idx_merge_history_target ON merge_history(target_entity_id);
-CREATE INDEX idx_merge_history_merged_at ON merge_history(merged_at DESC);
-CREATE INDEX idx_merge_history_merged_by ON merge_history(merged_by);
-CREATE INDEX idx_merge_history_entity_type ON merge_history(entity_type);
-CREATE INDEX idx_merge_history_unmerged ON merge_history(unmerged);
+CREATE INDEX IF NOT EXISTS idx_merge_history_target ON merge_history(target_entity_id);
+CREATE INDEX IF NOT EXISTS idx_merge_history_merged_at ON merge_history(merged_at DESC);
+CREATE INDEX IF NOT EXISTS idx_merge_history_merged_by ON merge_history(merged_by);
+CREATE INDEX IF NOT EXISTS idx_merge_history_entity_type ON merge_history(entity_type);
+CREATE INDEX IF NOT EXISTS idx_merge_history_unmerged ON merge_history(unmerged);
 
 -- GIN index for source_entity_ids array queries
-CREATE INDEX idx_merge_history_source_ids ON merge_history USING GIN(source_entity_ids);
+CREATE INDEX IF NOT EXISTS idx_merge_history_source_ids ON merge_history USING GIN(source_entity_ids);
 
 COMMENT ON TABLE merge_history IS 'Complete audit trail of all entity merge operations';
 COMMENT ON COLUMN merge_history.merged_data IS 'JSONB snapshot of the merged entity data';
@@ -165,9 +165,9 @@ CREATE TABLE IF NOT EXISTS field_conflicts (
   )
 );
 
-CREATE INDEX idx_field_conflicts_merge ON field_conflicts(merge_history_id);
-CREATE INDEX idx_field_conflicts_field ON field_conflicts(field_name);
-CREATE INDEX idx_field_conflicts_manual ON field_conflicts(manual_override);
+CREATE INDEX IF NOT EXISTS idx_field_conflicts_merge ON field_conflicts(merge_history_id);
+CREATE INDEX IF NOT EXISTS idx_field_conflicts_field ON field_conflicts(field_name);
+CREATE INDEX IF NOT EXISTS idx_field_conflicts_manual ON field_conflicts(manual_override);
 
 COMMENT ON TABLE field_conflicts IS 'Tracks field-level conflicts encountered during merges';
 COMMENT ON COLUMN field_conflicts.source_values IS 'JSONB: [{entityId, value, confidence, lastUpdated}, ...]';
