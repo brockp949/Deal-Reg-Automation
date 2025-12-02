@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { z } from 'zod';
+import { useQuery } from '@tanstack/react-query';
 import { Plus, Loader2 } from 'lucide-react';
-import { dealAPI, vendorAPI } from '@/lib/api';
-import { toast } from 'sonner';
+import { vendorAPI } from '@/lib/api';
+import { dealSchema, type DealFormData } from '@/schemas/dealSchema';
+import { useCreateDeal } from '@/hooks/useDeals';
 import {
   Dialog,
   DialogContent,
@@ -26,23 +26,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
-// Validation schema
-const dealSchema = z.object({
-  vendor_id: z.string().min(1, 'Please select a vendor'),
-  deal_name: z.string().min(2, 'Deal name must be at least 2 characters'),
-  deal_value: z.number().min(0, 'Deal value must be positive').or(z.string().transform(Number)),
-  currency: z.string().default('USD'),
-  customer_name: z.string().optional(),
-  customer_industry: z.string().optional(),
-  status: z.enum(['registered', 'approved', 'rejected', 'closed-won', 'closed-lost']).default('registered'),
-  deal_stage: z.string().optional(),
-  probability: z.number().min(0).max(100).optional().or(z.string().transform(Number).optional()),
-  expected_close_date: z.string().optional(),
-  notes: z.string().optional(),
-});
-
-type DealFormData = z.infer<typeof dealSchema>;
-
 interface DealCreateDialogProps {
   preselectedVendorId?: string;
   trigger?: React.ReactNode;
@@ -50,7 +33,6 @@ interface DealCreateDialogProps {
 
 export default function DealCreateDialog({ preselectedVendorId, trigger }: DealCreateDialogProps) {
   const [open, setOpen] = useState(false);
-  const queryClient = useQueryClient();
 
   // Fetch vendors for selection
   const { data: vendorsData } = useQuery({
@@ -79,36 +61,26 @@ export default function DealCreateDialog({ preselectedVendorId, trigger }: DealC
     },
   });
 
-  const createMutation = useMutation({
-    mutationFn: async (data: DealFormData) => {
-      const processedData = {
-        ...data,
-        deal_value: Number(data.deal_value),
-        probability: data.probability ? Number(data.probability) : undefined,
-        customer_name: data.customer_name || undefined,
-        customer_industry: data.customer_industry || undefined,
-        deal_stage: data.deal_stage || undefined,
-        expected_close_date: data.expected_close_date || undefined,
-        notes: data.notes || undefined,
-      };
-
-      return await dealAPI.create(processedData);
-    },
-    onSuccess: () => {
-      toast.success('Deal created successfully');
-      queryClient.invalidateQueries({ queryKey: ['deals'] });
-      queryClient.invalidateQueries({ queryKey: ['vendor-deals'] });
-      queryClient.invalidateQueries({ queryKey: ['deals-dashboard'] });
-      reset();
-      setOpen(false);
-    },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.error || 'Failed to create deal');
-    },
-  });
+  const createMutation = useCreateDeal();
 
   const onSubmit = (data: DealFormData) => {
-    createMutation.mutate(data);
+    const processedData = {
+      ...data,
+      deal_value: Number(data.deal_value),
+      probability: data.probability ? Number(data.probability) : undefined,
+      customer_name: data.customer_name || undefined,
+      customer_industry: data.customer_industry || undefined,
+      deal_stage: data.deal_stage || undefined,
+      expected_close_date: data.expected_close_date || undefined,
+      notes: data.notes || undefined,
+    };
+
+    createMutation.mutate(processedData as any, {
+      onSuccess: () => {
+        reset();
+        setOpen(false);
+      },
+    });
   };
 
   const vendorId = watch('vendor_id');

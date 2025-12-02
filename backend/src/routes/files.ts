@@ -9,7 +9,7 @@ import { ApiResponse, SourceFile } from '../types';
 import logger from '../utils/logger';
 import { computeFileChecksum, performVirusScan, recordFileSecurityEvent } from '../services/fileSecurity';
 import { storeConfigFile } from '../services/configStorage';
-import { createRateLimiter } from '../middleware/rateLimiter';
+import { createRateLimiter, uploadLimiter } from '../middleware/rateLimiter';
 import { requireRole } from '../api/middleware/apiKeyAuth';
 
 const router = Router();
@@ -71,15 +71,11 @@ function validateUploadRequest(req: Request): { valid: boolean; error?: string }
   return { valid: true };
 }
 
-const uploadLimiter = createRateLimiter({
-  windowMs: 15 * 60 * 1000,
-  max: 30,
-  message: 'Upload rate limit exceeded. Please try again later.',
-});
-
+// Use the new uploadLimiter from middleware (10 uploads per 15 min)
+// For batch uploads, keep stricter limit
 const batchUploadLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 5,
   message: 'Batch upload rate limit exceeded. Please try again later.',
 });
 

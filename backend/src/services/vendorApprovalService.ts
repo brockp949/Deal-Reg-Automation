@@ -637,8 +637,8 @@ export async function resolveVendorReviewItem(
     [id, payload.notes || null, payload.resolved_by || 'system']
   );
 
-  // When denying a vendor suggestion, also queue any pending deals back for manual review
-  await promotePendingDealsForReview();
+  // When denying a vendor suggestion, deals remain in pending state
+  // No automatic promotion needed on denial
 
   return denyResult.rows[0];
 }
