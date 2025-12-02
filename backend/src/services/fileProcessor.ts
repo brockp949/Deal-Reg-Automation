@@ -562,7 +562,7 @@ async function processTranscriptFile(filePath: string) {
     partnerVendorName = matchedVendor || deal.partner_company_name;
 
     // Only create new vendor if there's NO match AND we haven't added it yet
-    if (!matchedVendor && !vendorSet.has(partnerVendorName)) {
+    if (!matchedVendor && partnerVendorName && !vendorSet.has(partnerVendorName)) {
       vendors.push({
         name: partnerVendorName,
         email_domain: deal.partner_email ? deal.partner_email.split('@')[1] : null,
@@ -604,7 +604,7 @@ async function processTranscriptFile(filePath: string) {
     prospectVendorName = matchedVendor || deal.prospect_company_name;
 
     // Only create new vendor if there's NO match, it's different from partner, and we haven't added it yet
-    if (!matchedVendor && prospectVendorName !== partnerVendorName && !vendorSet.has(prospectVendorName)) {
+    if (!matchedVendor && prospectVendorName && prospectVendorName !== partnerVendorName && !vendorSet.has(prospectVendorName)) {
       vendors.push({
         name: prospectVendorName,
         email_domain: deal.prospect_website ? new URL(deal.prospect_website).hostname : null,

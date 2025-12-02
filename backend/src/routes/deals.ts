@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { query } from '../db';
 import { DealRegistration, CreateDealInput, UpdateDealInput, ApiResponse, PaginatedResponse } from '../types';
 import logger from '../utils/logger';
+import { dealValidations } from '../middleware/validation';
 
 const router = Router();
 
@@ -9,7 +10,7 @@ const router = Router();
  * GET /api/deals
  * Get all deals with optional filtering and pagination
  */
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', dealValidations.getAll, async (req: Request, res: Response) => {
   try {
     const {
       page = '1',
@@ -20,6 +21,7 @@ router.get('/', async (req: Request, res: Response) => {
       max_value,
       sort_by = 'created_at',
       sort_order = 'desc',
+      search,
     } = req.query;
 
     const pageNum = parseInt(page as string, 10);
@@ -51,24 +53,29 @@ router.get('/', async (req: Request, res: Response) => {
       params.push(parseFloat(max_value as string));
     }
 
+    if (search) {
+      // Search across deal name, customer name, vendor name, and notes
+      conditions.push(`(
+        d.deal_name ILIKE $${paramCount} OR
+        d.customer_name ILIKE $${paramCount} OR
+        v.name ILIKE $${paramCount} OR
+        d.notes ILIKE $${paramCount}
+      )`);
+      params.push(`%${search}%`);
+      paramCount++;
+    }
+
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    // Get total count
-    const countResult = await query(
-      `SELECT COUNT(*) FROM deal_registrations ${whereClause}`,
-      params
-    );
-    const total = parseInt(countResult.rows[0].count, 10);
-
-    // Get deals
-    const sortColumn = ['deal_name', 'deal_value', 'registration_date', 'created_at'].includes(sort_by as string)
-      ? sort_by
-      : 'created_at';
+    // Validate and sanitize sort column to prevent SQL injection
+    const allowedSortColumns = ['deal_name', 'deal_value', 'registration_date', 'created_at', 'status'];
+    const sortColumn = allowedSortColumns.includes(sort_by as string) ? sort_by : 'created_at';
     const sortDirection = sort_order === 'asc' ? 'ASC' : 'DESC';
 
+    // Use window function to get total count in a single query
     params.push(limitNum, offset);
     const dealsResult = await query(
-      `SELECT d.*, v.name as vendor_name
+      `SELECT d.*, v.name as vendor_name, COUNT(*) OVER() AS total_count
        FROM deal_registrations d
        LEFT JOIN vendors v ON d.vendor_id = v.id
        ${whereClause}
@@ -77,9 +84,14 @@ router.get('/', async (req: Request, res: Response) => {
       params
     );
 
+    const total = dealsResult.rows.length > 0 ? parseInt(dealsResult.rows[0].total_count, 10) : 0;
+
+    // Remove total_count from results
+    const deals = dealsResult.rows.map(({ total_count, ...deal }) => deal);
+
     const response: PaginatedResponse<DealRegistration> = {
       success: true,
-      data: dealsResult.rows,
+      data: deals,
       pagination: {
         page: pageNum,
         limit: limitNum,
@@ -102,7 +114,7 @@ router.get('/', async (req: Request, res: Response) => {
  * GET /api/deals/:id
  * Get a single deal by ID
  */
-router.get('/:id', async (req: Request, res: Response) => {
+router.get('/:id', dealValidations.getById, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -140,7 +152,7 @@ router.get('/:id', async (req: Request, res: Response) => {
  * POST /api/deals
  * Create a new deal
  */
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', dealValidations.create, async (req: Request, res: Response) => {
   try {
     const input: CreateDealInput = req.body;
 
@@ -194,7 +206,7 @@ router.post('/', async (req: Request, res: Response) => {
  * PUT /api/deals/:id
  * Update a deal
  */
-router.put('/:id', async (req: Request, res: Response) => {
+router.put('/:id', dealValidations.update, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const input: UpdateDealInput = req.body;
@@ -262,7 +274,7 @@ router.put('/:id', async (req: Request, res: Response) => {
  * DELETE /api/deals/:id
  * Delete a deal
  */
-router.delete('/:id', async (req: Request, res: Response) => {
+router.delete('/:id', dealValidations.delete, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -292,7 +304,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
  * PATCH /api/deals/:id/status
  * Update deal status
  */
-router.patch('/:id/status', async (req: Request, res: Response) => {
+router.patch('/:id/status', dealValidations.updateStatus, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { status } = req.body;

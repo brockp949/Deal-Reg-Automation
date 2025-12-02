@@ -61,31 +61,31 @@ CREATE TABLE IF NOT EXISTS error_logs (
 -- ============================================================================
 
 -- Query by category and severity
-CREATE INDEX idx_error_logs_category_severity
+CREATE INDEX IF NOT EXISTS idx_error_logs_category_severity
   ON error_logs(error_category, error_severity, occurred_at DESC);
 
 -- Query by source file
-CREATE INDEX idx_error_logs_source_file
+CREATE INDEX IF NOT EXISTS idx_error_logs_source_file
   ON error_logs(source_file_id, occurred_at DESC);
 
 -- Query by entity
-CREATE INDEX idx_error_logs_entity
+CREATE INDEX IF NOT EXISTS idx_error_logs_entity
   ON error_logs(entity_type, entity_id);
 
 -- Query by resolution status
-CREATE INDEX idx_error_logs_resolved
+CREATE INDEX IF NOT EXISTS idx_error_logs_resolved
   ON error_logs(is_resolved, occurred_at DESC);
 
 -- Query by error type
-CREATE INDEX idx_error_logs_type
+CREATE INDEX IF NOT EXISTS idx_error_logs_type
   ON error_logs(error_type, occurred_at DESC);
 
 -- Query by date range
-CREATE INDEX idx_error_logs_occurred
+CREATE INDEX IF NOT EXISTS idx_error_logs_occurred
   ON error_logs(occurred_at DESC);
 
 -- JSONB index for error_data queries
-CREATE INDEX idx_error_logs_data
+CREATE INDEX IF NOT EXISTS idx_error_logs_data
   ON error_logs USING GIN (error_data);
 
 -- ============================================================================

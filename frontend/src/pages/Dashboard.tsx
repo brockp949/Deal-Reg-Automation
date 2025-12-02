@@ -6,10 +6,12 @@ import { formatCurrency, formatDate, formatFileSize } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { KPICardSkeleton } from '@/components/skeletons/KPICardSkeleton';
+import { ActivityListSkeleton } from '@/components/skeletons/ActivityListSkeleton';
 
 export default function Dashboard() {
   // Fetch statistics
-  const { data: vendorsData } = useQuery({
+  const { data: vendorsData, isLoading: vendorsLoading } = useQuery({
     queryKey: ['vendors-dashboard'],
     queryFn: async () => {
       const response = await vendorAPI.getAll({ page: 1, limit: 5 });
@@ -17,7 +19,7 @@ export default function Dashboard() {
     },
   });
 
-  const { data: dealsData } = useQuery({
+  const { data: dealsData, isLoading: dealsLoading } = useQuery({
     queryKey: ['deals-dashboard'],
     queryFn: async () => {
       const response = await dealAPI.getAll({ page: 1, limit: 10 });
@@ -25,7 +27,7 @@ export default function Dashboard() {
     },
   });
 
-  const { data: filesData } = useQuery({
+  const { data: filesData, isLoading: filesLoading } = useQuery({
     queryKey: ['files-dashboard'],
     queryFn: async () => {
       const response = await fileAPI.getAll({ limit: 5 });
@@ -124,66 +126,75 @@ export default function Dashboard() {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground mb-1">Total Vendors</p>
-                <p className="text-3xl font-bold">{totalVendors}</p>
-                <p className="text-sm text-green-600 mt-1">
-                  {vendors.length > 0 && `+${vendors.length} recent`}
-                </p>
-              </div>
-              <Building2 className="h-10 w-10 text-primary" />
-            </div>
-          </CardContent>
-        </Card>
+        {vendorsLoading || dealsLoading || filesLoading ? (
+          <KPICardSkeleton count={4} />
+        ) : (
+          <>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground mb-1">Total Vendors</p>
+                    <p className="text-3xl font-bold">{totalVendors}</p>
+                    <p className="text-sm text-green-600 mt-1">
+                      {vendors.length > 0 && `+${vendors.length} recent`}
+                    </p>
+                  </div>
+                  <Building2 className="h-10 w-10 text-primary" />
+                </div>
+              </CardContent>
+            </Card>
 
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground mb-1">Total Deals</p>
-                <p className="text-3xl font-bold">{totalDeals}</p>
-                <p className="text-sm text-green-600 mt-1">
-                  {deals.length > 0 && `+${deals.length} recent`}
-                </p>
-              </div>
-              <Briefcase className="h-10 w-10 text-green-500" />
-            </div>
-          </CardContent>
-        </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground mb-1">Total Deals</p>
+                    <p className="text-3xl font-bold">{totalDeals}</p>
+                    <p className="text-sm text-green-600 mt-1">
+                      {deals.length > 0 && `+${deals.length} recent`}
+                    </p>
+                  </div>
+                  <Briefcase className="h-10 w-10 text-green-500" />
+                </div>
+              </CardContent>
+            </Card>
 
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground mb-1">Files Processed</p>
-                <p className="text-3xl font-bold">{totalFiles}</p>
-                <p className="text-sm text-muted-foreground mt-1">Completed</p>
-              </div>
-              <FileText className="h-10 w-10 text-blue-500" />
-            </div>
-          </CardContent>
-        </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground mb-1">Files Processed</p>
+                    <p className="text-3xl font-bold">{totalFiles}</p>
+                    <p className="text-sm text-muted-foreground mt-1">Completed</p>
+                  </div>
+                  <FileText className="h-10 w-10 text-blue-500" />
+                </div>
+              </CardContent>
+            </Card>
 
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground mb-1">Deal Value</p>
-                <p className="text-3xl font-bold">{formatCurrency(totalDealValue)}</p>
-                <p className="text-sm text-muted-foreground mt-1">Total pipeline</p>
-              </div>
-              <TrendingUp className="h-10 w-10 text-amber-500" />
-            </div>
-          </CardContent>
-        </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground mb-1">Deal Value</p>
+                    <p className="text-3xl font-bold">{formatCurrency(totalDealValue)}</p>
+                    <p className="text-sm text-muted-foreground mt-1">Total pipeline</p>
+                  </div>
+                  <TrendingUp className="h-10 w-10 text-amber-500" />
+                </div>
+              </CardContent>
+            </Card>
+          </>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent Activity */}
-        <Card>
+        {filesLoading ? (
+          <ActivityListSkeleton items={5} />
+        ) : (
+          <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle>Recent Files</CardTitle>
@@ -226,9 +237,13 @@ export default function Dashboard() {
             )}
           </CardContent>
         </Card>
+        )}
 
         {/* Recent Deals */}
-        <Card>
+        {dealsLoading ? (
+          <ActivityListSkeleton items={5} />
+        ) : (
+          <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle>Recent Deals</CardTitle>
@@ -288,6 +303,7 @@ export default function Dashboard() {
             )}
           </CardContent>
         </Card>
+        )}
       </div>
 
       {/* Quick Actions */}

@@ -3,6 +3,7 @@ import { query } from '../db';
 import { normalizeVendorName, extractEmailDomains } from '../utils/fileHelpers';
 import { Vendor, CreateVendorInput, UpdateVendorInput, ApiResponse, PaginatedResponse } from '../types';
 import logger from '../utils/logger';
+import { vendorValidations } from '../middleware/validation';
 
 const router = Router();
 
@@ -10,7 +11,7 @@ const router = Router();
  * GET /api/vendors
  * Get all vendors with optional filtering and pagination
  */
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', vendorValidations.getAll, async (req: Request, res: Response) => {
   try {
     const {
       page = '1',
@@ -55,30 +56,28 @@ router.get('/', async (req: Request, res: Response) => {
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    // Get total count
-    const countResult = await query(
-      `SELECT COUNT(*) FROM vendors ${whereClause}`,
-      params
-    );
-    const total = parseInt(countResult.rows[0].count, 10);
-
-    // Get vendors
-    const sortColumn = ['name', 'created_at', 'updated_at'].includes(sort_by as string)
-      ? sort_by
-      : 'created_at';
+    // Validate and sanitize sort column to prevent SQL injection
+    const allowedSortColumns = ['name', 'created_at', 'updated_at', 'status', 'approval_status'];
+    const sortColumn = allowedSortColumns.includes(sort_by as string) ? sort_by : 'created_at';
     const sortDirection = sort_order === 'asc' ? 'ASC' : 'DESC';
 
+    // Use window function to get total count in a single query
     params.push(limitNum, offset);
     const vendorsResult = await query(
-      `SELECT * FROM vendors ${whereClause}
+      `SELECT *, COUNT(*) OVER() AS total_count FROM vendors ${whereClause}
        ORDER BY ${sortColumn} ${sortDirection}
        LIMIT $${paramCount++} OFFSET $${paramCount++}`,
       params
     );
 
+    const total = vendorsResult.rows.length > 0 ? parseInt(vendorsResult.rows[0].total_count, 10) : 0;
+
+    // Remove total_count from results
+    const vendors = vendorsResult.rows.map(({ total_count, ...vendor }) => vendor);
+
     const response: PaginatedResponse<Vendor> = {
       success: true,
-      data: vendorsResult.rows,
+      data: vendors,
       pagination: {
         page: pageNum,
         limit: limitNum,
@@ -101,7 +100,7 @@ router.get('/', async (req: Request, res: Response) => {
  * GET /api/vendors/:id
  * Get a single vendor by ID
  */
-router.get('/:id', async (req: Request, res: Response) => {
+router.get('/:id', vendorValidations.getById, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -133,7 +132,7 @@ router.get('/:id', async (req: Request, res: Response) => {
  * POST /api/vendors
  * Create a new vendor
  */
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', vendorValidations.create, async (req: Request, res: Response) => {
   try {
     const input: CreateVendorInput = req.body;
 
@@ -192,7 +191,7 @@ router.post('/', async (req: Request, res: Response) => {
  * PUT /api/vendors/:id
  * Update a vendor
  */
-router.put('/:id', async (req: Request, res: Response) => {
+router.put('/:id', vendorValidations.update, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const input: UpdateVendorInput = req.body;
@@ -300,7 +299,7 @@ router.put('/:id', async (req: Request, res: Response) => {
  * DELETE /api/vendors/:id
  * Delete a vendor
  */
-router.delete('/:id', async (req: Request, res: Response) => {
+router.delete('/:id', vendorValidations.delete, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
