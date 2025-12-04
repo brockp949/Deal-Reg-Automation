@@ -25,6 +25,7 @@ import vendorMatchingRoutes from './routes/vendorMatching';
 import duplicateDetectionRoutes from './routes/duplicateDetection';
 import mergeManagementRoutes from './routes/mergeManagement';
 import correlationAndQualityRoutes from './routes/correlationAndQuality';
+import jobsRoutes from './routes/jobs';
 
 const app = express();
 
@@ -43,19 +44,51 @@ app.use(morgan('combined', {
   },
 }));
 
-// Health check endpoint
-app.get('/health', async (_req: Request, res: Response) => {
+// Health check endpoint with optional detailed metrics
+app.get('/health', async (req: Request, res: Response) => {
   try {
+    const detailed = req.query.detailed === 'true';
     await pool.query('SELECT 1');
-    res.json({
+
+    const health: any = {
       status: 'healthy',
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
-    });
+      version: process.env.npm_package_version || '1.0.0',
+      environment: config.env,
+    };
+
+    if (detailed) {
+      // Memory usage
+      const memUsage = process.memoryUsage();
+      health.memory = {
+        heapUsed: Math.round(memUsage.heapUsed / 1024 / 1024) + 'MB',
+        heapTotal: Math.round(memUsage.heapTotal / 1024 / 1024) + 'MB',
+        rss: Math.round(memUsage.rss / 1024 / 1024) + 'MB',
+        external: Math.round(memUsage.external / 1024 / 1024) + 'MB',
+      };
+
+      // Database connection pool stats
+      health.database = {
+        totalConnections: pool.totalCount,
+        idleConnections: pool.idleCount,
+        waitingClients: pool.waitingCount,
+      };
+
+      // CPU usage
+      const cpuUsage = process.cpuUsage();
+      health.cpu = {
+        user: Math.round(cpuUsage.user / 1000) + 'ms',
+        system: Math.round(cpuUsage.system / 1000) + 'ms',
+      };
+    }
+
+    res.json(health);
   } catch (error) {
     res.status(503).json({
       status: 'unhealthy',
       error: 'Database connection failed',
+      timestamp: new Date().toISOString(),
     });
   }
 });
@@ -79,6 +112,7 @@ app.use(`${config.apiPrefix}/duplicates`, duplicateDetectionRoutes);
 app.use(`${config.apiPrefix}/merge`, mergeManagementRoutes);
 app.use(`${config.apiPrefix}/correlation`, correlationAndQualityRoutes);
 app.use(`${config.apiPrefix}/quality`, correlationAndQualityRoutes);
+app.use(`${config.apiPrefix}/jobs`, jobsRoutes);
 
 // 404 handler
 app.use((req: Request, res: Response) => {

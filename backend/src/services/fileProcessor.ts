@@ -18,6 +18,7 @@ import { StandardizedTranscriptParser } from '../parsers/StandardizedTranscriptP
 import { queuePendingDeal } from './pendingDealService';
 import { matchVendor } from './vendorMatcher';
 import { logParsingError, logExtractionError, logError } from './errorTrackingService';
+import { createJob, startJob, updateJobProgress, completeJob, failJob } from './jobTracker';
 
 interface ProcessingResult {
   vendorsCreated: number;
@@ -43,6 +44,10 @@ async function updateFileProgress(fileId: string, progress: number) {
  * Processes uploaded file and creates vendors, deals, and contacts
  */
 export async function processFile(fileId: string): Promise<ProcessingResult> {
+  // Create a job to track this processing
+  const jobId = createJob('file_processing', { fileId });
+  startJob(jobId, 'Initializing file processing');
+
   const result: ProcessingResult = {
     vendorsCreated: 0,
     dealsCreated: 0,
@@ -292,9 +297,15 @@ export async function processFile(fileId: string): Promise<ProcessingResult> {
 
     logger.info('File processing completed', { fileId, result });
 
+    // Mark job as completed with results
+    completeJob(jobId, result);
+
     return result;
   } catch (error: any) {
     logger.error('File processing failed', { fileId, error: error.message });
+
+    // Mark job as failed
+    failJob(jobId, error.message);
 
     // Update file status to failed
     await query(
