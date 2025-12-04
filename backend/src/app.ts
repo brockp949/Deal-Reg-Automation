@@ -26,6 +26,9 @@ import duplicateDetectionRoutes from './routes/duplicateDetection';
 import mergeManagementRoutes from './routes/mergeManagement';
 import correlationAndQualityRoutes from './routes/correlationAndQuality';
 import jobsRoutes from './routes/jobs';
+import qualityAlertsRoutes from './routes/qualityAlerts';
+import fileProgressRoutes from './routes/fileProgress';
+import batchDuplicatesRoutes from './routes/batchDuplicates';
 
 const app = express();
 
@@ -113,6 +116,9 @@ app.use(`${config.apiPrefix}/merge`, mergeManagementRoutes);
 app.use(`${config.apiPrefix}/correlation`, correlationAndQualityRoutes);
 app.use(`${config.apiPrefix}/quality`, correlationAndQualityRoutes);
 app.use(`${config.apiPrefix}/jobs`, jobsRoutes);
+app.use(`${config.apiPrefix}/quality/alerts`, qualityAlertsRoutes);
+app.use(`${config.apiPrefix}/files`, fileProgressRoutes);
+app.use(`${config.apiPrefix}/duplicates`, batchDuplicatesRoutes);
 
 // 404 handler
 app.use((req: Request, res: Response) => {
