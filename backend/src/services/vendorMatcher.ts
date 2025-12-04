@@ -41,6 +41,8 @@ export interface VendorMatchResult {
     productMatches?: string[];
     keywordMatches?: string[];
     aliasMatch?: string;
+    productMatchScore?: number;
+    keywordMatchScore?: number;
   };
   alternativeMatches?: Array<{
     vendor: any;
@@ -805,6 +807,92 @@ export async function getMatchingStatistics(): Promise<{
   };
 }
 
+/**
+ * Generate human-readable explanation for a match result
+ */
+export function explainMatch(result: VendorMatchResult): {
+  summary: string;
+  details: string[];
+  confidenceLevel: 'High' | 'Medium' | 'Low';
+} {
+  if (!result.matched || !result.vendor) {
+    return {
+      summary: 'No matching vendor found.',
+      details: ['The system could not find a vendor matching the provided criteria.'],
+      confidenceLevel: 'Low',
+    };
+  }
+
+  const details: string[] = [];
+  let summary = '';
+
+  // Determine confidence level
+  let confidenceLevel: 'High' | 'Medium' | 'Low' = 'Low';
+  if (result.confidence >= 0.9) confidenceLevel = 'High';
+  else if (result.confidence >= 0.7) confidenceLevel = 'Medium';
+
+  // Generate explanation based on strategy
+  switch (result.matchStrategy) {
+    case 'exact_name':
+      summary = `Exact match found for vendor "${result.vendor.name}".`;
+      details.push('The extracted name matches the vendor name exactly (ignoring case and common suffixes).');
+      break;
+
+    case 'alias_match':
+      summary = `Match found via alias "${result.matchDetails?.aliasMatch}".`;
+      details.push(`The name matched a known alias for "${result.vendor.name}".`);
+      break;
+
+    case 'email_domain':
+      summary = `Match found via email domain.`;
+      details.push(`The email domain matches one of the domains registered for "${result.vendor.name}".`);
+      break;
+
+    case 'fuzzy_exact':
+    case 'fuzzy_high':
+      summary = `High confidence fuzzy match found for "${result.vendor.name}".`;
+      details.push(`The name is very similar to "${result.vendor.name}" (${((result.matchDetails?.nameSimilarity || 0) * 100).toFixed(1)}% similarity).`);
+      break;
+
+    case 'fuzzy_medium':
+    case 'fuzzy_low':
+      summary = `Potential fuzzy match found for "${result.vendor.name}".`;
+      details.push(`The name has some similarity to "${result.vendor.name}" (${((result.matchDetails?.nameSimilarity || 0) * 100).toFixed(1)}% similarity).`);
+      break;
+
+    case 'product_match':
+      summary = `Match inferred from product mentions.`;
+      details.push(`The text mentions products associated with "${result.vendor.name}".`);
+      if (result.matchDetails?.productMatches) {
+        details.push(`Matched products: ${result.matchDetails.productMatches.join(', ')}`);
+      }
+      break;
+
+    case 'combined_factors':
+      summary = `Match found based on multiple factors.`;
+      if (result.matchDetails?.nameSimilarity) {
+        details.push(`Name similarity: ${(result.matchDetails.nameSimilarity * 100).toFixed(1)}%`);
+      }
+      if (result.matchDetails?.domainMatch) {
+        details.push('Email domain matched.');
+      }
+      if (result.matchDetails?.productMatchScore) {
+        details.push('Product keywords matched.');
+      }
+      break;
+
+    default:
+      summary = `Match found for "${result.vendor.name}".`;
+      details.push(`Strategy used: ${result.matchStrategy}`);
+  }
+
+  return {
+    summary,
+    details,
+    confidenceLevel,
+  };
+}
+
 export default {
   matchVendor,
   matchMultipleVendors,
@@ -818,4 +906,5 @@ export default {
   inferVendorFromProducts,
   learnVendorPatterns,
   getMatchingStatistics,
+  explainMatch,
 };
