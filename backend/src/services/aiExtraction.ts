@@ -545,7 +545,14 @@ Output valid JSON only, with no additional text or formatting.`;
       });
     }
 
-    avgConfidence = entities.length > 0 ? avgConfidence / entities.length : 0;
+    // Calibrate confidence scores
+    entities.forEach(entity => {
+      entity.confidence = calibrateConfidence(entity.confidence, entity.type, entity.data);
+    });
+
+    avgConfidence = entities.length > 0
+      ? entities.reduce((sum, e) => sum + e.confidence, 0) / entities.length
+      : 0;
 
     const extractionTimeMs = Date.now() - startTime;
     // Use model from API response (already defined above from callAIWithFallback)
@@ -820,4 +827,38 @@ export async function extractAndValidateEntities(
     extraction,
     validations,
   };
+}
+
+/**
+ * Calibrate confidence score based on entity type and data quality
+ */
+export function calibrateConfidence(rawConfidence: number, type: string, data: any): number {
+  let score = rawConfidence;
+
+  // 1. Penalize for missing critical fields
+  if (type === 'deal') {
+    if (!data.dealName) score *= 0.8;
+    if (!data.customerName) score *= 0.8;
+    if (!data.dealValue && !data.value) score *= 0.95;
+  } else if (type === 'vendor') {
+    if (!data.name) score *= 0.8;
+  } else if (type === 'contact') {
+    if (!data.name) score *= 0.8;
+    if (!data.email && !data.phone) score *= 0.9;
+  }
+
+  // 2. Boost for high-quality indicators
+  if (type === 'deal') {
+    // Currency symbol presence suggests better value extraction
+    if (data.currency || (typeof data.dealValue === 'string' && /[$€£¥]/.test(data.dealValue))) {
+      score = Math.min(0.99, score * 1.05);
+    }
+    // Specific date format usually indicates better extraction
+    if (data.closeDate && !isNaN(Date.parse(data.closeDate))) {
+      score = Math.min(0.99, score * 1.05);
+    }
+  }
+
+  // 3. Clamp between 0 and 1
+  return Math.max(0, Math.min(1, score));
 }
