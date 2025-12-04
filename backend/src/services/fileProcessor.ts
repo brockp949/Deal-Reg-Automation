@@ -17,6 +17,7 @@ import { StandardizedCSVParser } from '../parsers/StandardizedCSVParser';
 import { StandardizedTranscriptParser } from '../parsers/StandardizedTranscriptParser';
 import { queuePendingDeal } from './pendingDealService';
 import { matchVendor } from './vendorMatcher';
+import { logParsingError, logExtractionError, logError } from './errorTrackingService';
 
 interface ProcessingResult {
   vendorsCreated: number;
@@ -113,6 +114,21 @@ export async function processFile(fileId: string): Promise<ProcessingResult> {
       await updateFileProgress(fileId, 40);
     } catch (parseError: any) {
       result.errors.push(`Parse error: ${parseError.message}`);
+
+      // Log to error tracking service for comprehensive audit
+      await logParsingError({
+        sourceFileId: fileId,
+        fileName: file.filename,
+        fileType: file.file_type,
+        errorMessage: parseError.message,
+        errorSeverity: 'error',
+        errorType: 'file_parsing_failed',
+        errorData: {
+          stack: parseError.stack,
+          storagePath: file.storage_path,
+        },
+      }).catch(e => logger.warn('Failed to log parsing error to tracking service', { error: e }));
+
       throw parseError;
     }
 
@@ -374,7 +390,7 @@ async function processMboxFile(filePath: string, fileId: string) {
       emailDomain: emailDomain || undefined,
       existingVendors: existingVendors
     });
-    
+
     const matchedVendor = matchResult.matched ? matchResult.vendor.name : null;
     const vendorName = matchedVendor || extractedVendorName;
 

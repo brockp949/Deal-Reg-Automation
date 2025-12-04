@@ -1,4 +1,4 @@
-import { logError, logParsingError, getErrorById, getErrorsByFile, resolveError } from '../services/ErrorTrackingService';
+import { logError, logParsingError, getErrorById, getErrorsByFile, resolveError } from '../services/errorTrackingService';
 import pool from '../db';
 
 describe('ErrorTrackingService', () => {
