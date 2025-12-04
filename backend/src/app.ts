@@ -27,6 +27,7 @@ import mergeManagementRoutes from './routes/mergeManagement';
 import correlationAndQualityRoutes from './routes/correlationAndQuality';
 import jobsRoutes from './routes/jobs';
 import qualityAlertsRoutes from './routes/qualityAlerts';
+import qualityDashboardRoutes from './routes/qualityDashboard';
 import fileProgressRoutes from './routes/fileProgress';
 import batchDuplicatesRoutes from './routes/batchDuplicates';
 
@@ -117,6 +118,7 @@ app.use(`${config.apiPrefix}/correlation`, correlationAndQualityRoutes);
 app.use(`${config.apiPrefix}/quality`, correlationAndQualityRoutes);
 app.use(`${config.apiPrefix}/jobs`, jobsRoutes);
 app.use(`${config.apiPrefix}/quality/alerts`, qualityAlertsRoutes);
+app.use(`${config.apiPrefix}/quality/dashboard`, qualityDashboardRoutes);
 app.use(`${config.apiPrefix}/files`, fileProgressRoutes);
 app.use(`${config.apiPrefix}/duplicates`, batchDuplicatesRoutes);
 
