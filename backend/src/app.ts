@@ -31,6 +31,7 @@ import qualityDashboardRoutes from './routes/qualityDashboard';
 import fileProgressRoutes from './routes/fileProgress';
 import batchDuplicatesRoutes from './routes/batchDuplicates';
 import webhookRoutes from './routes/webhooks';
+import reportRoutes from './routes/reports';
 
 const app = express();
 
@@ -123,6 +124,7 @@ app.use(`${config.apiPrefix}/quality/dashboard`, qualityDashboardRoutes);
 app.use(`${config.apiPrefix}/files`, fileProgressRoutes);
 app.use(`${config.apiPrefix}/duplicates`, batchDuplicatesRoutes);
 app.use(`${config.apiPrefix}/webhooks`, webhookRoutes);
+app.use(`${config.apiPrefix}/reports`, reportRoutes);
 
 // 404 handler
 app.use((req: Request, res: Response) => {
