@@ -195,48 +195,48 @@ export default function Dashboard() {
           <ActivityListSkeleton items={5} />
         ) : (
           <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle>Recent Files</CardTitle>
-              <Button asChild size="sm" variant="outline">
-                <Link to="/upload">View All</Link>
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {files.length === 0 ? (
-              <div className="text-center py-8">
-                <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                <p className="text-muted-foreground mb-4">No files uploaded yet</p>
-                <Button asChild size="sm">
-                  <Link to="/upload">
-                    <Plus className="mr-2 h-4 w-4" />
-                    Upload Files
-                  </Link>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>Recent Files</CardTitle>
+                <Button asChild size="sm" variant="outline">
+                  <Link to="/upload">View All</Link>
                 </Button>
               </div>
-            ) : (
-              <div className="space-y-3">
-                {files.slice(0, 5).map((file: any) => (
-                  <div
-                    key={file.id}
-                    className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent/50 transition-colors"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{file.filename}</p>
-                      <div className="flex gap-2 text-sm text-muted-foreground mt-1">
-                        <span>{formatFileSize(file.file_size)}</span>
-                        <span>•</span>
-                        <span>{formatDate(file.upload_date)}</span>
+            </CardHeader>
+            <CardContent>
+              {files.length === 0 ? (
+                <div className="text-center py-8">
+                  <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                  <p className="text-muted-foreground mb-4">No files uploaded yet</p>
+                  <Button asChild size="sm">
+                    <Link to="/upload">
+                      <Plus className="mr-2 h-4 w-4" />
+                      Upload Files
+                    </Link>
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {files.slice(0, 5).map((file: any) => (
+                    <div
+                      key={file.id}
+                      className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent/50 transition-colors"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate">{file.filename}</p>
+                        <div className="flex gap-2 text-sm text-muted-foreground mt-1">
+                          <span>{formatFileSize(file.file_size)}</span>
+                          <span>•</span>
+                          <span>{formatDate(file.upload_date)}</span>
+                        </div>
                       </div>
+                      {getStatusBadge(file.processing_status)}
                     </div>
-                    {getStatusBadge(file.processing_status)}
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         )}
 
         {/* Recent Deals */}
@@ -244,65 +244,65 @@ export default function Dashboard() {
           <ActivityListSkeleton items={5} />
         ) : (
           <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle>Recent Deals</CardTitle>
-              <Button asChild size="sm" variant="outline">
-                <Link to="/vendors">View All</Link>
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {deals.length === 0 ? (
-              <div className="text-center py-8">
-                <Briefcase className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                <p className="text-muted-foreground mb-4">No deals registered yet</p>
-                <Button asChild size="sm">
-                  <Link to="/upload">
-                    <Plus className="mr-2 h-4 w-4" />
-                    Upload Files
-                  </Link>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>Recent Deals</CardTitle>
+                <Button asChild size="sm" variant="outline">
+                  <Link to="/vendors">View All</Link>
                 </Button>
               </div>
-            ) : (
-              <div className="space-y-3">
-                {deals.slice(0, 5).map((deal: any) => (
-                  <div
-                    key={deal.id}
-                    className="flex items-start justify-between p-3 border rounded-lg hover:bg-accent/50 transition-colors"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{deal.deal_name}</p>
-                      <div className="text-sm text-muted-foreground mt-1">
-                        {deal.vendor_name && <span>{deal.vendor_name}</span>}
-                        {deal.customer_name && (
-                          <>
-                            <span className="mx-1">•</span>
-                            <span>{deal.customer_name}</span>
-                          </>
-                        )}
-                      </div>
-                      <p className="text-sm font-medium mt-1">
-                        {formatCurrency(deal.deal_value, deal.currency)}
-                      </p>
-                    </div>
-                    <Badge
-                      variant={
-                        deal.status === 'closed-won'
-                          ? 'success'
-                          : deal.status === 'approved'
-                          ? 'default'
-                          : 'secondary'
-                      }
+            </CardHeader>
+            <CardContent>
+              {deals.length === 0 ? (
+                <div className="text-center py-8">
+                  <Briefcase className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                  <p className="text-muted-foreground mb-4">No deals registered yet</p>
+                  <Button asChild size="sm">
+                    <Link to="/upload">
+                      <Plus className="mr-2 h-4 w-4" />
+                      Upload Files
+                    </Link>
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {deals.slice(0, 5).map((deal: any) => (
+                    <div
+                      key={deal.id}
+                      className="flex items-start justify-between p-3 border rounded-lg hover:bg-accent/50 transition-colors"
                     >
-                      {deal.status}
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate">{deal.deal_name}</p>
+                        <div className="text-sm text-muted-foreground mt-1">
+                          {deal.vendor_name && <span>{deal.vendor_name}</span>}
+                          {deal.customer_name && (
+                            <>
+                              <span className="mx-1">•</span>
+                              <span>{deal.customer_name}</span>
+                            </>
+                          )}
+                        </div>
+                        <p className="text-sm font-medium mt-1">
+                          {formatCurrency(deal.deal_value, deal.currency)}
+                        </p>
+                      </div>
+                      <Badge
+                        variant={
+                          deal.status === 'closed-won'
+                            ? 'success'
+                            : deal.status === 'approved'
+                              ? 'default'
+                              : 'secondary'
+                        }
+                      >
+                        {deal.status}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         )}
       </div>
 
@@ -333,7 +333,27 @@ export default function Dashboard() {
               </Link>
             </Button>
 
-            <Button variant="outline" className="h-auto py-6 flex-col" disabled>
+            <Button
+              variant="outline"
+              className="h-auto py-6 flex-col"
+              onClick={async () => {
+                try {
+                  const response = await fetch('/api/export/csv', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ entity: 'deals' }),
+                  });
+                  const blob = await response.blob();
+                  const url = window.URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `deals-export-${new Date().toISOString().split('T')[0]}.csv`;
+                  a.click();
+                } catch (e) {
+                  console.error('Export failed', e);
+                }
+              }}
+            >
               <TrendingUp className="h-8 w-8 mb-2" />
               <span className="text-lg">Generate Report</span>
               <span className="text-xs font-normal opacity-80 mt-1">
