@@ -32,6 +32,7 @@ import fileProgressRoutes from './routes/fileProgress';
 import batchDuplicatesRoutes from './routes/batchDuplicates';
 import webhookRoutes from './routes/webhooks';
 import reportRoutes from './routes/reports';
+import mergeAuditRoutes from './routes/mergeAudit';
 
 const app = express();
 
@@ -125,6 +126,7 @@ app.use(`${config.apiPrefix}/files`, fileProgressRoutes);
 app.use(`${config.apiPrefix}/duplicates`, batchDuplicatesRoutes);
 app.use(`${config.apiPrefix}/webhooks`, webhookRoutes);
 app.use(`${config.apiPrefix}/reports`, reportRoutes);
+app.use(`${config.apiPrefix}/merge`, mergeAuditRoutes);
 
 // 404 handler
 app.use((req: Request, res: Response) => {
