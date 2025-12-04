@@ -4,6 +4,7 @@ import Deals from './pages/Deals';
 import Vendors from './pages/Vendors';
 import VendorDetail from './pages/VendorDetail';
 import FileUpload from './pages/FileUpload';
+import Errors from './pages/Errors';
 import Layout from './components/Layout';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
@@ -17,6 +18,7 @@ function App() {
           <Route path="/vendors" element={<Vendors />} />
           <Route path="/vendors/:id" element={<VendorDetail />} />
           <Route path="/upload" element={<FileUpload />} />
+          <Route path="/errors" element={<Errors />} />
         </Routes>
       </Layout>
     </ErrorBoundary>
