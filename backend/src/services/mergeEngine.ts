@@ -751,8 +751,18 @@ export async function unmergeEntities(
 
     const history = historyResult.rows[0];
 
+    // Check if merge is undoable (e.g., within 24 hours)
+    const mergeDate = new Date(history.created_at);
+    const now = new Date();
+    const hoursSinceMerge = (now.getTime() - mergeDate.getTime()) / (1000 * 60 * 60);
+    const undoWindowHours = 24; // Default to 24 hours
+
+    if (hoursSinceMerge > undoWindowHours) {
+      throw new Error(`Merge cannot be undone after ${undoWindowHours} hours`);
+    }
+
     if (!history.can_unmerge) {
-      throw new Error('This merge cannot be unmerged');
+      throw new Error('This merge cannot be unmerged (marked as irreversible)');
     }
 
     // Restore source entities

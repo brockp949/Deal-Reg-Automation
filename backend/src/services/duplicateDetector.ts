@@ -2,6 +2,7 @@ import { query } from '../db';
 import { ratio, partial_ratio, token_sort_ratio, token_set_ratio } from 'fuzzball';
 import { compareTwoStrings } from 'string-similarity';
 import logger from '../utils/logger';
+import { triggerWebhook } from './webhookService';
 
 // ============================================================================
 // Types & Interfaces
@@ -768,6 +769,22 @@ export async function detectDuplicateDeals(
       topConfidence: maxConfidence,
       suggestedAction
     });
+
+    // Trigger webhook if duplicates found
+    if (matches.length > 0) {
+      triggerWebhook('duplicate.detected', {
+        dealId: deal.id,
+        dealName: deal.dealName,
+        matchesCount: matches.length,
+        topConfidence: maxConfidence,
+        suggestedAction,
+        matches: matches.slice(0, 3).map(m => ({
+          matchedEntityId: m.matchedEntityId,
+          confidence: m.confidence,
+          reasoning: m.reasoning
+        }))
+      }).catch(err => logger.error('Failed to trigger duplicate webhook', { error: err.message }));
+    }
 
     return {
       isDuplicate: matches.length > 0,
