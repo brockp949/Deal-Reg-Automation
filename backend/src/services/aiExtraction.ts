@@ -444,13 +444,14 @@ export async function extractEntitiesWithAI(
     sourceFileId?: string;
     sourceType?: string;
     vendorHints?: string[];
+    templates?: Record<string, any>; // Custom entity templates
   }
 ): Promise<AIExtractionResult> {
   const startTime = Date.now();
   const promptVersion = 'v1.0.0'; // Update when prompts change
 
   // Generate hash for caching
-  const inputHash = hashInput(text, extractionType, promptVersion);
+  const inputHash = hashInput(text, extractionType, promptVersion + JSON.stringify(context?.templates || {}));
 
   // Check cache if enabled
   if (config.aiCacheEnabled !== false) {
@@ -470,9 +471,13 @@ export async function extractEntitiesWithAI(
     const promptTemplate = await loadPromptTemplate('entity-extraction');
 
     // Build system prompt
-    const systemPrompt = `You are an expert at extracting structured deal registration information from unstructured text.
+    let systemPrompt = `You are an expert at extracting structured deal registration information from unstructured text.
 Extract deals, vendors, and contacts with high accuracy. Always provide confidence scores.
 Output valid JSON only, with no additional text or formatting.`;
+
+    if (context?.templates) {
+      systemPrompt += `\n\nUse the following custom templates for extraction:\n${JSON.stringify(context.templates, null, 2)}`;
+    }
 
     // Build user prompt with context
     let userPrompt = promptTemplate.replace('{{TEXT}}', text);
