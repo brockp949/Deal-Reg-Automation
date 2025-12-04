@@ -1049,3 +1049,37 @@ async function createContact(contactData: any, vendorId: string, sourceFileId?: 
 
   return contactId;
 }
+/**
+ * Retry processing a failed file
+ */
+export async function retryProcessing(fileId: string): Promise<ProcessingResult> {
+  try {
+    // Check if file exists and is in failed state
+    const fileResult = await query('SELECT * FROM source_files WHERE id = $1', [fileId]);
+
+    if (fileResult.rows.length === 0) {
+      throw new Error('File not found');
+    }
+
+    const file = fileResult.rows[0];
+
+    if (file.processing_status !== 'failed' && file.processing_status !== 'blocked') {
+      throw new Error(`File is in ${file.processing_status} state, cannot retry`);
+    }
+
+    logger.info(`Retrying processing for file: ${fileId}`);
+
+    // Reset status
+    await query(
+      'UPDATE source_files SET processing_status = $1, error_message = NULL, metadata = jsonb_set(COALESCE(metadata, \'{}\'), \'{retryCount}\', (COALESCE(metadata->>\'retryCount\', \'0\')::int + 1)::text::jsonb) WHERE id = $2',
+      ['pending', fileId]
+    );
+
+    // Process again
+    return processFile(fileId);
+
+  } catch (error: any) {
+    logger.error('Failed to retry processing', { fileId, error: error.message });
+    throw error;
+  }
+}
