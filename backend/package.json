@@ -53,6 +53,7 @@
     "@anthropic-ai/sdk": "^0.27.3",
     "@types/better-sqlite3": "^7.6.13",
     "@types/html-to-text": "^9.0.4",
+    "axios": "^1.13.2",
     "bcryptjs": "^2.4.3",
     "better-sqlite3": "^12.4.1",
     "bull": "^4.12.0",
