@@ -10,8 +10,23 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: false,
-      retry: 1,
-      staleTime: 5 * 60 * 1000, // 5 minutes
+      retry: (failureCount, error: any) => {
+        // Don't retry on 4xx errors (client errors)
+        if (error?.response?.status >= 400 && error?.response?.status < 500) {
+          return false;
+        }
+        return failureCount < 3;
+      },
+      staleTime: 30 * 1000, // Data is fresh for 30 seconds
+      gcTime: 5 * 60 * 1000, // Keep unused data in cache for 5 minutes
+      refetchOnReconnect: true,
+      refetchOnMount: true,
+    },
+    mutations: {
+      retry: false, // Don't retry mutations by default
+      onError: (error: any) => {
+        console.error('Mutation error:', error);
+      },
     },
   },
 });

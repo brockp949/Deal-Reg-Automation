@@ -1,0 +1,35 @@
+
+> dealreg-backend@1.0.0 db:migrate
+> node -r tsx/cjs src/db/migrate.ts
+
+Running database migrations...
+Running base schema...
+2025-12-02 15:05:07 [[32minfo[39m]: Database connection established
+Γ£ô Base schema applied
+Running migration: 002_enhance_deal_schema.sql...
+Γ£ô 002_enhance_deal_schema.sql completed
+Running migration: 003_add_transcript_fields.sql...
+Γ£ô 003_add_transcript_fields.sql completed
+Running migration: 004_multiple_vendors_per_deal.sql...
+Γ£ù Migration failed: error: cannot change name of view column "primary_vendor_id" to "source_file_ids"
+    at C:\Users\brock\Documents\Deal Reg Automation\Deal-Reg-Automation\backend\node_modules\pg-pool\index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async runMigrations (C:\Users\brock\Documents\Deal Reg Automation\Deal-Reg-Automation\backend\src\db\migrate.ts:24:7) {
+  length: 212,
+  severity: 'ERROR',
+  code: '42P16',
+  detail: undefined,
+  hint: 'Use ALTER VIEW ... RENAME COLUMN ... to change name of view column instead.',
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'view.c',
+  line: '293',
+  routine: 'checkViewTupleDesc'
+}

@@ -1,5 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
+import { ThemeToggle } from './ThemeToggle';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -13,6 +14,7 @@ export default function Layout({ children }: LayoutProps) {
     { path: '/deals', label: 'Deals' },
     { path: '/vendors', label: 'Vendors' },
     { path: '/upload', label: 'Upload Files' },
+    { path: '/errors', label: 'Errors' },
   ];
 
   return (
@@ -41,6 +43,7 @@ export default function Layout({ children }: LayoutProps) {
                 ))}
               </div>
             </div>
+            <ThemeToggle />
           </div>
         </div>
       </nav>

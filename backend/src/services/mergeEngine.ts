@@ -751,8 +751,18 @@ export async function unmergeEntities(
 
     const history = historyResult.rows[0];
 
+    // Check if merge is undoable (e.g., within 24 hours)
+    const mergeDate = new Date(history.created_at);
+    const now = new Date();
+    const hoursSinceMerge = (now.getTime() - mergeDate.getTime()) / (1000 * 60 * 60);
+    const undoWindowHours = 24; // Default to 24 hours
+
+    if (hoursSinceMerge > undoWindowHours) {
+      throw new Error(`Merge cannot be undone after ${undoWindowHours} hours`);
+    }
+
     if (!history.can_unmerge) {
-      throw new Error('This merge cannot be unmerged');
+      throw new Error('This merge cannot be unmerged (marked as irreversible)');
     }
 
     // Restore source entities
@@ -897,11 +907,54 @@ export async function autoMergeHighConfidenceDuplicates(
 // Exports
 // ============================================================================
 
+/**
+ * Get smart merge suggestions based on advanced analysis
+ */
+export async function getSmartMergeSuggestions(
+  entityType: 'deal' | 'vendor' | 'contact' = 'deal',
+  limit: number = 10
+): Promise<any[]> {
+  try {
+    // Find entities with similar names or attributes that aren't already linked
+    // This is a simplified implementation using string similarity on names
+    const tableName = entityType === 'deal' ? 'deal_registrations' : `${entityType}s`;
+    const nameField = entityType === 'deal' ? 'deal_name' : 'name';
+
+    const result = await query(
+      `SELECT t1.id as id1, t1.${nameField} as name1, 
+              t2.id as id2, t2.${nameField} as name2,
+              similarity(t1.${nameField}, t2.${nameField}) as sim_score
+       FROM ${tableName} t1
+       JOIN ${tableName} t2 ON t1.id < t2.id
+       WHERE t1.status = 'active' AND t2.status = 'active'
+         AND similarity(t1.${nameField}, t2.${nameField}) > 0.8
+       ORDER BY sim_score DESC
+       LIMIT $1`,
+      [limit]
+    );
+
+    return result.rows.map(row => ({
+      entities: [
+        { id: row.id1, name: row.name1 },
+        { id: row.id2, name: row.name2 }
+      ],
+      confidence: row.sim_score,
+      reasoning: `High name similarity (${(row.sim_score * 100).toFixed(0)}%)`,
+      suggestedAction: row.sim_score > 0.95 ? 'auto_merge' : 'manual_review'
+    }));
+
+  } catch (error: any) {
+    logger.error('Failed to get smart merge suggestions', { error: error.message });
+    return [];
+  }
+}
+
 export default {
   previewMerge,
   mergeEntities,
   mergeCluster,
   unmergeEntities,
   autoMergeHighConfidenceDuplicates,
-  calculateDataQualityScore
+  calculateDataQualityScore,
+  getSmartMergeSuggestions
 };

@@ -36,7 +36,18 @@
       "Bash(npm run lint:*)",
       "Bash(npx tsc:*)",
       "Bash(git merge-base:*)",
-      "Bash(git branch:*)"
+      "Bash(git branch:*)",
+      "Bash(timeout /t 30 /nobreak)",
+      "Bash(docker stop:*)",
+      "Bash(docker rm:*)",
+      "Bash(powershell -Command \"Start-Sleep -Seconds 15\")",
+      "Bash(powershell:*)",
+      "Bash(tee:*)",
+      "Bash(for:*)",
+      "Bash(do sed -i 's/CREATE INDEX \\([a-zA-Z_]*\\) ON/CREATE INDEX IF NOT EXISTS \\1 ON/g' \"$file\")",
+      "Bash(done)",
+      "Bash(do sed -i 's/^CREATE TRIGGER /DROP TRIGGER IF EXISTS /g; s/DROP TRIGGER IF EXISTS \\([a-zA-Z_]*\\)$/DROP TRIGGER IF EXISTS \\1 ON /g' \"$file\")",
+      "Bash(git checkout:*)"
     ],
     "deny": [],
     "ask": []
