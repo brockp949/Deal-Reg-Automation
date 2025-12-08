@@ -1,76 +1,125 @@
-import { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Search, FileDown, Loader2, Briefcase, TrendingUp, DollarSign, AlertCircle, Sparkles } from 'lucide-react';
+import { Search, FileDown, Loader2, Briefcase, TrendingUp, DollarSign, AlertCircle, Sparkles, RefreshCw, BarChart3, Keyboard } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { dealAPI, reprocessAPI } from '@/lib/api';
 import { DealRegistration } from '@/types';
 import { toast } from 'sonner';
+import { DealCardSkeleton } from '@/components/skeletons/DealCardSkeleton';
+import { parseApiError, shouldRetry } from '@/utils/errorHandling';
+import { DealFunnelChart } from '@/components/charts/DealFunnelChart';
+import { DealValueTrend } from '@/components/charts/DealValueTrend';
+import { DealsByVendorChart } from '@/components/charts/DealsByVendorChart';
+import { WinLossChart } from '@/components/charts/WinLossChart';
+import { DealVelocityMetrics } from '@/components/charts/DealVelocityMetrics';
+import { KeyboardShortcutsDialog } from '@/components/KeyboardShortcutsDialog';
+import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 
 export default function Deals() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<string>('date-desc');
+  const [page, setPage] = useState(1);
   const [isReprocessing, setIsReprocessing] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['deals', search, statusFilter, sortBy],
+  const { data, isLoading, error, refetch, isRefetching } = useQuery({
+    queryKey: ['deals', search, statusFilter, sortBy, page],
     queryFn: async () => {
-      const params: any = { page: 1, limit: 100 };
+      const params: any = { page, limit: 20 };
       if (search) params.search = search;
       if (statusFilter !== 'all') params.status = statusFilter;
+
+      // Map sortBy to API parameters
+      const sortMapping: Record<string, { sort_by: string; sort_order: string }> = {
+        'date-desc': { sort_by: 'created_at', sort_order: 'desc' },
+        'date-asc': { sort_by: 'created_at', sort_order: 'asc' },
+        'value-desc': { sort_by: 'deal_value', sort_order: 'desc' },
+        'value-asc': { sort_by: 'deal_value', sort_order: 'asc' },
+        'name-asc': { sort_by: 'deal_name', sort_order: 'asc' },
+        'name-desc': { sort_by: 'deal_name', sort_order: 'desc' },
+      };
+      const sort = sortMapping[sortBy] || { sort_by: 'created_at', sort_order: 'desc' };
+      params.sort_by = sort.sort_by;
+      params.sort_order = sort.sort_order;
+
       const response = await dealAPI.getAll(params);
       return response.data;
     },
+    placeholderData: (previousData) => previousData, // Keep showing old data while loading new page
+    retry: (failureCount, error) => {
+      if (!shouldRetry(error)) return false;
+      return failureCount < 3;
+    },
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
+    staleTime: 30000, // Data is fresh for 30 seconds
+    gcTime: 5 * 60 * 1000, // Keep in cache for 5 minutes
   });
 
-  const deals: DealRegistration[] = data?.data || [];
+  const deals: DealRegistration[] = (data as any)?.data || [];
+  const pagination = (data as any)?.pagination || { page: 1, limit: 20, total: 0, totalPages: 1 };
 
-  // Calculate summary statistics
-  const totalDeals = deals.length;
+  // Reset to page 1 when filters change
+  const handleSearchChange = (value: string) => {
+    setSearch(value);
+    setPage(1);
+  };
+
+  const handleStatusChange = (value: string) => {
+    setStatusFilter(value);
+    setPage(1);
+  };
+
+  const handleSortChange = (value: string) => {
+    setSortBy(value);
+    setPage(1);
+  };
+
+  // Keyboard shortcuts
+  useKeyboardShortcuts([
+    {
+      key: '/',
+      description: 'Focus search',
+      callback: () => {
+        searchInputRef.current?.focus();
+      },
+    },
+    {
+      key: '?',
+      shift: true,
+      description: 'Show keyboard shortcuts',
+      callback: () => {
+        setShowShortcuts(true);
+      },
+    },
+    {
+      key: 'Escape',
+      description: 'Clear search',
+      callback: () => {
+        if (search) {
+          handleSearchChange('');
+          searchInputRef.current?.blur();
+        }
+      },
+    },
+  ]);
+
+  // Calculate summary statistics (use pagination total for accurate count)
+  const totalDeals = pagination.total;
   const totalValue = deals.reduce((sum, deal) => sum + (deal.deal_value || 0), 0);
-  const avgDealSize = totalDeals > 0 ? totalValue / totalDeals : 0;
+  const avgDealSize = deals.length > 0 ? totalValue / deals.length : 0;
   const statusBreakdown = deals.reduce((acc, deal) => {
     acc[deal.status] = (acc[deal.status] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
-
-  // Sort deals
-  const sortedDeals = [...deals].sort((a, b) => {
-    switch (sortBy) {
-      case 'date-desc':
-        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-      case 'date-asc':
-        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-      case 'value-desc':
-        return (b.deal_value || 0) - (a.deal_value || 0);
-      case 'value-asc':
-        return (a.deal_value || 0) - (b.deal_value || 0);
-      case 'name-asc':
-        return a.deal_name.localeCompare(b.deal_name);
-      case 'name-desc':
-        return b.deal_name.localeCompare(a.deal_name);
-      default:
-        return 0;
-    }
-  });
-
-  // Filter deals by search
-  const filteredDeals = sortedDeals.filter((deal) => {
-    if (!search) return true;
-    const searchLower = search.toLowerCase();
-    return (
-      deal.deal_name?.toLowerCase().includes(searchLower) ||
-      deal.customer_name?.toLowerCase().includes(searchLower) ||
-      deal.vendor_name?.toLowerCase().includes(searchLower) ||
-      deal.notes?.toLowerCase().includes(searchLower)
-    );
-  });
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -134,13 +183,33 @@ export default function Deals() {
   };
 
   if (error) {
+    const appError = parseApiError(error);
     return (
       <div className="container py-8">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2 text-destructive">
-              <AlertCircle className="h-5 w-5" />
-              <p>Error loading deals. Please try again.</p>
+        <Card className="border-destructive">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-destructive" />
+              <CardTitle className="text-destructive">Failed to Load Deals</CardTitle>
+            </div>
+            <CardDescription>{appError.message}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {appError.details && (
+              <div className="mb-4 rounded-md bg-muted p-3">
+                <p className="text-sm text-muted-foreground">
+                  {JSON.stringify(appError.details, null, 2)}
+                </p>
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Button onClick={() => refetch()} className="gap-2">
+                <RefreshCw className="h-4 w-4" />
+                Try Again
+              </Button>
+              <Button variant="outline" onClick={() => window.location.href = '/'}>
+                Go to Dashboard
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -161,9 +230,20 @@ export default function Deals() {
         <div className="flex gap-2">
           <Button
             variant="outline"
+            size="icon"
+            className="gap-2"
+            onClick={() => setShowShortcuts(true)}
+            aria-label="Show keyboard shortcuts"
+            title="Show keyboard shortcuts (?)"
+          >
+            <Keyboard className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="outline"
             className="gap-2"
             onClick={handleDetailedReprocessing}
             disabled={isReprocessing}
+            aria-label={isReprocessing ? 'Processing deals' : 'Start deep analysis'}
           >
             {isReprocessing ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -172,7 +252,7 @@ export default function Deals() {
             )}
             {isReprocessing ? 'Processing...' : 'Deep Analysis'}
           </Button>
-          <Button variant="outline" className="gap-2">
+          <Button variant="outline" className="gap-2" aria-label="Export deals to file">
             <FileDown className="h-4 w-4" />
             Export Deals
           </Button>
@@ -245,17 +325,20 @@ export default function Deals() {
         <CardContent>
           <div className="grid gap-4 md:grid-cols-3">
             <div className="relative">
-              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" aria-hidden="true" />
               <Input
+                ref={searchInputRef}
                 placeholder="Search deals, customers, vendors..."
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => handleSearchChange(e.target.value)}
                 className="pl-9"
+                aria-label="Search deals by name, customer, or vendor"
+                title="Press / to focus (Esc to clear)"
               />
             </div>
 
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger>
+            <Select value={statusFilter} onValueChange={handleStatusChange}>
+              <SelectTrigger aria-label="Filter deals by status">
                 <SelectValue placeholder="Filter by status" />
               </SelectTrigger>
               <SelectContent>
@@ -268,8 +351,8 @@ export default function Deals() {
               </SelectContent>
             </Select>
 
-            <Select value={sortBy} onValueChange={setSortBy}>
-              <SelectTrigger>
+            <Select value={sortBy} onValueChange={handleSortChange}>
+              <SelectTrigger aria-label="Sort deals by">
                 <SelectValue placeholder="Sort by" />
               </SelectTrigger>
               <SelectContent>
@@ -285,16 +368,43 @@ export default function Deals() {
         </CardContent>
       </Card>
 
-      {/* Deals List */}
-      {isLoading ? (
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
-          </CardContent>
-        </Card>
-      ) : filteredDeals.length === 0 ? (
+      {/* Analytics & Deals */}
+      <Tabs defaultValue="list" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="list" className="gap-2">
+            <Briefcase className="h-4 w-4" />
+            Deals List
+          </TabsTrigger>
+          <TabsTrigger value="analytics" className="gap-2">
+            <BarChart3 className="h-4 w-4" />
+            Analytics
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="analytics" className="space-y-6">
+          {/* Velocity Metrics */}
+          <DealVelocityMetrics deals={deals} />
+
+          {/* Main Charts */}
+          <div className="grid gap-4 md:grid-cols-2">
+            <DealFunnelChart deals={deals} />
+            <DealValueTrend deals={deals} />
+          </div>
+
+          {/* Secondary Charts */}
+          <div className="grid gap-4 md:grid-cols-2">
+            <DealsByVendorChart deals={deals} />
+            <WinLossChart deals={deals} />
+          </div>
+        </TabsContent>
+
+        <TabsContent value="list" className="space-y-4">
+          {/* Deals List */}
+          {isLoading || isRefetching ? (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <DealCardSkeleton count={6} />
+        </div>
+      ) : deals.length === 0 ? (
         <Card>
           <CardContent className="pt-6">
             <div className="text-center py-8">
@@ -310,7 +420,7 @@ export default function Deals() {
         </Card>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {filteredDeals.map((deal) => (
+          {deals.map((deal) => (
             <Card key={deal.id} className="hover:shadow-lg transition-shadow">
               <CardHeader>
                 <div className="flex items-start justify-between gap-2">
@@ -411,12 +521,71 @@ export default function Deals() {
         </div>
       )}
 
-      {/* Results Summary */}
-      {!isLoading && filteredDeals.length > 0 && (
-        <div className="text-center text-sm text-muted-foreground">
-          Showing {filteredDeals.length} of {totalDeals} deal{totalDeals !== 1 ? 's' : ''}
-        </div>
-      )}
+          {/* Pagination */}
+          {!isLoading && totalDeals > 0 && pagination.totalPages > 1 && (
+            <div className="flex flex-col items-center gap-4">
+              <div className="flex items-center justify-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage(Math.max(1, page - 1))}
+                  disabled={page === 1}
+                  aria-label="Previous page"
+                >
+                  Previous
+                </Button>
+
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: pagination.totalPages }, (_, i) => i + 1)
+                    .filter((pageNum) => {
+                      // Show first page, last page, current page, and pages around current
+                      return (
+                        pageNum === 1 ||
+                        pageNum === pagination.totalPages ||
+                        Math.abs(pageNum - page) <= 1
+                      );
+                    })
+                    .map((pageNum, index, array) => (
+                      <React.Fragment key={pageNum}>
+                        {index > 0 && array[index - 1] !== pageNum - 1 && (
+                          <span className="px-2 text-muted-foreground">...</span>
+                        )}
+                        <Button
+                          variant={pageNum === page ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => setPage(pageNum)}
+                          aria-label={`Go to page ${pageNum}`}
+                          aria-current={pageNum === page ? "page" : undefined}
+                        >
+                          {pageNum}
+                        </Button>
+                      </React.Fragment>
+                    ))}
+                </div>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage(Math.min(pagination.totalPages, page + 1))}
+                  disabled={page === pagination.totalPages}
+                  aria-label="Next page"
+                >
+                  Next
+                </Button>
+              </div>
+
+              <div className="text-center text-sm text-muted-foreground">
+                Showing {(page - 1) * pagination.limit + 1} to{' '}
+                {Math.min(page * pagination.limit, totalDeals)} of {totalDeals} deal
+                {totalDeals !== 1 ? 's' : ''}
+              </div>
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
+
+      {/* Keyboard Shortcuts Dialog */}
+      <KeyboardShortcutsDialog open={showShortcuts} onOpenChange={setShowShortcuts} />
     </div>
   );
 }

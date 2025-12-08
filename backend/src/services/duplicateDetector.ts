@@ -2,6 +2,7 @@ import { query } from '../db';
 import { ratio, partial_ratio, token_sort_ratio, token_set_ratio } from 'fuzzball';
 import { compareTwoStrings } from 'string-similarity';
 import logger from '../utils/logger';
+import { triggerWebhook } from './webhookService';
 
 // ============================================================================
 // Types & Interfaces
@@ -119,7 +120,7 @@ export interface SimilarityScore {
 // Configuration
 // ============================================================================
 
-const MATCH_CONFIG = {
+export const MATCH_CONFIG = {
   // Confidence thresholds
   AUTO_MERGE_THRESHOLD: parseFloat(process.env.DUPLICATE_AUTO_MERGE_THRESHOLD || '0.95'),
   HIGH_CONFIDENCE_THRESHOLD: 0.85,
@@ -154,6 +155,21 @@ const MATCH_CONFIG = {
   // Batch processing
   BATCH_SIZE: parseInt(process.env.DUPLICATE_BATCH_SIZE || '100'),
 };
+
+/**
+ * Update duplicate detection configuration
+ */
+export function updateDuplicateConfig(config: Partial<typeof MATCH_CONFIG>) {
+  Object.assign(MATCH_CONFIG, config);
+  logger.info('Duplicate detection configuration updated', config);
+}
+
+/**
+ * Get current duplicate detection configuration
+ */
+export function getDuplicateConfig() {
+  return { ...MATCH_CONFIG };
+}
 
 // ============================================================================
 // Normalization Utilities
@@ -754,6 +770,22 @@ export async function detectDuplicateDeals(
       suggestedAction
     });
 
+    // Trigger webhook if duplicates found
+    if (matches.length > 0) {
+      triggerWebhook('duplicate.detected', {
+        dealId: deal.id,
+        dealName: deal.dealName,
+        matchesCount: matches.length,
+        topConfidence: maxConfidence,
+        suggestedAction,
+        matches: matches.slice(0, 3).map(m => ({
+          matchedEntityId: m.matchedEntityId,
+          confidence: m.confidence,
+          reasoning: m.reasoning
+        }))
+      }).catch(err => logger.error('Failed to trigger duplicate webhook', { error: err.message }));
+    }
+
     return {
       isDuplicate: matches.length > 0,
       matches,
@@ -1009,7 +1041,7 @@ function generateClusterKey(entityIds: string[]): string {
 // Exports
 // ============================================================================
 
-export { MATCH_CONFIG };
+// export { MATCH_CONFIG }; // Removed to avoid duplicate export
 
 export default {
   detectDuplicateDeals,

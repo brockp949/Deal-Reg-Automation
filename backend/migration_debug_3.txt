@@ -1,0 +1,49 @@
+
+> dealreg-backend@1.0.0 db:migrate
+> node -r tsx/cjs src/db/migrate.ts
+
+Running database migrations...
+Running base schema...
+2025-12-02 14:56:08 [[32minfo[39m]: Database connection established
+Γ£ô Base schema applied
+Running migration: 002_enhance_deal_schema.sql...
+Γ£ô 002_enhance_deal_schema.sql completed
+Running migration: 003_add_transcript_fields.sql...
+Γ£ô 003_add_transcript_fields.sql completed
+Running migration: 004_multiple_vendors_per_deal.sql...
+Γ£ô 004_multiple_vendors_per_deal.sql completed
+Running migration: 005_vendor_approval_workflow.sql...
+Γ£ô 005_vendor_approval_workflow.sql completed
+Running migration: 006_field_provenance.sql...
+Γ£ô 006_field_provenance.sql completed
+Running migration: 007_file_security_audit.sql...
+Γ£ô 007_file_security_audit.sql completed
+Running migration: 008_file_dedupe.sql...
+Γ£ô 008_file_dedupe.sql completed
+Running migration: 009_config_snapshots.sql...
+Γ£ô 009_config_snapshots.sql completed
+Running migration: 010_config_apply_tracking.sql...
+Γ£ô 010_config_apply_tracking.sql completed
+Running migration: 011_ai_extraction.sql...
+Γ£ù Migration failed: error: cannot change name of view column "primary_vendor_id" to "ai_extracted"
+    at C:\Users\brock\Documents\Deal Reg Automation\Deal-Reg-Automation\backend\node_modules\pg-pool\index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async runMigrations (C:\Users\brock\Documents\Deal Reg Automation\Deal-Reg-Automation\backend\src\db\migrate.ts:24:7) {
+  length: 209,
+  severity: 'ERROR',
+  code: '42P16',
+  detail: undefined,
+  hint: 'Use ALTER VIEW ... RENAME COLUMN ... to change name of view column instead.',
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'view.c',
+  line: '293',
+  routine: 'checkViewTupleDesc'
+}

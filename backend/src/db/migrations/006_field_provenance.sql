@@ -36,15 +36,15 @@ CREATE TABLE IF NOT EXISTS field_provenance (
 );
 
 -- Indexes for performance
-CREATE INDEX idx_provenance_entity ON field_provenance(entity_type, entity_id);
-CREATE INDEX idx_provenance_field ON field_provenance(field_name);
-CREATE INDEX idx_provenance_source_file ON field_provenance(source_file_id);
-CREATE INDEX idx_provenance_current ON field_provenance(is_current) WHERE is_current = true;
-CREATE INDEX idx_provenance_entity_current ON field_provenance(entity_type, entity_id, is_current) WHERE is_current = true;
-CREATE INDEX idx_provenance_confidence ON field_provenance(confidence DESC);
+CREATE INDEX IF NOT EXISTS idx_provenance_entity ON field_provenance(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_provenance_field ON field_provenance(field_name);
+CREATE INDEX IF NOT EXISTS idx_provenance_source_file ON field_provenance(source_file_id);
+CREATE INDEX IF NOT EXISTS idx_provenance_current ON field_provenance(is_current) WHERE is_current = true;
+CREATE INDEX IF NOT EXISTS idx_provenance_entity_current ON field_provenance(entity_type, entity_id, is_current) WHERE is_current = true;
+CREATE INDEX IF NOT EXISTS idx_provenance_confidence ON field_provenance(confidence DESC);
 
 -- Composite index for common queries
-CREATE INDEX idx_provenance_entity_field_current ON field_provenance(entity_type, entity_id, field_name, is_current) WHERE is_current = true;
+CREATE INDEX IF NOT EXISTS idx_provenance_entity_field_current ON field_provenance(entity_type, entity_id, field_name, is_current) WHERE is_current = true;
 
 -- Comments for documentation
 COMMENT ON TABLE field_provenance IS 'Tracks the source and extraction method for every field value, enabling full transparency and audit trail';
@@ -77,6 +77,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Trigger to automatically supersede old provenance
+DROP TRIGGER IF EXISTS trigger_supersede_provenance ON field_provenance;
 CREATE TRIGGER trigger_supersede_provenance
   AFTER INSERT ON field_provenance
   FOR EACH ROW

@@ -245,6 +245,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trigger_update_validation_rule_timestamp ON validation_rules;
 CREATE TRIGGER trigger_update_validation_rule_timestamp
   BEFORE UPDATE ON validation_rules
   FOR EACH ROW

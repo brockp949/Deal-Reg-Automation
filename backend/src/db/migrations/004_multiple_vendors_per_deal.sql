@@ -38,6 +38,7 @@ COMMENT ON COLUMN deal_vendors.role IS 'Vendor role: primary, partner, subcontra
 COMMENT ON COLUMN deal_vendors.contribution_percentage IS 'Percentage of deal credit/revenue attributed to this vendor';
 
 -- Create view for backward compatibility
+DROP VIEW IF EXISTS deal_registrations_with_primary_vendor;
 CREATE OR REPLACE VIEW deal_registrations_with_primary_vendor AS
 SELECT
   dr.*,

@@ -109,5 +109,29 @@ export const reprocessAPI = {
   detailed: () => api.post('/reprocess/detailed'),
 };
 
+// Error Tracking API
+export const errorAPI = {
+  getAll: (params?: {
+    category?: string;
+    severity?: string;
+    unresolved_only?: boolean;
+    limit?: number;
+    days?: number;
+  }) => api.get('/errors', { params }),
+  getById: (id: string) => api.get(`/errors/${id}`),
+  getStatistics: () => api.get('/errors/statistics/summary'),
+  getByFile: (fileId: string) => api.get(`/errors/file/${fileId}`),
+  getByCategory: (category: string, params?: { severity?: string; limit?: number }) =>
+    api.get(`/errors/category/${category}`, { params }),
+  resolve: (id: string, data: { resolved_by: string; resolution_notes?: string }) =>
+    api.patch(`/errors/${id}/resolve`, data),
+  bulkResolve: (data: {
+    error_type?: string;
+    source_file_id?: string;
+    resolved_by: string;
+    resolution_notes?: string;
+  }) => api.post('/errors/bulk-resolve', data),
+};
+
 // ChroniclerClient SDK for meeting notes parsing
 export { chroniclerClient } from './chronicler-sdk';

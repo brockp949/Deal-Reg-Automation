@@ -17,6 +17,8 @@ import { StandardizedCSVParser } from '../parsers/StandardizedCSVParser';
 import { StandardizedTranscriptParser } from '../parsers/StandardizedTranscriptParser';
 import { queuePendingDeal } from './pendingDealService';
 import { matchVendor } from './vendorMatcher';
+import { logParsingError, logExtractionError, logError } from './errorTrackingService';
+import { createJob, startJob, updateJobProgress, completeJob, failJob } from './jobTracker';
 
 interface ProcessingResult {
   vendorsCreated: number;
@@ -42,6 +44,10 @@ async function updateFileProgress(fileId: string, progress: number) {
  * Processes uploaded file and creates vendors, deals, and contacts
  */
 export async function processFile(fileId: string): Promise<ProcessingResult> {
+  // Create a job to track this processing
+  const jobId = createJob('file_processing', { fileId });
+  startJob(jobId, 'Initializing file processing');
+
   const result: ProcessingResult = {
     vendorsCreated: 0,
     dealsCreated: 0,
@@ -113,6 +119,21 @@ export async function processFile(fileId: string): Promise<ProcessingResult> {
       await updateFileProgress(fileId, 40);
     } catch (parseError: any) {
       result.errors.push(`Parse error: ${parseError.message}`);
+
+      // Log to error tracking service for comprehensive audit
+      await logParsingError({
+        sourceFileId: fileId,
+        fileName: file.filename,
+        fileType: file.file_type,
+        errorMessage: parseError.message,
+        errorSeverity: 'error',
+        errorType: 'file_parsing_failed',
+        errorData: {
+          stack: parseError.stack,
+          storagePath: file.storage_path,
+        },
+      }).catch(e => logger.warn('Failed to log parsing error to tracking service', { error: e }));
+
       throw parseError;
     }
 
@@ -276,9 +297,15 @@ export async function processFile(fileId: string): Promise<ProcessingResult> {
 
     logger.info('File processing completed', { fileId, result });
 
+    // Mark job as completed with results
+    completeJob(jobId, result);
+
     return result;
   } catch (error: any) {
     logger.error('File processing failed', { fileId, error: error.message });
+
+    // Mark job as failed
+    failJob(jobId, error.message);
 
     // Update file status to failed
     await query(
@@ -374,7 +401,7 @@ async function processMboxFile(filePath: string, fileId: string) {
       emailDomain: emailDomain || undefined,
       existingVendors: existingVendors
     });
-    
+
     const matchedVendor = matchResult.matched ? matchResult.vendor.name : null;
     const vendorName = matchedVendor || extractedVendorName;
 
@@ -562,7 +589,7 @@ async function processTranscriptFile(filePath: string) {
     partnerVendorName = matchedVendor || deal.partner_company_name;
 
     // Only create new vendor if there's NO match AND we haven't added it yet
-    if (!matchedVendor && !vendorSet.has(partnerVendorName)) {
+    if (!matchedVendor && partnerVendorName && !vendorSet.has(partnerVendorName)) {
       vendors.push({
         name: partnerVendorName,
         email_domain: deal.partner_email ? deal.partner_email.split('@')[1] : null,
@@ -604,7 +631,7 @@ async function processTranscriptFile(filePath: string) {
     prospectVendorName = matchedVendor || deal.prospect_company_name;
 
     // Only create new vendor if there's NO match, it's different from partner, and we haven't added it yet
-    if (!matchedVendor && prospectVendorName !== partnerVendorName && !vendorSet.has(prospectVendorName)) {
+    if (!matchedVendor && prospectVendorName && prospectVendorName !== partnerVendorName && !vendorSet.has(prospectVendorName)) {
       vendors.push({
         name: prospectVendorName,
         email_domain: deal.prospect_website ? new URL(deal.prospect_website).hostname : null,
@@ -1021,4 +1048,38 @@ async function createContact(contactData: any, vendorId: string, sourceFileId?: 
   }
 
   return contactId;
+}
+/**
+ * Retry processing a failed file
+ */
+export async function retryProcessing(fileId: string): Promise<ProcessingResult> {
+  try {
+    // Check if file exists and is in failed state
+    const fileResult = await query('SELECT * FROM source_files WHERE id = $1', [fileId]);
+
+    if (fileResult.rows.length === 0) {
+      throw new Error('File not found');
+    }
+
+    const file = fileResult.rows[0];
+
+    if (file.processing_status !== 'failed' && file.processing_status !== 'blocked') {
+      throw new Error(`File is in ${file.processing_status} state, cannot retry`);
+    }
+
+    logger.info(`Retrying processing for file: ${fileId}`);
+
+    // Reset status
+    await query(
+      'UPDATE source_files SET processing_status = $1, error_message = NULL, metadata = jsonb_set(COALESCE(metadata, \'{}\'), \'{retryCount}\', (COALESCE(metadata->>\'retryCount\', \'0\')::int + 1)::text::jsonb) WHERE id = $2',
+      ['pending', fileId]
+    );
+
+    // Process again
+    return processFile(fileId);
+
+  } catch (error: any) {
+    logger.error('Failed to retry processing', { fileId, error: error.message });
+    throw error;
+  }
 }

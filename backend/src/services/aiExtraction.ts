@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import { createHash } from 'crypto';
 import { readFile } from 'fs/promises';
 import { join } from 'path';
@@ -80,6 +81,25 @@ function getAnthropicClient(): Anthropic {
     anthropicClient = new Anthropic({ apiKey });
   }
   return anthropicClient;
+}
+
+// OpenAI client singleton for fallback
+let openaiClient: OpenAI | null = null;
+
+function getOpenAIClient(): OpenAI | null {
+  if (!openaiClient) {
+    const apiKey = config.ai?.openaiApiKey || process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      return null; // No OpenAI key configured, fallback not available
+    }
+    openaiClient = new OpenAI({ apiKey });
+  }
+  return openaiClient;
+}
+
+// Check if fallback is available
+function isFallbackAvailable(): boolean {
+  return !!(config.ai?.openaiApiKey || process.env.OPENAI_API_KEY);
 }
 
 // Prompt template cache
@@ -310,6 +330,111 @@ async function callAnthropicAPI(
 }
 
 /**
+ * Call OpenAI API with retry logic (fallback provider)
+ */
+async function callOpenAIAPI(
+  prompt: string,
+  systemPrompt: string,
+  maxRetries: number = 3
+): Promise<{ content: string; tokensUsed: number; model: string }> {
+  const client = getOpenAIClient();
+  if (!client) {
+    throw new Error('OpenAI API key not configured for fallback');
+  }
+
+  let lastError: Error | null = null;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      logger.debug(`Calling OpenAI API (attempt ${attempt}/${maxRetries})`);
+
+      const response = await client.chat.completions.create({
+        model: 'gpt-4-turbo-preview',
+        max_tokens: config.aiMaxTokens || 4000,
+        temperature: config.aiTemperature || 0.0,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: prompt },
+        ],
+      });
+
+      const content = response.choices[0]?.message?.content;
+      if (!content) {
+        throw new Error('Empty response from OpenAI API');
+      }
+
+      const tokensUsed = (response.usage?.total_tokens) || 0;
+
+      logger.debug('OpenAI API call successful', {
+        tokensUsed,
+        model: response.model,
+      });
+
+      return {
+        content,
+        tokensUsed,
+        model: response.model,
+      };
+    } catch (error: any) {
+      lastError = error;
+      logger.warn(`OpenAI API call failed (attempt ${attempt}/${maxRetries})`, {
+        error: error.message,
+      });
+
+      // Exponential backoff
+      if (attempt < maxRetries) {
+        const delayMs = Math.pow(2, attempt) * 1000;
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+    }
+  }
+
+  throw lastError || new Error('OpenAI API call failed after retries');
+}
+
+/**
+ * Call AI API with automatic fallback from Claude to OpenAI
+ */
+async function callAIWithFallback(
+  prompt: string,
+  systemPrompt: string
+): Promise<{ content: string; tokensUsed: number; model: string; usedFallback: boolean }> {
+  // Try Claude first
+  try {
+    const result = await callAnthropicAPI(prompt, systemPrompt);
+    return {
+      ...result,
+      model: config.aiModel || 'claude-3-5-sonnet-20241022',
+      usedFallback: false,
+    };
+  } catch (anthropicError: any) {
+    logger.warn('Claude failed, checking for OpenAI fallback', {
+      error: anthropicError.message,
+      fallbackAvailable: isFallbackAvailable(),
+    });
+
+    // Try OpenAI fallback if available
+    if (isFallbackAvailable()) {
+      try {
+        logger.info('Attempting OpenAI fallback');
+        const result = await callOpenAIAPI(prompt, systemPrompt);
+        return {
+          ...result,
+          usedFallback: true,
+        };
+      } catch (openaiError: any) {
+        logger.error('OpenAI fallback also failed', { error: openaiError.message });
+        // Throw original error if both fail
+        throw anthropicError;
+      }
+    }
+
+    // No fallback available, throw original error
+    throw anthropicError;
+  }
+}
+
+/**
  * Extract entities from text using AI
  */
 export async function extractEntitiesWithAI(
@@ -319,13 +444,14 @@ export async function extractEntitiesWithAI(
     sourceFileId?: string;
     sourceType?: string;
     vendorHints?: string[];
+    templates?: Record<string, any>; // Custom entity templates
   }
 ): Promise<AIExtractionResult> {
   const startTime = Date.now();
   const promptVersion = 'v1.0.0'; // Update when prompts change
 
   // Generate hash for caching
-  const inputHash = hashInput(text, extractionType, promptVersion);
+  const inputHash = hashInput(text, extractionType, promptVersion + JSON.stringify(context?.templates || {}));
 
   // Check cache if enabled
   if (config.aiCacheEnabled !== false) {
@@ -345,9 +471,13 @@ export async function extractEntitiesWithAI(
     const promptTemplate = await loadPromptTemplate('entity-extraction');
 
     // Build system prompt
-    const systemPrompt = `You are an expert at extracting structured deal registration information from unstructured text.
+    let systemPrompt = `You are an expert at extracting structured deal registration information from unstructured text.
 Extract deals, vendors, and contacts with high accuracy. Always provide confidence scores.
 Output valid JSON only, with no additional text or formatting.`;
+
+    if (context?.templates) {
+      systemPrompt += `\n\nUse the following custom templates for extraction:\n${JSON.stringify(context.templates, null, 2)}`;
+    }
 
     // Build user prompt with context
     let userPrompt = promptTemplate.replace('{{TEXT}}', text);
@@ -356,8 +486,12 @@ Output valid JSON only, with no additional text or formatting.`;
     }
     userPrompt += `\n\nExtraction Type: ${extractionType}`;
 
-    // Call AI API
-    const { content, tokensUsed } = await callAnthropicAPI(userPrompt, systemPrompt);
+    // Call AI API with fallback support
+    const { content, tokensUsed, model, usedFallback } = await callAIWithFallback(userPrompt, systemPrompt);
+
+    if (usedFallback) {
+      logger.info('Used OpenAI fallback for extraction', { extractionType });
+    }
 
     // Parse JSON response
     let parsedResponse: any;
@@ -416,10 +550,17 @@ Output valid JSON only, with no additional text or formatting.`;
       });
     }
 
-    avgConfidence = entities.length > 0 ? avgConfidence / entities.length : 0;
+    // Calibrate confidence scores
+    entities.forEach(entity => {
+      entity.confidence = calibrateConfidence(entity.confidence, entity.type, entity.data);
+    });
+
+    avgConfidence = entities.length > 0
+      ? entities.reduce((sum, e) => sum + e.confidence, 0) / entities.length
+      : 0;
 
     const extractionTimeMs = Date.now() - startTime;
-    const model = config.aiModel || 'claude-3-5-sonnet-20241022';
+    // Use model from API response (already defined above from callAIWithFallback)
 
     const result: AIExtractionResult = {
       entities,
@@ -691,4 +832,38 @@ export async function extractAndValidateEntities(
     extraction,
     validations,
   };
+}
+
+/**
+ * Calibrate confidence score based on entity type and data quality
+ */
+export function calibrateConfidence(rawConfidence: number, type: string, data: any): number {
+  let score = rawConfidence;
+
+  // 1. Penalize for missing critical fields
+  if (type === 'deal') {
+    if (!data.dealName) score *= 0.8;
+    if (!data.customerName) score *= 0.8;
+    if (!data.dealValue && !data.value) score *= 0.95;
+  } else if (type === 'vendor') {
+    if (!data.name) score *= 0.8;
+  } else if (type === 'contact') {
+    if (!data.name) score *= 0.8;
+    if (!data.email && !data.phone) score *= 0.9;
+  }
+
+  // 2. Boost for high-quality indicators
+  if (type === 'deal') {
+    // Currency symbol presence suggests better value extraction
+    if (data.currency || (typeof data.dealValue === 'string' && /[$€£¥]/.test(data.dealValue))) {
+      score = Math.min(0.99, score * 1.05);
+    }
+    // Specific date format usually indicates better extraction
+    if (data.closeDate && !isNaN(Date.parse(data.closeDate))) {
+      score = Math.min(0.99, score * 1.05);
+    }
+  }
+
+  // 3. Clamp between 0 and 1
+  return Math.max(0, Math.min(1, score));
 }

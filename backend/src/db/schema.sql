@@ -3,6 +3,9 @@
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
+-- Enable trigram extension for fuzzy text search
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
 -- Vendors Table
 CREATE TABLE IF NOT EXISTS vendors (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

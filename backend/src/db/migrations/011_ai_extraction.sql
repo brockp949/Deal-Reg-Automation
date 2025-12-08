@@ -89,6 +89,18 @@ ALTER TABLE deal_registrations
 CREATE INDEX IF NOT EXISTS idx_deals_ai_extracted ON deal_registrations(ai_extracted);
 CREATE INDEX IF NOT EXISTS idx_deals_extraction_log ON deal_registrations(extraction_log_id);
 
+-- Recreate the deal_registrations_with_primary_vendor view to include new columns
+-- This view was created in 004_multiple_vendors_per_deal.sql
+DROP VIEW IF EXISTS deal_registrations_with_primary_vendor;
+CREATE OR REPLACE VIEW deal_registrations_with_primary_vendor AS
+SELECT
+  dr.*,
+  dv.vendor_id as primary_vendor_id,
+  v.name as primary_vendor_name
+FROM deal_registrations dr
+LEFT JOIN deal_vendors dv ON dr.id = dv.deal_id AND dv.role = 'primary'
+LEFT JOIN vendors v ON dv.vendor_id = v.id;
+
 -- View: Recent AI extractions with stats
 -- Useful for monitoring and debugging
 CREATE OR REPLACE VIEW recent_ai_extractions AS
@@ -178,6 +190,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trigger_update_cache_hit_stats ON ai_extraction_cache;
 CREATE TRIGGER trigger_update_cache_hit_stats
   AFTER UPDATE ON ai_extraction_cache
   FOR EACH ROW
