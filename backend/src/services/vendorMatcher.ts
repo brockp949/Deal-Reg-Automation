@@ -1,4 +1,7 @@
 /**
+ * @deprecated This module is deprecated. Use VendorMatchingEngine instead.
+ * Import from: import { getVendorMatchingEngine } from './VendorMatchingEngine';
+ *
  * Vendor Matching Service
  * Phase 5.1: Enhanced Vendor Matching Engine
  *

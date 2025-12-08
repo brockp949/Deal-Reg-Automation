@@ -1,4 +1,9 @@
 /**
+ * @deprecated This module is deprecated. Use VendorMatchingEngine and VendorCache instead.
+ * Import from:
+ *   import { getVendorMatchingEngine } from './VendorMatchingEngine';
+ *   import { getVendorCache } from './VendorCache';
+ *
  * Vendor Intelligence Service
  * Provides intelligent vendor matching, discovery, and domain-based filtering
  */
