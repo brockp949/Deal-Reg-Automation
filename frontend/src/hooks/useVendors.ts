@@ -1,55 +1,65 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { vendorAPI } from '@/lib/api';
-import { Vendor } from '@/types';
+import type { Vendor } from '@/types';
+import type { VendorsResponse, CreateVendorInput, UpdateVendorInput } from '@/types/api';
 import { toast } from 'sonner';
 import { getErrorMessage } from '@/utils/errorHandling';
 
-interface CreateVendorData {
-  name: string;
-  email_domains?: string[];
-  industry?: string;
-  website?: string;
-  notes?: string;
-  status?: string;
-}
-
 interface UpdateVendorData {
   id: string;
-  data: Partial<CreateVendorData>;
+  data: UpdateVendorInput;
+}
+
+/** Type for query data stored in React Query cache */
+interface VendorsQueryData {
+  success: boolean;
+  data: VendorsResponse;
 }
 
 export function useCreateVendor() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (data: CreateVendorData) => vendorAPI.create(data),
+    mutationFn: (data: CreateVendorInput) => vendorAPI.create(data),
 
     onMutate: async (newVendor) => {
       await queryClient.cancelQueries({ queryKey: ['vendors'] });
 
-      const previousVendors = queryClient.getQueryData(['vendors']);
+      const previousVendors = queryClient.getQueryData<VendorsQueryData>(['vendors']);
 
       // Optimistically add the new vendor
-      queryClient.setQueriesData({ queryKey: ['vendors'] }, (old: any) => {
-        if (!old?.data) return old;
+      queryClient.setQueriesData<VendorsQueryData>(
+        { queryKey: ['vendors'] },
+        (old) => {
+          if (!old?.data?.data) return old;
 
-        const optimisticVendor: Vendor = {
-          id: `temp-${Date.now()}`,
-          ...newVendor,
-          status: newVendor.status || 'active',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        } as Vendor;
+          const optimisticVendor: Vendor = {
+            id: `temp-${Date.now()}`,
+            name: newVendor.name,
+            normalized_name: newVendor.name.toLowerCase().trim(),
+            email_domains: newVendor.email_domains || [],
+            industry: newVendor.industry,
+            website: newVendor.website,
+            notes: newVendor.notes,
+            status: newVendor.status || 'active',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            metadata: {},
+          };
 
-        return {
-          ...old,
-          data: [optimisticVendor, ...old.data],
-          pagination: old.pagination ? {
-            ...old.pagination,
-            total: old.pagination.total + 1,
-          } : undefined,
-        };
-      });
+          return {
+            ...old,
+            data: {
+              ...old.data,
+              data: [optimisticVendor, ...old.data.data],
+              pagination: {
+                ...old.data.pagination,
+                total: old.data.pagination.total + 1,
+              },
+            },
+          };
+        }
+      );
 
       return { previousVendors };
     },
@@ -82,19 +92,27 @@ export function useUpdateVendor() {
     onMutate: async ({ id, data }) => {
       await queryClient.cancelQueries({ queryKey: ['vendors'] });
 
-      const previousVendors = queryClient.getQueryData(['vendors']);
+      const previousVendors = queryClient.getQueryData<VendorsQueryData>(['vendors']);
 
       // Optimistically update the vendor
-      queryClient.setQueriesData({ queryKey: ['vendors'] }, (old: any) => {
-        if (!old?.data) return old;
+      queryClient.setQueriesData<VendorsQueryData>(
+        { queryKey: ['vendors'] },
+        (old) => {
+          if (!old?.data?.data) return old;
 
-        return {
-          ...old,
-          data: old.data.map((vendor: Vendor) =>
-            vendor.id === id ? { ...vendor, ...data } : vendor
-          ),
-        };
-      });
+          return {
+            ...old,
+            data: {
+              ...old.data,
+              data: old.data.data.map((vendor) =>
+                vendor.id === id
+                  ? { ...vendor, ...data, updated_at: new Date().toISOString() }
+                  : vendor
+              ),
+            },
+          };
+        }
+      );
 
       return { previousVendors };
     },
@@ -127,21 +145,27 @@ export function useDeleteVendor() {
     onMutate: async (vendorId) => {
       await queryClient.cancelQueries({ queryKey: ['vendors'] });
 
-      const previousVendors = queryClient.getQueryData(['vendors']);
+      const previousVendors = queryClient.getQueryData<VendorsQueryData>(['vendors']);
 
       // Optimistically remove the vendor
-      queryClient.setQueriesData({ queryKey: ['vendors'] }, (old: any) => {
-        if (!old?.data) return old;
+      queryClient.setQueriesData<VendorsQueryData>(
+        { queryKey: ['vendors'] },
+        (old) => {
+          if (!old?.data?.data) return old;
 
-        return {
-          ...old,
-          data: old.data.filter((vendor: Vendor) => vendor.id !== vendorId),
-          pagination: old.pagination ? {
-            ...old.pagination,
-            total: old.pagination.total - 1,
-          } : undefined,
-        };
-      });
+          return {
+            ...old,
+            data: {
+              ...old.data,
+              data: old.data.data.filter((vendor) => vendor.id !== vendorId),
+              pagination: {
+                ...old.data.pagination,
+                total: old.data.pagination.total - 1,
+              },
+            },
+          };
+        }
+      );
 
       return { previousVendors };
     },

@@ -20,6 +20,7 @@ export default function VendorDetail() {
     queryKey: ['vendor', id],
     queryFn: async () => {
       const response = await vendorAPI.getById(id!);
+      if (!response.data.success) return null;
       return response.data.data as Vendor;
     },
     enabled: !!id,
@@ -30,7 +31,8 @@ export default function VendorDetail() {
     queryKey: ['vendor-deals', id],
     queryFn: async () => {
       const response = await vendorAPI.getDeals(id!);
-      return response.data.data as DealRegistration[];
+      if (!response.data.success) return [];
+      return response.data.data.data as DealRegistration[];
     },
     enabled: !!id,
   });
@@ -40,7 +42,8 @@ export default function VendorDetail() {
     queryKey: ['vendor-contacts', id],
     queryFn: async () => {
       const response = await vendorAPI.getContacts(id!);
-      return response.data.data as Contact[];
+      if (!response.data.success) return [];
+      return response.data.data.data as Contact[];
     },
     enabled: !!id,
   });

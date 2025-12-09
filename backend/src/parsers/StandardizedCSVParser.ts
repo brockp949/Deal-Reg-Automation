@@ -43,6 +43,7 @@ export class StandardizedCSVParser extends BaseParser {
   async parse(filePath: string, options?: CSVParserOptions): Promise<StandardizedParserOutput> {
     const startTime = Date.now();
     const fileName = filePath.split('/').pop() || 'unknown.csv';
+    const sourceTags = new Set<string>();
 
     // Get file size
     let fileSize: number | undefined;
@@ -65,6 +66,7 @@ export class StandardizedCSVParser extends BaseParser {
       // Parse CSV file
       const rows = await parseCSVFile(filePath);
       output.statistics.rowsProcessed = rows.length;
+      sourceTags.add('source:csv');
 
       if (rows.length === 0) {
         this.addWarning(output, 'CSV file is empty', undefined, 'Ensure the file contains data rows');
@@ -84,41 +86,48 @@ export class StandardizedCSVParser extends BaseParser {
         case 'vtiger':
           logger.info('Using vTiger parser');
           extractedData = normalizeVTigerData(rows);
+          sourceTags.add('format:vtiger');
           break;
 
         case 'deals_with_vendors':
           logger.info('Using Deals with Vendors parser');
           extractedData = normalizeDealsWithVendorsData(rows);
+          sourceTags.add('format:deals_with_vendors');
           break;
 
         case 'salesforce':
           logger.info('Detected Salesforce format, using generic parser (specific parser TODO)');
           this.addWarning(output, 'Salesforce format detected but using generic parser', undefined, 'Implement Salesforce-specific parser for better extraction');
           extractedData = parseGenericCSV(rows);
+          sourceTags.add('format:salesforce');
           break;
 
         case 'hubspot':
           logger.info('Detected HubSpot format, using generic parser (specific parser TODO)');
           this.addWarning(output, 'HubSpot format detected but using generic parser', undefined, 'Implement HubSpot-specific parser for better extraction');
           extractedData = parseGenericCSV(rows);
+          sourceTags.add('format:hubspot');
           break;
 
         case 'zoho':
           logger.info('Detected Zoho format, using generic parser (specific parser TODO)');
           this.addWarning(output, 'Zoho format detected but using generic parser', undefined, 'Implement Zoho-specific parser for better extraction');
           extractedData = parseGenericCSV(rows);
+          sourceTags.add('format:zoho');
           break;
 
         case 'pipedrive':
           logger.info('Detected Pipedrive format, using generic parser (specific parser TODO)');
           this.addWarning(output, 'Pipedrive format detected but using generic parser', undefined, 'Implement Pipedrive-specific parser for better extraction');
           extractedData = parseGenericCSV(rows);
+          sourceTags.add('format:pipedrive');
           break;
 
         case 'generic':
         default:
           logger.info('Using generic CSV parser');
           extractedData = parseGenericCSV(rows);
+          sourceTags.add('format:generic');
           break;
       }
 
@@ -133,6 +142,8 @@ export class StandardizedCSVParser extends BaseParser {
 
       // Map contacts
       output.entities.contacts = contacts.map((c: any) => this.normalizeContact(c));
+
+      output.metadata.sourceTags = Array.from(sourceTags);
 
       // Add raw data if requested
       if (options?.includeRawData) {

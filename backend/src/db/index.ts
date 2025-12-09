@@ -1,6 +1,7 @@
 import { Pool, QueryResult } from 'pg';
 import { config } from '../config';
 import logger from '../utils/logger';
+import { performance } from 'perf_hooks';
 
 // Create PostgreSQL connection pool
 const pool = new Pool({
@@ -22,11 +23,15 @@ pool.on('error', (err) => {
 
 // Query helper
 export const query = async (text: string, params?: any[]): Promise<QueryResult> => {
-  const start = Date.now();
+  const start = performance.now();
   try {
     const result = await pool.query(text, params);
-    const duration = Date.now() - start;
-    logger.debug('Executed query', { text, duration, rows: result.rowCount });
+    const duration = performance.now() - start;
+    if (duration > 200) {
+      logger.warn('Slow query detected', { text, duration: `${duration.toFixed(1)}ms`, rows: result.rowCount });
+    } else {
+      logger.debug('Executed query', { text, duration: `${duration.toFixed(1)}ms`, rows: result.rowCount });
+    }
     return result;
   } catch (error) {
     logger.error('Query error', { text, error });

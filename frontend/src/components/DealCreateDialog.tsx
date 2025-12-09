@@ -43,7 +43,7 @@ export default function DealCreateDialog({ preselectedVendorId, trigger }: DealC
     },
   });
 
-  const vendors = vendorsData?.data || [];
+  const vendors = vendorsData?.success ? vendorsData.data.data : [];
 
   const {
     register,

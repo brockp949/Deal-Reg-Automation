@@ -7,6 +7,7 @@
 
 import { Request, Response, NextFunction } from 'express';
 import logger from '../utils/logger';
+import { getRequestContext } from '../utils/requestContext';
 
 interface CacheEntry {
     data: any;
@@ -74,7 +75,8 @@ export function cacheMiddleware(ttlSeconds = 60) {
  * Generate cache key from request
  */
 function generateCacheKey(req: Request): string {
-    return `${req.originalUrl}`;
+    const ctx = getRequestContext();
+    return ctx?.requestId ? `${req.originalUrl}|rid:${ctx.requestId}` : `${req.originalUrl}`;
 }
 
 /**

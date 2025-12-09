@@ -59,6 +59,7 @@ export class StandardizedMboxParser extends BaseParser {
 
     // Create output skeleton
     const output = this.createOutputSkeleton(fileName, 'email', 'mbox', fileSize);
+    const sourceTags = new Set<string>(['source:email']);
 
     const sourceMetadata = await loadSourceMetadata(filePath);
     if (sourceMetadata) {
@@ -92,9 +93,11 @@ export class StandardizedMboxParser extends BaseParser {
 
       output.metadata.sourceTags = Array.from(
         new Set(
-          metadataTags.filter((tag) => Boolean(tag && tag.trim())).map((tag) => tag.trim())
+          [...sourceTags, ...metadataTags.filter((tag) => Boolean(tag && tag.trim())).map((tag) => tag.trim())]
         )
       );
+    } else {
+      output.metadata.sourceTags = Array.from(sourceTags);
     }
 
     try {
@@ -129,7 +132,7 @@ export class StandardizedMboxParser extends BaseParser {
         });
       }
 
-      const baseTags = new Set(output.metadata.sourceTags ?? []);
+      const baseTags = new Set(output.metadata.sourceTags ?? ['source:email']);
       const aggregateTags = new Set(baseTags);
 
       // Process each extracted deal

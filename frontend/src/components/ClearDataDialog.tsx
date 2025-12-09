@@ -24,7 +24,7 @@ export default function ClearDataDialog() {
       return await fileAPI.clearAll();
     },
     onSuccess: (response) => {
-      const stats = response.data?.data;
+      const stats = response.data?.success ? (response.data as any).data : undefined;
       toast.success('All data cleared successfully', {
         description: stats
           ? `Deleted: ${stats.vendors} vendors, ${stats.deals} deals, ${stats.contacts} contacts, ${stats.sourceFiles} files`

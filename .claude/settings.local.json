@@ -47,7 +47,12 @@
       "Bash(do sed -i 's/CREATE INDEX \\([a-zA-Z_]*\\) ON/CREATE INDEX IF NOT EXISTS \\1 ON/g' \"$file\")",
       "Bash(done)",
       "Bash(do sed -i 's/^CREATE TRIGGER /DROP TRIGGER IF EXISTS /g; s/DROP TRIGGER IF EXISTS \\([a-zA-Z_]*\\)$/DROP TRIGGER IF EXISTS \\1 ON /g' \"$file\")",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(npm ls:*)",
+      "Bash(docker --version:*)",
+      "Bash(docker-compose:*)",
+      "Bash(docker info:*)",
+      "Bash(docker ps:*)"
     ],
     "deny": [],
     "ask": []

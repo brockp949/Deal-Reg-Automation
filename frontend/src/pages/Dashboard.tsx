@@ -8,6 +8,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { KPICardSkeleton } from '@/components/skeletons/KPICardSkeleton';
 import { ActivityListSkeleton } from '@/components/skeletons/ActivityListSkeleton';
+import DealFunnelChart from '@/components/charts/DealFunnelChart';
+import DealsByVendorChart from '@/components/charts/DealsByVendorChart';
+import DealValueTrendChart from '@/components/charts/DealValueTrendChart';
 
 export default function Dashboard() {
   // Fetch statistics
@@ -35,13 +38,13 @@ export default function Dashboard() {
     },
   });
 
-  const vendors = vendorsData?.data || [];
-  const deals = dealsData?.data || [];
-  const files = filesData?.data || [];
+  const vendors = vendorsData?.success ? vendorsData.data.data : [];
+  const deals = dealsData?.success ? dealsData.data.data : [];
+  const files = filesData?.success ? filesData.data.data : [];
 
-  const totalVendors = vendorsData?.pagination?.total || 0;
-  const totalDeals = dealsData?.pagination?.total || 0;
-  const totalFiles = filesData?.data?.filter((f: any) => f.processing_status === 'completed').length || 0;
+  const totalVendors = vendorsData?.success ? vendorsData.data.pagination?.total || 0 : 0;
+  const totalDeals = dealsData?.success ? dealsData.data.pagination?.total || 0 : 0;
+  const totalFiles = filesData?.success ? filesData.data.data?.filter((f) => f.processing_status === 'completed').length || 0 : 0;
 
   // Calculate total deal value
   const totalDealValue = deals.reduce((sum: number, deal: any) => sum + (deal.deal_value || 0), 0);
@@ -189,7 +192,15 @@ export default function Dashboard() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2">
+          <DealValueTrendChart />
+        </div>
+        <DealsByVendorChart />
+        <DealFunnelChart />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
         {/* Recent Activity */}
         {filesLoading ? (
           <ActivityListSkeleton items={5} />

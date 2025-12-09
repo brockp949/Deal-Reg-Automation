@@ -6,6 +6,7 @@ import { fileAPI } from '@/lib/api';
 import { formatFileSize } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
 
 interface UploadStepProps {
@@ -16,8 +17,9 @@ interface UploadStepProps {
   onUploadSuccess?: () => void;
 }
 
-interface FileWithError {
+interface FileWithProgress {
   file: File;
+  progress: number;
   error?: string;
 }
 
@@ -28,15 +30,28 @@ export default function UploadStep({
   helpText,
   onUploadSuccess,
 }: UploadStepProps) {
-  const [selectedFiles, setSelectedFiles] = useState<FileWithError[]>([]);
+  const [selectedFiles, setSelectedFiles] = useState<FileWithProgress[]>([]);
   const queryClient = useQueryClient();
 
   const uploadMutation = useMutation({
     mutationFn: async (files: File[]) => {
+      const onUploadProgress = (progressEvent: any) => {
+        const progress = Math.round(
+          (progressEvent.loaded * 100) / progressEvent.total
+        );
+        setSelectedFiles((prevFiles) =>
+          prevFiles.map((file) =>
+            files.some((f) => f.name === file.file.name)
+              ? { ...file, progress }
+              : file
+          )
+        );
+      };
+
       if (files.length === 1) {
-        return await fileAPI.upload(files[0]);
+        return await fileAPI.upload(files[0], onUploadProgress);
       } else {
-        return await fileAPI.batchUpload(files);
+        return await fileAPI.batchUpload(files, onUploadProgress);
       }
     },
     onSuccess: (response: any) => {
@@ -83,12 +98,12 @@ export default function UploadStep({
     }
 
     // Validate accepted files against step requirements
-    const validatedFiles: FileWithError[] = acceptedFiles.map((file) => {
+    const validatedFiles: FileWithProgress[] = acceptedFiles.map((file) => {
       const error = validateFileType(file);
       if (error) {
         toast.error(`${file.name}: ${error}`);
       }
-      return { file, error };
+      return { file, progress: 0, error };
     });
 
     // Only add files without errors
@@ -185,27 +200,30 @@ export default function UploadStep({
         {selectedFiles.length > 0 && (
           <div className="mt-6 space-y-3">
             <h3 className="font-medium">Selected Files:</h3>
-            {selectedFiles.map((fileWithError, index) => (
+            {selectedFiles.map((fileWithProgress, index) => (
               <div
                 key={index}
                 className={`flex items-center justify-between p-3 rounded-lg ${
-                  fileWithError.error ? 'bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800' : 'bg-muted'
+                  fileWithProgress.error ? 'bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800' : 'bg-muted'
                 }`}
               >
                 <div className="flex items-center gap-3 flex-1 min-w-0">
-                  {fileWithError.error ? (
+                  {fileWithProgress.error ? (
                     <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
                   ) : (
                     <File className="w-5 h-5 text-primary flex-shrink-0" />
                   )}
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium truncate">{fileWithError.file.name}</p>
+                    <p className="font-medium truncate">{fileWithProgress.file.name}</p>
                     <p className="text-sm text-muted-foreground">
-                      {formatFileSize(fileWithError.file.size)}
+                      {formatFileSize(fileWithProgress.file.size)}
                     </p>
-                    {fileWithError.error && (
+                    {fileWithProgress.progress > 0 && fileWithProgress.progress < 100 && (
+                      <Progress value={fileWithProgress.progress} className="mt-1" />
+                    )}
+                    {fileWithProgress.error && (
                       <p className="text-sm text-red-600 dark:text-red-400 mt-1">
-                        {fileWithError.error}
+                        {fileWithProgress.error}
                       </p>
                     )}
                   </div>

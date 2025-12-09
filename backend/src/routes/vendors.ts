@@ -11,7 +11,7 @@ const router = Router();
  * GET /api/vendors
  * Get all vendors with optional filtering and pagination
  */
-router.get('/', vendorValidations.getAll, async (req: Request, res: Response) => {
+async function listVendors(req: Request, res: Response) {
   try {
     const {
       page = '1',
@@ -92,6 +92,95 @@ router.get('/', vendorValidations.getAll, async (req: Request, res: Response) =>
     res.status(500).json({
       success: false,
       error: 'Failed to fetch vendors',
+    });
+  }
+}
+
+router.get('/', vendorValidations.getAll, listVendors);
+
+/**
+ * GET /api/vendors/review
+ * Get all vendors awaiting review
+ */
+router.get('/review', async (req: Request, res: Response) => {
+  req.query.approval_status = 'pending';
+  return listVendors(req, res);
+});
+
+/**
+ * POST /api/vendors/review/:id/approve
+ * Approve a vendor
+ */
+router.post('/review/:id/approve', vendorValidations.getById, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { merge_into_vendor_id } = req.body;
+
+    const result = await query(
+      `UPDATE vendors 
+       SET approval_status = 'approved', approved_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1
+       RETURNING *`,
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Vendor not found',
+      });
+    }
+
+    // TODO: Implement merge logic if merge_into_vendor_id is provided
+
+    res.json({
+      success: true,
+      data: result.rows[0],
+      message: 'Vendor approved successfully',
+    });
+  } catch (error: any) {
+    logger.error('Error approving vendor', { error: error.message });
+    res.status(500).json({
+      success: false,
+      error: 'Failed to approve vendor',
+    });
+  }
+});
+
+/**
+ * POST /api/vendors/review/:id/deny
+ * Deny a vendor
+ */
+router.post('/review/:id/deny', vendorValidations.getById, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { notes } = req.body;
+
+    const result = await query(
+      `UPDATE vendors 
+       SET approval_status = 'denied', notes = $2, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1
+       RETURNING *`,
+      [id, notes]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Vendor not found',
+      });
+    }
+
+    res.json({
+      success: true,
+      data: result.rows[0],
+      message: 'Vendor denied successfully',
+    });
+  } catch (error: any) {
+    logger.error('Error denying vendor', { error: error.message });
+    res.status(500).json({
+      success: false,
+      error: 'Failed to deny vendor',
     });
   }
 });

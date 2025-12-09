@@ -145,6 +145,7 @@ export class StandardizedTranscriptParser extends BaseParser {
       if (sourceMetadata) {
         output.metadata.sourceMetadata = sourceMetadata;
         const metadataTags: string[] = [];
+        metadataTags.push('source:transcript');
         if (sourceMetadata.queryName) {
           metadataTags.push(`query:${sourceMetadata.queryName}`);
         }
@@ -172,6 +173,9 @@ export class StandardizedTranscriptParser extends BaseParser {
       }
 
       const baseTags = new Set(output.metadata.sourceTags ?? []);
+      if (!baseTags.size) {
+        baseTags.add('source:transcript');
+      }
       const aggregateTags = new Set(baseTags);
       const sharedSignalTags = new Set(baseTags);
 

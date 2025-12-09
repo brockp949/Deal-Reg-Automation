@@ -1,25 +1,35 @@
 import React, { useState, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Search, FileDown, Loader2, Briefcase, TrendingUp, DollarSign, AlertCircle, Sparkles, RefreshCw, BarChart3, Keyboard } from 'lucide-react';
+import { Search, FileDown, Loader2, Briefcase, TrendingUp, DollarSign, AlertCircle, Sparkles, RefreshCw, BarChart3, Keyboard, MoreVertical, Pencil, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { dealAPI, reprocessAPI } from '@/lib/api';
 import { DealRegistration } from '@/types';
 import { toast } from 'sonner';
 import { DealCardSkeleton } from '@/components/skeletons/DealCardSkeleton';
 import { parseApiError, shouldRetry } from '@/utils/errorHandling';
-import { DealFunnelChart } from '@/components/charts/DealFunnelChart';
-import { DealValueTrend } from '@/components/charts/DealValueTrend';
-import { DealsByVendorChart } from '@/components/charts/DealsByVendorChart';
+import DealFunnelChart from '@/components/charts/DealFunnelChart';
+import DealValueTrendChart from '@/components/charts/DealValueTrendChart';
+import DealsByVendorChart from '@/components/charts/DealsByVendorChart';
 import { WinLossChart } from '@/components/charts/WinLossChart';
 import { DealVelocityMetrics } from '@/components/charts/DealVelocityMetrics';
 import { KeyboardShortcutsDialog } from '@/components/KeyboardShortcutsDialog';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
+import { DealEditDialog } from '@/components/DealEditDialog';
+import { ConfirmDeleteDialog } from '@/components/ConfirmDeleteDialog';
+import { useDeleteDeal } from '@/hooks/useDeals';
+import { DealStatusBadge } from '@/components/status';
 
 export default function Deals() {
   const [search, setSearch] = useState('');
@@ -28,8 +38,12 @@ export default function Deals() {
   const [page, setPage] = useState(1);
   const [isReprocessing, setIsReprocessing] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
+  const [selectedDeal, setSelectedDeal] = useState<DealRegistration | null>(null);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
+  const deleteMutation = useDeleteDeal();
 
   const { data, isLoading, error, refetch, isRefetching } = useQuery({
     queryKey: ['deals', search, statusFilter, sortBy, page],
@@ -83,6 +97,27 @@ export default function Deals() {
     setPage(1);
   };
 
+  const handleEditDeal = (deal: DealRegistration) => {
+    setSelectedDeal(deal);
+    setShowEditDialog(true);
+  };
+
+  const handleDeleteDeal = (deal: DealRegistration) => {
+    setSelectedDeal(deal);
+    setShowDeleteDialog(true);
+  };
+
+  const confirmDelete = () => {
+    if (selectedDeal) {
+      deleteMutation.mutate(selectedDeal.id, {
+        onSuccess: () => {
+          setShowDeleteDialog(false);
+          setSelectedDeal(null);
+        },
+      });
+    }
+  };
+
   // Keyboard shortcuts
   useKeyboardShortcuts([
     {
@@ -120,23 +155,6 @@ export default function Deals() {
     acc[deal.status] = (acc[deal.status] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'registered':
-        return 'bg-blue-100 text-blue-800';
-      case 'approved':
-        return 'bg-green-100 text-green-800';
-      case 'rejected':
-        return 'bg-red-100 text-red-800';
-      case 'closed-won':
-        return 'bg-purple-100 text-purple-800';
-      case 'closed-lost':
-        return 'bg-gray-100 text-gray-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
 
   const formatCurrency = (value: number, currency: string = 'USD') => {
     return new Intl.NumberFormat('en-US', {
@@ -387,13 +405,13 @@ export default function Deals() {
 
           {/* Main Charts */}
           <div className="grid gap-4 md:grid-cols-2">
-            <DealFunnelChart deals={deals} />
-            <DealValueTrend deals={deals} />
+            <DealFunnelChart />
+            <DealValueTrendChart />
           </div>
 
           {/* Secondary Charts */}
           <div className="grid gap-4 md:grid-cols-2">
-            <DealsByVendorChart deals={deals} />
+            <DealsByVendorChart />
             <WinLossChart deals={deals} />
           </div>
         </TabsContent>
@@ -430,9 +448,30 @@ export default function Deals() {
                       {deal.customer_name || 'No customer specified'}
                     </CardDescription>
                   </div>
-                  <Badge className={getStatusColor(deal.status)} variant="secondary">
-                    {deal.status}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <DealStatusBadge status={deal.status} />
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <MoreVertical className="h-4 w-4" />
+                          <span className="sr-only">Open menu</span>
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleEditDeal(deal)}>
+                          <Pencil className="mr-2 h-4 w-4" />
+                          Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => handleDeleteDeal(deal)}
+                          className="text-destructive focus:text-destructive"
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -586,6 +625,29 @@ export default function Deals() {
 
       {/* Keyboard Shortcuts Dialog */}
       <KeyboardShortcutsDialog open={showShortcuts} onOpenChange={setShowShortcuts} />
+
+      {/* Edit Deal Dialog */}
+      <DealEditDialog
+        deal={selectedDeal}
+        open={showEditDialog}
+        onOpenChange={(open) => {
+          setShowEditDialog(open);
+          if (!open) setSelectedDeal(null);
+        }}
+      />
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDeleteDialog
+        open={showDeleteDialog}
+        onOpenChange={(open) => {
+          setShowDeleteDialog(open);
+          if (!open) setSelectedDeal(null);
+        }}
+        onConfirm={confirmDelete}
+        entityType="deal"
+        entityName={selectedDeal?.deal_name || ''}
+        isDeleting={deleteMutation.isPending}
+      />
     </div>
   );
 }
