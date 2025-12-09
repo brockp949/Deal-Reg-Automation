@@ -1,27 +1,19 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { dealAPI } from '@/lib/api';
-import { DealRegistration } from '@/types';
+import type { DealRegistration, DealStatus } from '@/types';
+import type { DealsResponse, CreateDealInput, UpdateDealInput } from '@/types/api';
 import { toast } from 'sonner';
 import { getErrorMessage } from '@/utils/errorHandling';
 
 interface UpdateDealStatusData {
   id: string;
-  status: string;
+  status: DealStatus;
 }
 
-interface CreateDealData {
-  vendor_id: string;
-  deal_name: string;
-  deal_value?: number;
-  currency?: string;
-  customer_name?: string;
-  customer_industry?: string;
-  registration_date?: Date;
-  expected_close_date?: Date;
-  status?: string;
-  deal_stage?: string;
-  probability?: number;
-  notes?: string;
+/** Type for query data stored in React Query cache */
+interface DealsQueryData {
+  success: boolean;
+  data: DealsResponse;
 }
 
 export function useUpdateDealStatus() {
@@ -36,19 +28,25 @@ export function useUpdateDealStatus() {
       await queryClient.cancelQueries({ queryKey: ['deals'] });
 
       // Snapshot the previous value
-      const previousDeals = queryClient.getQueryData(['deals']);
+      const previousDeals = queryClient.getQueryData<DealsQueryData>(['deals']);
 
       // Optimistically update to the new value
-      queryClient.setQueriesData({ queryKey: ['deals'] }, (old: any) => {
-        if (!old?.data) return old;
+      queryClient.setQueriesData<DealsQueryData>(
+        { queryKey: ['deals'] },
+        (old) => {
+          if (!old?.data?.data) return old;
 
-        return {
-          ...old,
-          data: old.data.map((deal: DealRegistration) =>
-            deal.id === id ? { ...deal, status } : deal
-          ),
-        };
-      });
+          return {
+            ...old,
+            data: {
+              ...old.data,
+              data: old.data.data.map((deal) =>
+                deal.id === id ? { ...deal, status } : deal
+              ),
+            },
+          };
+        }
+      );
 
       return { previousDeals };
     },
@@ -78,36 +76,51 @@ export function useCreateDeal() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (data: CreateDealData) => dealAPI.create(data),
+    mutationFn: (data: CreateDealInput) => dealAPI.create(data),
 
     onMutate: async (newDeal) => {
       await queryClient.cancelQueries({ queryKey: ['deals'] });
 
-      const previousDeals = queryClient.getQueryData(['deals']);
+      const previousDeals = queryClient.getQueryData<DealsQueryData>(['deals']);
 
       // Optimistically add the new deal with a temporary ID
-      queryClient.setQueriesData({ queryKey: ['deals'] }, (old: any) => {
-        if (!old?.data) return old;
+      queryClient.setQueriesData<DealsQueryData>(
+        { queryKey: ['deals'] },
+        (old) => {
+          if (!old?.data?.data) return old;
 
-        const optimisticDeal: DealRegistration = {
-          id: `temp-${Date.now()}`,
-          ...newDeal,
-          deal_value: newDeal.deal_value || 0,
-          currency: newDeal.currency || 'USD',
-          status: newDeal.status || 'registered',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        } as DealRegistration;
+          const optimisticDeal: DealRegistration = {
+            id: `temp-${Date.now()}`,
+            vendor_id: newDeal.vendor_id,
+            deal_name: newDeal.deal_name,
+            deal_value: newDeal.deal_value || 0,
+            currency: newDeal.currency || 'USD',
+            customer_name: newDeal.customer_name,
+            customer_industry: newDeal.customer_industry,
+            registration_date: newDeal.registration_date,
+            expected_close_date: newDeal.expected_close_date,
+            status: newDeal.status || 'registered',
+            deal_stage: newDeal.deal_stage,
+            probability: newDeal.probability,
+            notes: newDeal.notes,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            metadata: {},
+          };
 
-        return {
-          ...old,
-          data: [optimisticDeal, ...old.data],
-          pagination: old.pagination ? {
-            ...old.pagination,
-            total: old.pagination.total + 1,
-          } : undefined,
-        };
-      });
+          return {
+            ...old,
+            data: {
+              ...old.data,
+              data: [optimisticDeal, ...old.data.data],
+              pagination: {
+                ...old.data.pagination,
+                total: old.data.pagination.total + 1,
+              },
+            },
+          };
+        }
+      );
 
       return { previousDeals };
     },
@@ -131,6 +144,60 @@ export function useCreateDeal() {
   });
 }
 
+export function useUpdateDeal() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: UpdateDealInput }) =>
+      dealAPI.update(id, data),
+
+    onMutate: async ({ id, data }) => {
+      await queryClient.cancelQueries({ queryKey: ['deals'] });
+
+      const previousDeals = queryClient.getQueryData<DealsQueryData>(['deals']);
+
+      // Optimistically update the deal
+      queryClient.setQueriesData<DealsQueryData>(
+        { queryKey: ['deals'] },
+        (old) => {
+          if (!old?.data?.data) return old;
+
+          return {
+            ...old,
+            data: {
+              ...old.data,
+              data: old.data.data.map((deal) =>
+                deal.id === id
+                  ? { ...deal, ...data, updated_at: new Date().toISOString() }
+                  : deal
+              ),
+            },
+          };
+        }
+      );
+
+      return { previousDeals };
+    },
+
+    onError: (error, _variables, context) => {
+      if (context?.previousDeals) {
+        queryClient.setQueryData(['deals'], context.previousDeals);
+      }
+      toast.error('Failed to update deal', {
+        description: getErrorMessage(error),
+      });
+    },
+
+    onSuccess: () => {
+      toast.success('Deal updated successfully');
+    },
+
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['deals'] });
+    },
+  });
+}
+
 export function useDeleteDeal() {
   const queryClient = useQueryClient();
 
@@ -140,21 +207,27 @@ export function useDeleteDeal() {
     onMutate: async (dealId) => {
       await queryClient.cancelQueries({ queryKey: ['deals'] });
 
-      const previousDeals = queryClient.getQueryData(['deals']);
+      const previousDeals = queryClient.getQueryData<DealsQueryData>(['deals']);
 
       // Optimistically remove the deal
-      queryClient.setQueriesData({ queryKey: ['deals'] }, (old: any) => {
-        if (!old?.data) return old;
+      queryClient.setQueriesData<DealsQueryData>(
+        { queryKey: ['deals'] },
+        (old) => {
+          if (!old?.data?.data) return old;
 
-        return {
-          ...old,
-          data: old.data.filter((deal: DealRegistration) => deal.id !== dealId),
-          pagination: old.pagination ? {
-            ...old.pagination,
-            total: old.pagination.total - 1,
-          } : undefined,
-        };
-      });
+          return {
+            ...old,
+            data: {
+              ...old.data,
+              data: old.data.data.filter((deal) => deal.id !== dealId),
+              pagination: {
+                ...old.data.pagination,
+                total: old.data.pagination.total - 1,
+              },
+            },
+          };
+        }
+      );
 
       return { previousDeals };
     },

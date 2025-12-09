@@ -1,4 +1,6 @@
 import { query } from '../db';
+import { config } from '../config';
+import { FileProcessorV2 } from './fileProcessorV2';
 import { parseMboxFile, extractInfoFromEmails } from '../parsers/mboxParser';
 import { parseStreamingMboxFile } from '../parsers/streamingMboxParser';
 import { parseCSVFile, normalizeVTigerData, parseGenericCSV } from '../parsers/csvParser';
@@ -44,6 +46,12 @@ async function updateFileProgress(fileId: string, progress: number) {
  * Processes uploaded file and creates vendors, deals, and contacts
  */
 export async function processFile(fileId: string): Promise<ProcessingResult> {
+  if (config.ingestion?.useFileProcessorV2) {
+    logger.info('FileProcessorV2 enabled; routing job to v2 processor', { fileId });
+    const processor = new FileProcessorV2(fileId);
+    return processor.process();
+  }
+
   // Create a job to track this processing
   const jobId = createJob('file_processing', { fileId });
   startJob(jobId, 'Initializing file processing');

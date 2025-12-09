@@ -5,11 +5,19 @@ import morgan from 'morgan';
 import { config } from './config';
 import logger from './utils/logger';
 import pool from './db';
-import { apiKeyAuth } from './api/middleware/apiKeyAuth';
+import { apiKeyAuth, requireRole } from './api/middleware/apiKeyAuth';
+import { apiKeyUsageLogger } from './api/middleware/apiKeyUsageLogger';
+import { methodRoleGuard } from './api/middleware/methodRoleGuard';
+import { apiLimiter, mutationLimiter, uploadLimiter } from './middleware/rateLimiter';
+import { requestId } from './middleware/requestId';
+import { runWithContext } from './utils/requestContext';
+import { requestMetrics } from './utils/requestMetrics';
 
 // Import routes
 import vendorRoutes from './routes/vendors';
 import vendorImportRoutes from './routes/vendorImport';
+import dealImportRoutes from './routes/dealImport';
+import agreementRoutes from './routes/agreements';
 import dealRoutes from './routes/deals';
 import fileRoutes from './routes/files';
 import configRoutes from './routes/configs';
@@ -33,11 +41,17 @@ import batchDuplicatesRoutes from './routes/batchDuplicates';
 import webhookRoutes from './routes/webhooks';
 import reportRoutes from './routes/reports';
 import mergeAuditRoutes from './routes/mergeAudit';
+import opsRoutes from './routes/ops';
+import metricsRoutes from './routes/metrics';
+import healthRoutes from './routes/health';
+import dashboardRoutes from './routes/dashboard';
 
 const app = express();
 
 // Security and parsing middleware
 app.use(helmet());
+app.use((req, _res, next) => runWithContext({ requestId: (req as any).requestId }, next));
+app.use(requestId);
 app.use(cors({
   origin: config.cors.origin,
   credentials: true,
@@ -45,6 +59,11 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(apiKeyAuth);
+app.use(apiKeyUsageLogger);
+app.use(apiLimiter);
+app.use(mutationLimiter);
+app.use(methodRoleGuard);
+app.use(requestMetrics);
 app.use(morgan('combined', {
   stream: {
     write: (message: string) => logger.info(message.trim()),
@@ -103,8 +122,10 @@ app.get('/health', async (req: Request, res: Response) => {
 // API Routes
 app.use(`${config.apiPrefix}/vendors`, vendorRoutes);
 app.use(`${config.apiPrefix}/vendors`, vendorImportRoutes); // Vendor import endpoints
+app.use(`${config.apiPrefix}/vendors/:vendorId/deals`, uploadLimiter, dealImportRoutes); // Deal import per vendor
+app.use(`${config.apiPrefix}/vendors/:vendorId/agreements`, uploadLimiter, agreementRoutes); // Vendor agreements
 app.use(`${config.apiPrefix}/deals`, dealRoutes);
-app.use(`${config.apiPrefix}/files`, fileRoutes);
+app.use(`${config.apiPrefix}/files`, uploadLimiter, fileRoutes);
 app.use(`${config.apiPrefix}/configs`, configRoutes);
 app.use(`${config.apiPrefix}/contacts`, contactRoutes);
 app.use(`${config.apiPrefix}/export`, exportRoutes);
@@ -126,7 +147,11 @@ app.use(`${config.apiPrefix}/files`, fileProgressRoutes);
 app.use(`${config.apiPrefix}/duplicates`, batchDuplicatesRoutes);
 app.use(`${config.apiPrefix}/webhooks`, webhookRoutes);
 app.use(`${config.apiPrefix}/reports`, reportRoutes);
-app.use(`${config.apiPrefix}/merge`, mergeAuditRoutes);
+app.use(`${config.apiPrefix}/merge`, requireRole(['admin']), mergeAuditRoutes);
+app.use(`${config.apiPrefix}/ops`, opsRoutes);
+app.use('/', healthRoutes);
+app.use(`${config.apiPrefix}/metrics`, metricsRoutes);
+app.use(`${config.apiPrefix}/dashboard`, dashboardRoutes);
 
 // 404 handler
 app.use((req: Request, res: Response) => {

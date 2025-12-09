@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Search, Loader2, Building2, DollarSign, TrendingUp, Upload, FileDown } from 'lucide-react';
+import { Search, Loader2, Building2, DollarSign, TrendingUp, Upload, FileDown, FileText, MoreVertical, Pencil, Trash2 } from 'lucide-react';
 import { vendorAPI } from '@/lib/api';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
@@ -8,25 +8,44 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import VendorCreateDialog from '@/components/VendorCreateDialog';
-import type { Vendor, DealRegistration } from '@/types';
+import { VendorEditDialog } from '@/components/VendorEditDialog';
+import { ConfirmDeleteDialog } from '@/components/ConfirmDeleteDialog';
+import { DealImportDialog } from '@/components/DealImportDialog';
+import { AgreementUploadDialog } from '@/components/AgreementUploadDialog';
+import { useDeleteVendor } from '@/hooks/useVendors';
+import { DealStatusBadge } from '@/components/status';
+import type { Vendor } from '@/types';
+import type { VendorQueryParams } from '@/types/api';
 
 export default function Vendors() {
   const [search, setSearch] = useState('');
   const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
+  const [vendorToEdit, setVendorToEdit] = useState<Vendor | null>(null);
+  const [vendorToDelete, setVendorToDelete] = useState<Vendor | null>(null);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [showAgreementDialog, setShowAgreementDialog] = useState(false);
+  const deleteMutation = useDeleteVendor();
 
   // Fetch all vendors
-  const { data: vendorsData, isLoading: vendorsLoading } = useQuery({
+  const { data: vendors = [], isLoading: vendorsLoading } = useQuery({
     queryKey: ['vendors', search],
     queryFn: async () => {
-      const params: any = { page: 1, limit: 100 };
+      const params: VendorQueryParams = { page: 1, limit: 100 };
       if (search) params.search = search;
       const response = await vendorAPI.getAll(params);
-      return response.data;
+      if (!response.data.success) return [];
+      return response.data.data.data;
     },
   });
-
-  const vendors: Vendor[] = vendorsData?.data || [];
 
   // Auto-select first vendor if none selected
   const selectedVendor = selectedVendorId
@@ -39,35 +58,46 @@ export default function Vendors() {
   }
 
   // Fetch deals for selected vendor
-  const { data: dealsData, isLoading: dealsLoading } = useQuery({
+  const { data: deals = [], isLoading: dealsLoading } = useQuery({
     queryKey: ['vendor-deals', selectedVendor?.id],
     queryFn: async () => {
       if (!selectedVendor?.id) return [];
       const response = await vendorAPI.getDeals(selectedVendor.id);
-      return response.data.data as DealRegistration[];
+      if (!response.data.success) return [];
+      return response.data.data.data;
     },
     enabled: !!selectedVendor?.id,
   });
-
-  const deals: DealRegistration[] = dealsData || [];
 
   // Calculate statistics for selected vendor
   const totalDeals = deals.length;
   const totalValue = deals.reduce((sum, deal) => sum + (deal.deal_value || 0), 0);
   const avgDealSize = totalDeals > 0 ? totalValue / totalDeals : 0;
 
-  const getStatusVariant = (status: string): 'default' | 'secondary' | 'success' | 'destructive' => {
-    switch (status) {
-      case 'approved':
-      case 'closed-won':
-        return 'success';
-      case 'rejected':
-      case 'closed-lost':
-        return 'destructive';
-      case 'registered':
-        return 'default';
-      default:
-        return 'secondary';
+  const handleEditVendor = (vendor: Vendor, e: React.MouseEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    setVendorToEdit(vendor);
+    setShowEditDialog(true);
+  };
+
+  const handleDeleteVendor = (vendor: Vendor, e: React.MouseEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    setVendorToDelete(vendor);
+    setShowDeleteDialog(true);
+  };
+
+  const confirmDelete = () => {
+    if (vendorToDelete) {
+      deleteMutation.mutate(vendorToDelete.id, {
+        onSuccess: () => {
+          setShowDeleteDialog(false);
+          setVendorToDelete(null);
+          // If we deleted the selected vendor, select the first remaining vendor
+          if (selectedVendorId === vendorToDelete.id) {
+            setSelectedVendorId(null);
+          }
+        },
+      });
     }
   };
 
@@ -105,10 +135,10 @@ export default function Vendors() {
           ) : (
             <div className="p-2">
               {vendors.map((vendor) => (
-                <button
+                <div
                   key={vendor.id}
                   onClick={() => setSelectedVendorId(vendor.id)}
-                  className={`w-full text-left p-3 rounded-lg mb-1 transition-colors ${
+                  className={`w-full text-left p-3 rounded-lg mb-1 transition-colors cursor-pointer ${
                     selectedVendor?.id === vendor.id
                       ? 'bg-primary text-primary-foreground'
                       : 'hover:bg-accent'
@@ -123,20 +153,51 @@ export default function Vendors() {
                         </div>
                       )}
                     </div>
-                    {vendor.status && (
-                      <Badge
-                        variant={vendor.status === 'active' ? 'success' : 'secondary'}
-                        className={`text-xs flex-shrink-0 ${
-                          selectedVendor?.id === vendor.id
-                            ? 'bg-primary-foreground/20 text-primary-foreground'
-                            : ''
-                        }`}
-                      >
-                        {vendor.status}
-                      </Badge>
-                    )}
+                    <div className="flex items-center gap-1">
+                      {vendor.status && (
+                        <Badge
+                          variant={vendor.status === 'active' ? 'success' : 'secondary'}
+                          className={`text-xs flex-shrink-0 ${
+                            selectedVendor?.id === vendor.id
+                              ? 'bg-primary-foreground/20 text-primary-foreground'
+                              : ''
+                          }`}
+                        >
+                          {vendor.status}
+                        </Badge>
+                      )}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className={`h-6 w-6 flex-shrink-0 ${
+                              selectedVendor?.id === vendor.id
+                                ? 'hover:bg-primary-foreground/20'
+                                : ''
+                            }`}
+                          >
+                            <MoreVertical className="h-3 w-3" />
+                            <span className="sr-only">Open menu</span>
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={(e) => handleEditVendor(vendor, e)}>
+                            <Pencil className="mr-2 h-4 w-4" />
+                            Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={(e) => handleDeleteVendor(vendor, e)}
+                            className="text-destructive focus:text-destructive"
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
                   </div>
-                </button>
+                </div>
               ))}
             </div>
           )}
@@ -169,9 +230,13 @@ export default function Vendors() {
                   )}
                 </div>
                 <div className="flex gap-2">
-                  <Button variant="outline" size="sm">
+                  <Button variant="outline" size="sm" onClick={() => setShowImportDialog(true)}>
                     <Upload className="h-4 w-4 mr-2" />
-                    Import
+                    Import Deals
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setShowAgreementDialog(true)}>
+                    <FileText className="h-4 w-4 mr-2" />
+                    Upload Agreement
                   </Button>
                   <Button variant="outline" size="sm">
                     <FileDown className="h-4 w-4 mr-2" />
@@ -255,9 +320,7 @@ export default function Vendors() {
                           </TableCell>
                           <TableCell>{deal.customer_name || 'N/A'}</TableCell>
                           <TableCell>
-                            <Badge variant={getStatusVariant(deal.status)}>
-                              {deal.status}
-                            </Badge>
+                            <DealStatusBadge status={deal.status} />
                           </TableCell>
                           <TableCell>{deal.deal_stage || 'N/A'}</TableCell>
                           <TableCell className="text-right font-medium">
@@ -286,6 +349,47 @@ export default function Vendors() {
           </>
         )}
       </div>
+
+      {/* Edit Vendor Dialog */}
+      <VendorEditDialog
+        vendor={vendorToEdit}
+        open={showEditDialog}
+        onOpenChange={(open) => {
+          setShowEditDialog(open);
+          if (!open) setVendorToEdit(null);
+        }}
+      />
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDeleteDialog
+        open={showDeleteDialog}
+        onOpenChange={(open) => {
+          setShowDeleteDialog(open);
+          if (!open) setVendorToDelete(null);
+        }}
+        onConfirm={confirmDelete}
+        entityType="vendor"
+        entityName={vendorToDelete?.name || ''}
+        isDeleting={deleteMutation.isPending}
+      />
+
+      {/* Deal Import Dialog */}
+      {selectedVendor && (
+        <DealImportDialog
+          vendor={selectedVendor}
+          open={showImportDialog}
+          onOpenChange={setShowImportDialog}
+        />
+      )}
+
+      {/* Agreement Upload Dialog */}
+      {selectedVendor && (
+        <AgreementUploadDialog
+          vendor={selectedVendor}
+          open={showAgreementDialog}
+          onOpenChange={setShowAgreementDialog}
+        />
+      )}
     </div>
   );
 }

@@ -191,16 +191,39 @@ export class FileProcessingOrchestrator {
     logger.info('Processing MBOX file', { filePath });
 
     try {
-      const emails = await parseStreamingMboxFile(filePath);
-      const extractedInfo = await extractInfoFromEmails(emails);
+      // Use streaming parser for large files - returns structured result
+      const result = await parseStreamingMboxFile(filePath);
+
+      // Extract vendor and contact data from deals
+      const vendors: VendorData[] = [];
+      const contacts: ContactData[] = [];
+      const deals: DealData[] = result.extractedDeals.map((deal) => ({
+        deal_name: deal.deal_name || deal.source_email_subject || 'Untitled Deal',
+        deal_value: deal.deal_value,
+        customer_name: deal.end_user_name,
+        vendor_name: deal.source_email_domain,
+        expected_close_date: deal.expected_close_date,
+        probability: deal.confidence_score ? Math.round(deal.confidence_score * 100) : undefined,
+        notes: deal.pre_sales_efforts,
+      }));
+
+      // Extract unique vendors from email domains
+      const seenVendors = new Set<string>();
+      for (const deal of result.extractedDeals) {
+        const vendorName = deal.source_email_domain;
+        if (vendorName && !seenVendors.has(vendorName.toLowerCase())) {
+          seenVendors.add(vendorName.toLowerCase());
+          vendors.push({ name: vendorName });
+        }
+      }
 
       return {
-        vendors: extractedInfo.vendors || [],
-        deals: extractedInfo.deals || [],
-        contacts: extractedInfo.contacts || [],
+        vendors,
+        deals,
+        contacts,
         summary: {
-          emailsProcessed: emails.length,
-          dealsExtracted: extractedInfo.deals?.length || 0,
+          emailsProcessed: result.totalMessages,
+          dealsExtracted: result.extractedDeals.length,
         },
       };
     } catch (error) {
@@ -217,46 +240,39 @@ export class FileProcessingOrchestrator {
 
     try {
       const parser = new StandardizedCSVParser();
-      const result = await parser.parseFile(filePath);
+      const result = await parser.parse(filePath);
 
-      // Transform to common format
-      const vendors: VendorData[] = [];
-      const deals: DealData[] = [];
-      const contacts: ContactData[] = [];
+      // Transform normalized entities to common format (snake_case properties)
+      const vendors: VendorData[] = result.entities.vendors.map((v) => ({
+        name: v.name,
+        emailDomains: v.email_domains,
+        industry: v.industry,
+        website: v.website,
+      }));
 
-      for (const record of result.records) {
-        if (record.vendor_name) {
-          vendors.push({
-            name: record.vendor_name,
-            email: record.vendor_email,
-          });
-        }
+      const deals: DealData[] = result.entities.deals.map((d) => ({
+        deal_name: d.deal_name,
+        deal_value: d.deal_value,
+        customer_name: d.customer_name,
+        expected_close_date: d.expected_close_date,
+        deal_stage: d.deal_stage,
+        probability: d.probability,
+        vendor_name: d.vendor_name,
+      }));
 
-        deals.push({
-          deal_name: record.deal_name || record.opportunity_name,
-          deal_value: record.deal_value || record.amount,
-          customer_name: record.customer_name || record.account_name,
-          expected_close_date: record.close_date,
-          deal_stage: record.stage,
-          probability: record.probability,
-        });
-
-        if (record.contact_name || record.contact_email) {
-          contacts.push({
-            name: record.contact_name || 'Unknown',
-            email: record.contact_email,
-            phone: record.contact_phone,
-            role: record.contact_role,
-          });
-        }
-      }
+      const contacts: ContactData[] = result.entities.contacts.map((c) => ({
+        name: c.name,
+        email: c.email,
+        phone: c.phone,
+        role: c.role,
+      }));
 
       return {
         vendors,
         deals,
         contacts,
         summary: {
-          recordsProcessed: result.records.length,
+          recordsProcessed: result.metadata.recordCount.total,
         },
       };
     } catch (error) {
@@ -273,44 +289,41 @@ export class FileProcessingOrchestrator {
 
     try {
       const parser = new StandardizedTranscriptParser();
-      const result = await parser.parseFile(filePath);
+      const result = await parser.parse(filePath);
 
-      const vendors: VendorData[] = [];
-      const deals: DealData[] = [];
-      const contacts: ContactData[] = [];
+      // Transform normalized entities to common format (snake_case properties)
+      const vendors: VendorData[] = result.entities.vendors.map((v) => ({
+        name: v.name,
+        emailDomains: v.email_domains,
+        industry: v.industry,
+        website: v.website,
+      }));
 
-      for (const item of result.items) {
-        if (item.vendor) {
-          vendors.push({ name: item.vendor });
-        }
+      const deals: DealData[] = result.entities.deals.map((d) => ({
+        deal_name: d.deal_name,
+        deal_value: d.deal_value,
+        customer_name: d.customer_name,
+        expected_close_date: d.expected_close_date,
+        deal_stage: d.deal_stage,
+        probability: d.probability,
+        vendor_name: d.vendor_name,
+        notes: d.notes,
+        extraction_method: 'transcript',
+      }));
 
-        if (item.deal_name || item.customer) {
-          deals.push({
-            deal_name: item.deal_name,
-            customer_name: item.customer,
-            deal_value: item.deal_value,
-            notes: item.notes,
-            extraction_method: 'transcript',
-          });
-        }
-
-        if (item.contacts) {
-          for (const contact of item.contacts) {
-            contacts.push({
-              name: contact.name,
-              email: contact.email,
-              role: contact.role,
-            });
-          }
-        }
-      }
+      const contacts: ContactData[] = result.entities.contacts.map((c) => ({
+        name: c.name,
+        email: c.email,
+        phone: c.phone,
+        role: c.role,
+      }));
 
       return {
         vendors,
         deals,
         contacts,
         summary: {
-          recordsProcessed: result.items.length,
+          recordsProcessed: result.metadata.recordCount.total,
         },
       };
     } catch (error) {
@@ -446,7 +459,7 @@ export class FileProcessingOrchestrator {
 
     // Default to first vendor if only one
     if (processedVendors.size === 1) {
-      return processedVendors.values().next().value;
+      return processedVendors.values().next().value ?? null;
     }
 
     return null;

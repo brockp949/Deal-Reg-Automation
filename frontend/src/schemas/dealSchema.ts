@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+// Schema for form inputs - accepts strings from HTML inputs
 export const dealSchema = z.object({
   vendor_id: z.string().uuid('Please select a valid vendor'),
   deal_name: z
@@ -7,12 +8,15 @@ export const dealSchema = z.object({
     .min(3, 'Deal name must be at least 3 characters')
     .max(255, 'Deal name must not exceed 255 characters'),
   deal_value: z
-    .number({
-      required_error: 'Deal value is required',
-      invalid_type_error: 'Deal value must be a number',
-    })
-    .nonnegative('Deal value must be positive')
-    .optional(),
+    .string()
+    .optional()
+    .transform((val) => (val ? Number(val) : undefined))
+    .pipe(
+      z
+        .number()
+        .nonnegative('Deal value must be positive')
+        .optional()
+    ),
   currency: z
     .string()
     .length(3, 'Currency must be a 3-letter code (e.g., USD)')
@@ -28,15 +32,10 @@ export const dealSchema = z.object({
     .max(100, 'Industry must not exceed 100 characters')
     .optional(),
   registration_date: z
-    .date({
-      required_error: 'Registration date is required',
-      invalid_type_error: 'Invalid date',
-    })
+    .string()
     .optional(),
   expected_close_date: z
-    .date({
-      invalid_type_error: 'Invalid date',
-    })
+    .string()
     .optional(),
   status: z
     .enum(['registered', 'approved', 'rejected', 'closed-won', 'closed-lost'], {
@@ -49,17 +48,37 @@ export const dealSchema = z.object({
     .max(100, 'Deal stage must not exceed 100 characters')
     .optional(),
   probability: z
-    .number({
-      invalid_type_error: 'Probability must be a number',
-    })
-    .min(0, 'Probability must be between 0 and 100')
-    .max(100, 'Probability must be between 0 and 100')
-    .optional(),
+    .string()
+    .optional()
+    .transform((val) => (val ? Number(val) : undefined))
+    .pipe(
+      z
+        .number()
+        .min(0, 'Probability must be between 0 and 100')
+        .max(100, 'Probability must be between 0 and 100')
+        .optional()
+    ),
   notes: z
     .string()
     .max(5000, 'Notes must not exceed 5000 characters')
     .optional(),
 });
+
+// Input type for the form (what react-hook-form receives)
+export type DealFormInput = {
+  vendor_id: string;
+  deal_name: string;
+  deal_value?: string;
+  currency?: string;
+  customer_name?: string;
+  customer_industry?: string;
+  registration_date?: string;
+  expected_close_date?: string;
+  status?: 'registered' | 'approved' | 'rejected' | 'closed-won' | 'closed-lost';
+  deal_stage?: string;
+  probability?: string;
+  notes?: string;
+};
 
 export type DealFormData = z.infer<typeof dealSchema>;
 

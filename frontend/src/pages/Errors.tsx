@@ -54,7 +54,7 @@ export default function Errors() {
         },
     });
 
-    const errors: ErrorLog[] = errorsData?.data || [];
+    const errors: ErrorLog[] = errorsData?.success ? errorsData.data.data : [];
 
     const getSeverityIcon = (severity: string) => {
         switch (severity) {

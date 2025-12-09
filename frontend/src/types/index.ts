@@ -1,3 +1,43 @@
+// ============================================================================
+// Metadata Types
+// ============================================================================
+
+export interface VendorMetadata {
+  source_file_id?: string;
+  detection_source?: string;
+  aliases?: string[];
+  products?: string[];
+  [key: string]: unknown;
+}
+
+export interface DealMetadata {
+  source_file_id?: string;
+  extraction_method?: string;
+  confidence_score?: number;
+  buying_signal_score?: number;
+  enhanced_transcript_data?: Record<string, unknown>;
+  config?: {
+    configName?: string;
+    storedAt?: string;
+    topLevelKeys?: string[];
+  };
+  [key: string]: unknown;
+}
+
+export interface FileMetadata {
+  progress?: number;
+  config?: {
+    configName?: string;
+    storedAt?: string;
+    topLevelKeys?: string[];
+  };
+  [key: string]: unknown;
+}
+
+// ============================================================================
+// Entity Types
+// ============================================================================
+
 export interface Vendor {
   id: string;
   name: string;
@@ -9,7 +49,7 @@ export interface Vendor {
   status: 'active' | 'inactive' | 'merged';
   created_at: string;
   updated_at: string;
-  metadata: Record<string, any>;
+  metadata: VendorMetadata;
 }
 
 export interface DealRegistration {
@@ -29,7 +69,7 @@ export interface DealRegistration {
   notes?: string;
   created_at: string;
   updated_at: string;
-  metadata: Record<string, any>;
+  metadata: DealMetadata;
 }
 
 export type DealStatus =
@@ -38,6 +78,19 @@ export type DealStatus =
   | 'rejected'
   | 'closed-won'
   | 'closed-lost';
+
+export interface UploadMetadata {
+  intent?: string;
+  source?: string;
+  [key: string]: unknown;
+}
+
+export interface ScanDetails {
+  engine?: string;
+  version?: string;
+  threats_detected?: string[];
+  [key: string]: unknown;
+}
 
 export interface SourceFile {
   id: string;
@@ -50,17 +103,17 @@ export interface SourceFile {
   processing_started_at?: string;
   processing_completed_at?: string;
   error_message?: string;
-  metadata: Record<string, any>;
+  metadata: FileMetadata;
   checksum_sha256?: string;
   checksum_verified_at?: string;
   scan_status?: FileScanStatus;
   scan_engine?: string;
-  scan_details?: Record<string, any>;
+  scan_details?: ScanDetails;
   scan_completed_at?: string;
   quarantined_at?: string;
   quarantine_reason?: string;
   uploaded_by?: string;
-  upload_metadata?: Record<string, any>;
+  upload_metadata?: UploadMetadata;
   duplicate_of_id?: string;
 }
 
@@ -100,7 +153,7 @@ export interface Contact {
   updated_at: string;
 }
 
-export interface ApiResponse<T = any> {
+export interface ApiResponse<T = unknown> {
   success: boolean;
   data?: T;
   error?: string;

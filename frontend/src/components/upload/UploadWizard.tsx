@@ -38,7 +38,8 @@ export default function UploadWizard() {
     queryKey: ['files'],
     queryFn: async () => {
       const response = await fileAPI.getAll();
-      return response.data.data as SourceFile[];
+      if (!response.data.success) return [];
+      return response.data.data.data as SourceFile[];
     },
     refetchInterval: (query) => {
       const files = query.state.data;

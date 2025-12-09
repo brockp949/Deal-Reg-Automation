@@ -109,7 +109,7 @@ async function findDuplicateByChecksum(checksum: string): Promise<SourceFile | n
  * POST /api/files/upload
  * Upload a single file
  */
-router.post('/upload', uploadLimiter, upload.single('file'), async (req: Request, res: Response) => {
+router.post('/upload', requireRole(['write', 'admin']), uploadLimiter, upload.single('file'), async (req: Request, res: Response) => {
   try {
     const validation = validateUploadRequest(req);
     if (!validation.valid) {
@@ -346,7 +346,7 @@ router.post('/upload', uploadLimiter, upload.single('file'), async (req: Request
  * POST /api/files/batch-upload
  * Upload multiple files
  */
-router.post('/batch-upload', batchUploadLimiter, upload.array('files', 10), async (req: Request, res: Response) => {
+router.post('/batch-upload', requireRole(['write', 'admin']), batchUploadLimiter, upload.array('files', 10), async (req: Request, res: Response) => {
   try {
     const validation = validateUploadRequest(req);
     if (!validation.valid) {
@@ -850,6 +850,17 @@ router.delete('/:id', requireRole(['admin']), async (req: Request, res: Response
     const { id } = req.params;
     const actor = resolveOperatorId(req);
 
+    const fileResult = await query('SELECT storage_path FROM source_files WHERE id = $1', [id]);
+
+    if (fileResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'File not found',
+      });
+    }
+
+    const storagePath = fileResult.rows[0].storage_path as string | null;
+
     const result = await query('DELETE FROM source_files WHERE id = $1 RETURNING id', [id]);
 
     if (result.rows.length === 0) {
@@ -859,9 +870,22 @@ router.delete('/:id', requireRole(['admin']), async (req: Request, res: Response
       });
     }
 
-    logger.info('File deleted', { fileId: id, actor });
+    if (storagePath) {
+      try {
+        await unlink(storagePath);
+        logger.info('Deleted physical file from storage', { fileId: id, storagePath, actor });
+      } catch (err: any) {
+        if (err.code !== 'ENOENT') {
+          logger.warn('Failed to delete physical file from storage', {
+            fileId: id,
+            storagePath,
+            error: err.message,
+          });
+        }
+      }
+    }
 
-    // TODO: Delete physical file from storage
+    logger.info('File deleted', { fileId: id, actor });
 
     res.json({
       success: true,

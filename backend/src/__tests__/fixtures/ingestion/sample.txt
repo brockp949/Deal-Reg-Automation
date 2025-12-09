@@ -1,0 +1,6 @@
+Acme Corp meeting transcript
+Customer: Contoso
+Needs: firewall upgrade and support
+Value: $250k
+Vendor: Acme Corp
+Action: proceed to registration

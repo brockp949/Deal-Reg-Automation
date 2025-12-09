@@ -44,7 +44,8 @@ export default function FileUploader() {
     queryKey: ['files'],
     queryFn: async () => {
       const response = await fileAPI.getAll();
-      return response.data.data as SourceFile[];
+      if (!response.data.success) return [];
+      return response.data.data.data as SourceFile[];
     },
     refetchInterval: (query) => {
       // Auto-refresh every 2 seconds if any file is processing or pending
@@ -60,6 +61,7 @@ export default function FileUploader() {
     queryKey: ['files', 'metrics', 'security'],
     queryFn: async () => {
       const response = await fileAPI.getSecurityMetrics();
+      if (!response.data.success) return null;
       return response.data.data as SecurityMetrics;
     },
     refetchInterval: 15000,
@@ -69,6 +71,7 @@ export default function FileUploader() {
     queryKey: ['configs', 'metrics'],
     queryFn: async () => {
       const response = await configAPI.getMetrics();
+      if (!response.data.success) return null;
       return response.data.data as ConfigMetrics;
     },
     refetchInterval: 30000,
@@ -78,7 +81,8 @@ export default function FileUploader() {
     queryKey: ['configs', 'snapshots'],
     queryFn: async () => {
       const response = await configAPI.getSnapshots({ limit: 5 });
-      return response.data.data as ConfigSnapshot[];
+      if (!response.data.success) return [];
+      return response.data.data.data as ConfigSnapshot[];
     },
     refetchInterval: 15000,
   });
@@ -105,10 +109,12 @@ export default function FileUploader() {
   // Upload mutation
   const uploadMutation = useMutation({
     mutationFn: async (files: File[]) => {
+      // Simple progress handler - we could track this more granularly
+      const onProgress = () => {};
       if (files.length === 1) {
-        return await fileAPI.upload(files[0]);
+        return await fileAPI.upload(files[0], onProgress);
       } else {
-        return await fileAPI.batchUpload(files);
+        return await fileAPI.batchUpload(files, onProgress);
       }
     },
     onSuccess: (response: any) => {
@@ -454,7 +460,7 @@ export default function FileUploader() {
                           </Badge>
                         )}
                       </div>
-                      {file.metadata?.config && (
+                      {file.metadata?.config && file.metadata.config.storedAt && (
                         <p className="text-xs text-muted-foreground mt-1">
                           Stored {new Date(file.metadata.config.storedAt).toLocaleString()} ·{' '}
                           {file.metadata.config.topLevelKeys?.slice(0, 3).join(', ')}

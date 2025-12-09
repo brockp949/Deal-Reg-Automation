@@ -13,6 +13,7 @@ export default function Layout({ children }: LayoutProps) {
     { path: '/', label: 'Dashboard' },
     { path: '/deals', label: 'Deals' },
     { path: '/vendors', label: 'Vendors' },
+    { path: '/vendor-approval', label: 'Vendor Approval' },
     { path: '/upload', label: 'Upload Files' },
     { path: '/errors', label: 'Errors' },
   ];

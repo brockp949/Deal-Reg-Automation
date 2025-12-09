@@ -2,6 +2,7 @@ import Bull from 'bull';
 import { config } from '../config';
 import { processFile } from '../services/fileProcessor';
 import logger from '../utils/logger';
+import { startJob, updateJobProgress, completeJob, failJob, createJob } from '../services/jobTracker';
 
 // Create the job queue
 export const fileProcessingQueue = new Bull('file-processing', config.redisUrl, {
@@ -22,8 +23,11 @@ fileProcessingQueue.process(async (job) => {
 
   logger.info('Processing file job', { jobId: job.id, fileId });
 
+  const trackerId = startQueueJob(job.id.toString(), fileId);
+
   // Update progress
   await job.progress(10);
+  updateJobProgress(trackerId, 10, 'queued');
 
   try {
     // Process the file
@@ -31,6 +35,7 @@ fileProcessingQueue.process(async (job) => {
 
     // Update progress to 100%
     await job.progress(100);
+    updateJobProgress(trackerId, 100, 'completed');
 
     logger.info('File processing job completed', {
       jobId: job.id,
@@ -38,6 +43,7 @@ fileProcessingQueue.process(async (job) => {
       result,
     });
 
+    completeJob(trackerId, result);
     return result;
   } catch (error: any) {
     logger.error('File processing job failed', {
@@ -45,6 +51,7 @@ fileProcessingQueue.process(async (job) => {
       fileId,
       error: error.message,
     });
+    failJob(trackerId, error.message);
     throw error;
   }
 });
@@ -172,4 +179,11 @@ export async function cleanOldJobs() {
 export async function closeQueue() {
   await fileProcessingQueue.close();
   logger.info('File processing queue closed');
+}
+
+function startQueueJob(bullJobId: string, fileId: string) {
+  const trackerId = createJob('file_processing', { bullJobId, fileId });
+  startJob(trackerId, 'queued');
+  updateJobProgress(trackerId, 0, 'queued');
+  return trackerId;
 }

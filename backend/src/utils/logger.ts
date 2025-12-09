@@ -1,14 +1,20 @@
 import winston from 'winston';
 import { config } from '../config';
+import { getRequestContext } from './requestContext';
 
 const { combine, timestamp, printf, colorize, errors } = winston.format;
 
 // Custom log format
 const logFormat = printf(({ level, message, timestamp, ...metadata }) => {
+  const ctx = getRequestContext();
+  const ctxMeta = ctx ? { requestId: ctx.requestId } : {};
+  const mergedMeta = { ...ctxMeta, ...metadata };
+
   let msg = `${timestamp} [${level}]: ${message}`;
 
-  if (Object.keys(metadata).length > 0) {
-    msg += ` ${JSON.stringify(metadata)}`;
+  const metaKeys = Object.keys(mergedMeta);
+  if (metaKeys.length > 0) {
+    msg += ` ${JSON.stringify(mergedMeta)}`;
   }
 
   return msg;

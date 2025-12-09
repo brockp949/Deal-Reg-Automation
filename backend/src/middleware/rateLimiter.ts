@@ -1,5 +1,4 @@
 import { Request, Response, NextFunction } from 'express';
-import rateLimit from 'express-rate-limit';
 import logger from '../utils/logger';
 
 type RateLimiterOptions = {
@@ -52,66 +51,38 @@ export function createRateLimiter(options: RateLimiterOptions) {
  * Rate limiter for file upload endpoints
  * Limits: 10 uploads per 15 minutes per IP
  */
-export const uploadLimiter = rateLimit({
+export const uploadLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 10,
-  message: {
-    success: false,
-    error: 'Too many file uploads. Please try again in 15 minutes.',
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-  handler: (req: Request, res: Response) => {
-    logger.warn('Upload rate limit exceeded', { ip: req.ip, path: req.path });
-    res.status(429).json({
-      success: false,
-      error: 'Too many file uploads. Please try again in 15 minutes.',
-    });
-  },
+  message: 'Too many file uploads. Please try again in 15 minutes.',
 });
 
 /**
  * Rate limiter for general API endpoints
  * Limits: 100 requests per minute per IP
  */
-export const apiLimiter = rateLimit({
-  windowMs: 1 * 60 * 1000, // 1 minute
+export const apiLimiter = rateLimiterWithSkip({
+  windowMs: 1 * 60 * 1000,
   max: 100,
-  message: {
-    success: false,
-    error: 'Too many requests. Please try again in a minute.',
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-  skip: (req: Request) => req.path === '/health' || req.path === '/api/health',
-  handler: (req: Request, res: Response) => {
-    logger.warn('API rate limit exceeded', { ip: req.ip, path: req.path, method: req.method });
-    res.status(429).json({
-      success: false,
-      error: 'Too many requests. Please try again in a minute.',
-    });
-  },
+  message: 'Too many requests. Please try again in a minute.',
+  skip: (req) => req.path === '/health' || req.path === '/api/health',
 });
 
 /**
  * Rate limiter for mutation endpoints
  * Limits: 30 mutations per minute per IP
  */
-export const mutationLimiter = rateLimit({
-  windowMs: 1 * 60 * 1000, // 1 minute
+export const mutationLimiter = rateLimiterWithSkip({
+  windowMs: 1 * 60 * 1000,
   max: 30,
-  message: {
-    success: false,
-    error: 'Too many write operations. Please try again in a minute.',
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-  skip: (req: Request) => !['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method),
-  handler: (req: Request, res: Response) => {
-    logger.warn('Mutation rate limit exceeded', { ip: req.ip, path: req.path, method: req.method });
-    res.status(429).json({
-      success: false,
-      error: 'Too many write operations. Please try again in a minute.',
-    });
-  },
+  message: 'Too many write operations. Please try again in a minute.',
+  skip: (req) => !['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method),
 });
+
+function rateLimiterWithSkip(options: RateLimiterOptions & { skip?: (req: Request) => boolean }) {
+  const limiter = createRateLimiter(options);
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (options.skip && options.skip(req)) return next();
+    return limiter(req, res, next);
+  };
+}

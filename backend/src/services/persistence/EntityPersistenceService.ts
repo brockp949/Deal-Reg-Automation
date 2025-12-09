@@ -172,8 +172,8 @@ export class EntityPersistenceService {
   ): Promise<PersistenceResult<DealData>> {
     const { enhanced_transcript_data, metadata: existingMetadata, ...cleanDealData } = dealData;
 
-    // Build metadata
-    const metadata = {
+    // Build metadata with optional enhanced_transcript_data
+    const metadata: Record<string, unknown> = {
       source_file_id: context.sourceFileId,
       ...existingMetadata,
       ...cleanDealData,

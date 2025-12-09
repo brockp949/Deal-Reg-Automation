@@ -83,6 +83,9 @@ const envSchema = z.object({
   // Admin / maintenance
   CLEAR_ALL_ENDPOINT_ENABLED: z.string().default('false'),
   CLEAR_ALL_TOKEN: z.string().optional(),
+
+  // Ingestion
+  USE_FILE_PROCESSOR_V2: z.string().default('false'),
 });
 
 // Parse and validate environment variables
@@ -167,7 +170,7 @@ export const config = {
   },
 
   cors: {
-    origin: env.CORS_ORIGIN,
+    origin: env.CORS_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean),
   },
 
   logLevel: env.LOG_LEVEL,
@@ -213,6 +216,10 @@ export const config = {
 
   vendor: {
     autoApprove: env.VENDOR_AUTO_APPROVE === 'true',
+  },
+
+  ingestion: {
+    useFileProcessorV2: env.USE_FILE_PROCESSOR_V2 === 'true',
   },
 };
 
