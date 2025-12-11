@@ -52,7 +52,8 @@
       "Bash(docker --version:*)",
       "Bash(docker-compose:*)",
       "Bash(docker info:*)",
-      "Bash(docker ps:*)"
+      "Bash(docker ps:*)",
+      "Bash(git mv:*)"
     ],
     "deny": [],
     "ask": []
