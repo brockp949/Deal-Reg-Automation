@@ -64,3 +64,16 @@ nul
 
 # Legacy nested repo copy (avoid duplicate search results)
 Deal-Reg-Automation/
+
+# Transcript Processing Pipeline
+# Keep directory structure but ignore processed files by default
+input_transcripts/processed/
+output/logs/
+
+# Keep .gitkeep files to preserve directory structure
+!input_transcripts/**/.gitkeep
+!output/**/.gitkeep
+
+# Optional: Ignore large transcript files (uncomment if using Git LFS)
+# *.mbox
+# input_transcripts/**/*.pdf

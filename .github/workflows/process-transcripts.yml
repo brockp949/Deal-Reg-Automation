@@ -1,0 +1,254 @@
+name: Process Transcripts
+
+on:
+  # Trigger on file changes in input_transcripts
+  push:
+    paths:
+      - 'input_transcripts/**'
+    branches:
+      - main
+
+  # Manual trigger with options
+  workflow_dispatch:
+    inputs:
+      force_reprocess:
+        description: 'Force reprocess all files (ignore checksums)'
+        type: boolean
+        default: false
+      export_formats:
+        description: 'Export formats (comma-separated: csv,xlsx,json)'
+        type: string
+        default: 'csv,xlsx'
+      dry_run:
+        description: 'Dry run (no file changes)'
+        type: boolean
+        default: false
+      update_sheets:
+        description: 'Update Google Sheets'
+        type: boolean
+        default: false
+
+  # Scheduled run (daily at 6 AM UTC)
+  schedule:
+    - cron: '0 6 * * *'
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  process-transcripts:
+    name: Process & Export Transcripts
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for git diff
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install system dependencies (OCR & PDF)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            tesseract-ocr \
+            tesseract-ocr-eng \
+            poppler-utils \
+            graphicsmagick
+
+      - name: Install Node dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Check for files to process
+        id: check-files
+        run: |
+          # Count files in input directories
+          FILE_COUNT=$(find input_transcripts -type f \( -name "*.mbox" -o -name "*.pdf" -o -name "*.docx" -o -name "*.txt" \) ! -name ".gitkeep" | wc -l)
+          echo "file_count=$FILE_COUNT" >> $GITHUB_OUTPUT
+          echo "Found $FILE_COUNT file(s) to process"
+
+          # List files
+          find input_transcripts -type f \( -name "*.mbox" -o -name "*.pdf" -o -name "*.docx" -o -name "*.txt" \) ! -name ".gitkeep" || true
+
+      - name: Determine processing options
+        id: options
+        run: |
+          # Set export formats
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            FORMATS="${{ github.event.inputs.export_formats || 'csv,xlsx' }}"
+            DRY_RUN="${{ github.event.inputs.dry_run }}"
+            FORCE="${{ github.event.inputs.force_reprocess }}"
+          else
+            FORMATS="csv,xlsx"
+            DRY_RUN="false"
+            FORCE="false"
+          fi
+
+          echo "formats=$FORMATS" >> $GITHUB_OUTPUT
+          echo "dry_run=$DRY_RUN" >> $GITHUB_OUTPUT
+          echo "force=$FORCE" >> $GITHUB_OUTPUT
+
+          echo "Export formats: $FORMATS"
+          echo "Dry run: $DRY_RUN"
+          echo "Force reprocess: $FORCE"
+
+      - name: Clear processing logs (force mode)
+        if: steps.options.outputs.force == 'true'
+        run: |
+          rm -f output/logs/batch_*.log
+          echo "Cleared processing logs for force reprocessing"
+
+      - name: Run transcript processing pipeline
+        if: steps.check-files.outputs.file_count != '0'
+        working-directory: backend
+        run: |
+          ARGS="--format=${{ steps.options.outputs.formats }}"
+
+          if [ "${{ steps.options.outputs.dry_run }}" == "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+
+          if [ "${{ steps.options.outputs.force }}" == "true" ]; then
+            ARGS="$ARGS --no-archive"
+          fi
+
+          echo "Running: npm run transcript:process -- $ARGS"
+          npm run transcript:process -- $ARGS
+        env:
+          NODE_ENV: production
+
+      - name: Update Google Sheets
+        if: |
+          github.event.inputs.update_sheets == 'true' &&
+          steps.check-files.outputs.file_count != '0' &&
+          steps.options.outputs.dry_run != 'true'
+        working-directory: backend
+        run: npm run transcript:process -- --format=sheets
+        env:
+          GOOGLE_SHEETS_ENABLED: 'true'
+          GOOGLE_SHEETS_SPREADSHEET_ID: ${{ secrets.GOOGLE_SHEETS_SPREADSHEET_ID }}
+          GOOGLE_SHEETS_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
+          GOOGLE_SHEETS_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
+        continue-on-error: true
+
+      - name: List exported files
+        id: exports
+        run: |
+          echo "=== Exported Files ==="
+          ls -la output/csv/ || echo "No CSV exports"
+
+          # Get latest exports
+          CSV_FILE=$(ls -t output/csv/*.csv 2>/dev/null | head -1 || echo "")
+          XLSX_FILE=$(ls -t output/csv/*.xlsx 2>/dev/null | head -1 || echo "")
+          JSON_FILE=$(ls -t output/csv/*.json 2>/dev/null | head -1 || echo "")
+
+          echo "csv_file=$CSV_FILE" >> $GITHUB_OUTPUT
+          echo "xlsx_file=$XLSX_FILE" >> $GITHUB_OUTPUT
+          echo "json_file=$JSON_FILE" >> $GITHUB_OUTPUT
+
+          # Count deals in latest CSV
+          if [ -n "$CSV_FILE" ]; then
+            DEAL_COUNT=$(tail -n +2 "$CSV_FILE" | wc -l)
+            echo "deal_count=$DEAL_COUNT" >> $GITHUB_OUTPUT
+            echo "Extracted $DEAL_COUNT deals"
+          fi
+
+      - name: Upload CSV artifact
+        if: steps.exports.outputs.csv_file != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: deals-csv-${{ github.run_number }}
+          path: output/csv/*.csv
+          retention-days: 30
+
+      - name: Upload Excel artifact
+        if: steps.exports.outputs.xlsx_file != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: deals-xlsx-${{ github.run_number }}
+          path: output/csv/*.xlsx
+          retention-days: 30
+
+      - name: Upload JSON artifact
+        if: steps.exports.outputs.json_file != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: deals-json-${{ github.run_number }}
+          path: output/csv/*.json
+          retention-days: 30
+
+      - name: Upload processing logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: processing-logs-${{ github.run_number }}
+          path: output/logs/*.log
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Create job summary
+        run: |
+          echo "## Transcript Processing Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Files Found | ${{ steps.check-files.outputs.file_count }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Deals Extracted | ${{ steps.exports.outputs.deal_count || 'N/A' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Export Formats | ${{ steps.options.outputs.formats }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Dry Run | ${{ steps.options.outputs.dry_run }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Exported Files" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -n "${{ steps.exports.outputs.csv_file }}" ]; then
+            echo "- CSV: \`${{ steps.exports.outputs.csv_file }}\`" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ -n "${{ steps.exports.outputs.xlsx_file }}" ]; then
+            echo "- Excel: \`${{ steps.exports.outputs.xlsx_file }}\`" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ -n "${{ steps.exports.outputs.json_file }}" ]; then
+            echo "- JSON: \`${{ steps.exports.outputs.json_file }}\`" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Archive processed files
+        if: |
+          steps.options.outputs.dry_run != 'true' &&
+          steps.check-files.outputs.file_count != '0'
+        run: |
+          # Move processed files to archive (optional - currently handled by script)
+          echo "Processing complete. Files archived by processing script if --no-archive not set."
+
+  notify-on-failure:
+    name: Notify on Failure
+    runs-on: ubuntu-latest
+    needs: process-transcripts
+    if: failure()
+
+    steps:
+      - name: Create failure issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = `Transcript Processing Failed - Run #${context.runNumber}`;
+            const body = `
+            ## Transcript Processing Workflow Failed
+
+            **Run:** [#${context.runNumber}](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})
+            **Trigger:** ${context.eventName}
+            **Branch:** ${context.ref}
+
+            Please check the workflow logs for details.
+            `;
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: title,
+              body: body,
+              labels: ['bug', 'automation']
+            });

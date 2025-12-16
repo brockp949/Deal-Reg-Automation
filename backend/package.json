@@ -40,7 +40,10 @@
     "insights:notify": "node -r tsx/cjs src/scripts/insightsNotify.ts",
     "insights:test": "node -r tsx/cjs src/scripts/notificationSelfTest.ts",
     "api:start": "npm start",
-    "bulk:upload": "node -r tsx/cjs src/scripts/bulkUploadTestFiles.ts"
+    "bulk:upload": "node -r tsx/cjs src/scripts/bulkUploadTestFiles.ts",
+    "transcript:watch": "node -r tsx/cjs src/scripts/watchInputDir.ts",
+    "transcript:process": "node -r tsx/cjs src/scripts/parseTranscripts.ts",
+    "transcript:export": "node -r tsx/cjs src/scripts/exportDeals.ts"
   },
   "keywords": [
     "deal-registration",
@@ -59,6 +62,7 @@
     "bull": "^4.12.0",
     "cors": "^2.8.5",
     "csv-parser": "^3.0.0",
+    "csv-stringify": "^6.6.0",
     "dotenv": "^16.4.5",
     "exceljs": "^4.4.0",
     "express": "^4.18.2",
@@ -77,9 +81,11 @@
     "nodemailer": "^6.9.7",
     "openai": "^6.9.1",
     "pdf-parse": "^1.1.1",
+    "pdf2pic": "^3.2.0",
     "pg": "^8.11.3",
     "redis": "^4.6.12",
     "string-similarity": "^4.0.4",
+    "tesseract.js": "^5.1.1",
     "uuid": "^9.0.1",
     "winston": "^3.11.0",
     "zod": "^3.22.4"

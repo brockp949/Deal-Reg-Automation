@@ -1,0 +1,37 @@
+Meeting Notes - Q4 Sales Pipeline Review
+Date: December 15, 2024
+Attendees: John Smith, Sarah Johnson, Mike Davis
+
+---
+
+Deal: Acme Corporation
+Customer: Acme Corporation
+Value: $150,000
+Status: Qualified
+Expected Close: 2025-03-30
+Notes: Strong interest in enterprise package. Decision maker is CTO.
+
+---
+
+Deal: Beta Technologies Inc
+Customer: Beta Tech
+Value: $75,000
+Status: Discovery
+Expected Close: Q2 2025
+Notes: Initial meeting scheduled. Need to understand requirements.
+
+---
+
+Deal: Gamma Solutions LLC
+Customer: Gamma Solutions
+Value: $250,000
+Status: Negotiation
+Expected Close: January 31, 2025
+Notes: Final proposal submitted. Waiting for legal review.
+
+---
+
+Action Items:
+1. Follow up with Acme next week
+2. Schedule demo for Beta Technologies
+3. Send revised contract to Gamma
