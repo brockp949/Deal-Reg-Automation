@@ -172,12 +172,16 @@ export class EnhancedPdfParser implements IDocumentParser {
     buffer: Buffer,
     options: DocumentParserOptions
   ): Promise<string> {
-    const data = await pdf(buffer, {
+    // pdf-parse accepts options as second argument but types are incomplete
+    const pdfOptions = {
       // Custom page renderer for better text ordering
       pagerender: options.sortTextByPosition
         ? this.renderPageWithOrdering.bind(this)
         : undefined,
-    });
+    };
+    // Type assertion needed because @types/pdf-parse is incomplete
+    const pdfWithOptions = pdf as (dataBuffer: Buffer, options?: any) => Promise<{ text: string; numpages: number; info: any; metadata: any; version: string }>;
+    const data = await pdfWithOptions(buffer, pdfOptions);
 
     return data.text;
   }
