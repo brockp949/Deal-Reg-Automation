@@ -20,10 +20,10 @@ interface FunnelDataItem {
 const DealFunnelChart = () => {
   const { data: deals, isLoading } = useQuery({
     queryKey: ['deals-funnel'],
-    queryFn: async () => {
+    queryFn: async (): Promise<DealRegistration[]> => {
       const response = await dealAPI.getAll({ limit: 1000 }); // Fetch more deals for accurate funnel
       if (!response.data.success) return [];
-      return response.data.data.data;
+      return (response.data.data || []) as unknown as DealRegistration[];
     },
   });
 

@@ -6,7 +6,9 @@ import { parseStreamingMboxFile } from '../parsers/streamingMboxParser';
 import { parseCSVFile, normalizeVTigerData, parseGenericCSV } from '../parsers/csvParser';
 import { parseTextTranscript, extractInfoFromTranscript } from '../parsers/transcriptParser';
 import { parseEnhancedTranscript } from '../parsers/enhancedTranscriptParser';
+import { inferVendorName, emailLocalPartToName } from '../parsers/enhancedTranscriptMapping';
 import { parsePDFTranscript } from '../parsers/pdfParser';
+import { parseDocxTranscript } from '../parsers/docxParser';
 import { domainToCompanyName, generateDealNameWithFeatures, normalizeCompanyName } from '../utils/fileHelpers';
 import logger from '../utils/logger';
 import type { FileType } from '../types';
@@ -118,6 +120,9 @@ export async function processFile(fileId: string): Promise<ProcessingResult> {
           break;
         case 'pdf':
           extractedData = await processPDFTranscriptFile(file.storage_path);
+          break;
+        case 'docx':
+          extractedData = await processDocxTranscriptFile(file.storage_path);
           break;
         default:
           throw new Error(`Unsupported file type: ${file.file_type}`);
@@ -585,39 +590,48 @@ async function processTranscriptFile(filePath: string) {
   let partnerVendorName: string | null = null;
   let prospectVendorName: string | null = null;
 
-  // Extract partner/vendor information
-  if (deal.partner_company_name) {
+  // Extract partner/vendor information using inferVendorName for email domain fallback
+  const inferredVendor = inferVendorName(deal);
+
+  if (inferredVendor.name) {
     // Try to match to existing vendor first
     const matchResult = await matchVendor({
-      extractedName: deal.partner_company_name,
-      emailDomain: deal.partner_email ? deal.partner_email.split('@')[1] : undefined,
+      extractedName: inferredVendor.name,
+      emailDomain: inferredVendor.emailDomain || (deal.partner_email ? deal.partner_email.split('@')[1] : undefined),
       existingVendors: existingVendors
     });
     const matchedVendor = matchResult.matched ? matchResult.vendor.name : null;
-    partnerVendorName = matchedVendor || deal.partner_company_name;
+    partnerVendorName = matchedVendor || inferredVendor.name;
 
     // Only create new vendor if there's NO match AND we haven't added it yet
     if (!matchedVendor && partnerVendorName && !vendorSet.has(partnerVendorName)) {
       vendors.push({
         name: partnerVendorName,
-        email_domain: deal.partner_email ? deal.partner_email.split('@')[1] : null,
+        email_domain: inferredVendor.emailDomain || (deal.partner_email ? deal.partner_email.split('@')[1] : null),
         website: null,
         industry: null,
       });
       vendorSet.add(partnerVendorName);
       vendorsToCreate.add(partnerVendorName);
-      logger.info('New partner vendor will be created (has deal)', { vendor: partnerVendorName });
+      logger.info('New partner vendor will be created (has deal)', {
+        vendor: partnerVendorName,
+        inferredFromEmail: !deal.partner_company_name && !!inferredVendor.emailDomain
+      });
     } else if (matchedVendor) {
       logger.info('Partner matched to existing vendor', {
-        extracted: deal.partner_company_name,
-        matched: matchedVendor
+        extracted: inferredVendor.name,
+        matched: matchedVendor,
+        inferredFromEmail: !deal.partner_company_name && !!inferredVendor.emailDomain
       });
     }
 
-    // Add partner contact
-    if (deal.partner_contact_name && deal.partner_email) {
+    // Add partner contact - use emailLocalPartToName as fallback for name
+    const partnerContactName = deal.partner_contact_name ||
+      (deal.partner_email ? emailLocalPartToName(deal.partner_email) : null);
+
+    if (partnerContactName && deal.partner_email) {
       contacts.push({
-        name: deal.partner_contact_name,
+        name: partnerContactName,
         email: deal.partner_email,
         phone: deal.partner_phone || null,
         role: deal.partner_role || 'Partner Representative',
@@ -625,6 +639,11 @@ async function processTranscriptFile(filePath: string) {
         is_primary: true,
       });
     }
+  } else if (deal.partner_email) {
+    // Log warning when we have email but couldn't infer vendor (personal email domain)
+    logger.warn('Could not infer vendor from partner email (likely personal domain)', {
+      email: deal.partner_email,
+    });
   }
 
   // Extract prospect/customer vendor (if different from partner)
@@ -656,10 +675,13 @@ async function processTranscriptFile(filePath: string) {
       });
     }
 
-    // Add prospect contact
-    if (deal.prospect_contact_name && deal.prospect_contact_email) {
+    // Add prospect contact - use emailLocalPartToName as fallback for name
+    const prospectContactName = deal.prospect_contact_name ||
+      (deal.prospect_contact_email ? emailLocalPartToName(deal.prospect_contact_email) : null);
+
+    if (prospectContactName && deal.prospect_contact_email) {
       contacts.push({
-        name: deal.prospect_contact_name,
+        name: prospectContactName,
         email: deal.prospect_contact_email,
         phone: deal.prospect_contact_phone || null,
         role: deal.prospect_job_title || 'Decision Maker',
@@ -818,6 +840,38 @@ async function processPDFTranscriptFile(filePath: string) {
 }
 
 /**
+ * Process DOCX transcript file
+ */
+async function processDocxTranscriptFile(filePath: string) {
+  logger.info('Processing DOCX transcript file', { filePath });
+
+  // Extract text from DOCX
+  const docxText = await parseDocxTranscript(filePath);
+
+  // Create a temporary text file for processing
+  const tempFilePath = join(filePath + '.txt');
+
+  try {
+    // Write extracted text to temporary file
+    await writeFile(tempFilePath, docxText, 'utf-8');
+    logger.info('Created temporary text file from DOCX', { tempFilePath });
+
+    // Process the temporary file as a transcript
+    const result = await processTranscriptFile(tempFilePath);
+
+    return result;
+  } finally {
+    // Clean up temporary file
+    try {
+      await unlink(tempFilePath);
+      logger.info('Cleaned up temporary text file', { tempFilePath });
+    } catch (err: any) {
+      logger.warn('Failed to clean up temporary file', { tempFilePath, error: err.message });
+    }
+  }
+}
+
+/**
  * Find or create a vendor
  */
 async function findOrCreateVendor(vendorData: any, sourceFileId: string): Promise<string> {
@@ -932,7 +986,7 @@ async function createDeal(dealData: any, vendorId: string, sourceFileId: string)
     if (fileType === 'mbox') {
       sourceType = 'email';
       extractionMethod = cleanDealData.extraction_method === 'enhanced_mbox' ? 'keyword' : 'regex';
-    } else if (fileType === 'txt' || fileType === 'pdf' || fileType === 'transcript') {
+    } else if (fileType === 'txt' || fileType === 'pdf' || fileType === 'docx' || fileType === 'transcript') {
       sourceType = 'transcript';
       extractionMethod = 'regex';
     } else if (fileType === 'csv' || fileType === 'vtiger_csv') {
@@ -1023,7 +1077,7 @@ async function createContact(contactData: any, vendorId: string, sourceFileId?: 
       if (fileType === 'mbox') {
         sourceType = 'email';
         extractionMethod = 'regex';
-      } else if (fileType === 'txt' || fileType === 'pdf' || fileType === 'transcript') {
+      } else if (fileType === 'txt' || fileType === 'pdf' || fileType === 'docx' || fileType === 'transcript') {
         sourceType = 'transcript';
         extractionMethod = 'regex';
       } else if (fileType === 'csv' || fileType === 'vtiger_csv') {

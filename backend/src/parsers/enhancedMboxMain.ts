@@ -4,7 +4,8 @@
  */
 
 import { simpleParser, ParsedMail } from 'mailparser';
-import { readFileSync } from 'fs';
+import { createReadStream } from 'fs';
+import { createInterface } from 'readline';
 import {
   preprocessEmail,
   correlateThreads,
@@ -24,6 +25,48 @@ export interface EnhancedMboxResult {
   totalMessages: number;
   relevantMessages: number;
   processingTime: number;
+}
+
+function isMboxDelimiterLine(line: string): boolean {
+  if (!line.startsWith('From ')) {
+    return false;
+  }
+
+  // Avoid false positives on headers like "From:"
+  if (line.startsWith('From:')) {
+    return false;
+  }
+
+  // Heuristic: typical mbox delimiter lines include a time token and a year token.
+  const parts = line.split(' ').filter(Boolean);
+  if (parts.length < 2) {
+    return false;
+  }
+
+  const hasTime = parts.some((part) => /^\d{1,2}:\d{2}(?::\d{2})?$/.test(part));
+  const hasYear = parts.some((part) => /^\d{4}$/.test(part));
+
+  return hasTime && hasYear;
+}
+
+async function* streamMboxBlocks(filePath: string): AsyncGenerator<string> {
+  const stream = createReadStream(filePath, { encoding: 'utf-8' });
+  const rl = createInterface({ input: stream, crlfDelay: Infinity });
+
+  let currentLines: string[] = [];
+
+  for await (const line of rl) {
+    if (isMboxDelimiterLine(line) && currentLines.length > 0) {
+      yield currentLines.join('\n');
+      currentLines = [];
+    }
+
+    currentLines.push(line);
+  }
+
+  if (currentLines.length > 0) {
+    yield currentLines.join('\n');
+  }
 }
 
 /**
@@ -49,23 +92,20 @@ export async function parseEnhancedMboxFile(
   });
 
   try {
-    // Read MBOX file
-    const mboxContent = readFileSync(filePath, 'utf-8');
-
-    // Split into individual email blocks
-    const emailBlocks = mboxContent.split(/\n(?=From )/);
-    logger.info(`Found ${emailBlocks.length} email blocks in MBOX file`);
-
-    const parsedMessages: ParsedEmailMessage[] = [];
+    const relevantMessages: ParsedEmailMessage[] = [];
+    let totalMessages = 0;
 
     // PHASE 1: Parse and pre-process all messages
-    for (let i = 0; i < emailBlocks.length; i++) {
-      const block = emailBlocks[i];
-      if (!block.trim()) continue;
+    let i = 0;
+    for await (const block of streamMboxBlocks(filePath)) {
+      if (!block.trim()) {
+        continue;
+      }
 
+      totalMessages += 1;
       try {
         // Remove the "From " line
-        const emailContent = block.replace(/^From .*\n/, '');
+        const emailContent = block.replace(/^From .*\r?\n/, '');
 
         // Parse email
         const parsed: ParsedMail = await simpleParser(emailContent);
@@ -81,8 +121,8 @@ export async function parseEnhancedMboxFile(
         const references = parsed.references || [];
 
         // Get body text
-        let bodyText = parsed.text || '';
-        let bodyHtml = parsed.html ? String(parsed.html) : undefined;
+        const bodyText = parsed.text || '';
+        const bodyHtml = parsed.html ? String(parsed.html) : undefined;
 
         // Pre-process the body
         const cleanedBody = preprocessEmail(
@@ -98,8 +138,9 @@ export async function parseEnhancedMboxFile(
           cc,
           subject,
           date,
-          body_text: bodyText,
-          body_html: bodyHtml,
+          // Raw bodies are not used by downstream extraction; keep minimal to reduce memory.
+          body_text: '',
+          body_html: undefined,
           in_reply_to: inReplyTo,
           references: Array.isArray(references) ? references : [references],
           cleaned_body: cleanedBody,
@@ -108,7 +149,9 @@ export async function parseEnhancedMboxFile(
           tier3_matches: [],
         };
 
-        parsedMessages.push(parsedMsg);
+        if (isRelevantEmail(parsedMsg, vendorDomains)) {
+          relevantMessages.push(parsedMsg);
+        }
 
       } catch (error: any) {
         logger.warn('Failed to parse individual email', {
@@ -116,16 +159,14 @@ export async function parseEnhancedMboxFile(
           blockIndex: i,
         });
       }
+
+      i += 1;
     }
 
-    logger.info(`Successfully parsed ${parsedMessages.length} messages`);
-
-    // PHASE 2: Layer 1 - High-Speed Triage
-    const relevantMessages = parsedMessages.filter(msg =>
-      isRelevantEmail(msg, vendorDomains)
-    );
-
-    logger.info(`Filtered to ${relevantMessages.length} relevant messages using Layer 1 triage`);
+    logger.info('MBOX parsing pass complete', {
+      totalMessages,
+      relevantMessages: relevantMessages.length,
+    });
 
     // PHASE 3: Thread Correlation
     const threads = correlateThreads(relevantMessages);
@@ -156,7 +197,7 @@ export async function parseEnhancedMboxFile(
     const processingTime = Date.now() - startTime;
 
     logger.info('Enhanced MBOX parsing complete', {
-      totalMessages: parsedMessages.length,
+      totalMessages,
       relevantMessages: relevantMessages.length,
       threads: threads.length,
       dealsExtracted: allDeals.length,
@@ -166,7 +207,7 @@ export async function parseEnhancedMboxFile(
     return {
       threads,
       extractedDeals: allDeals,
-      totalMessages: parsedMessages.length,
+      totalMessages,
       relevantMessages: relevantMessages.length,
       processingTime,
     };

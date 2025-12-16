@@ -22,10 +22,10 @@ interface TrendDataItem {
 const DealValueTrendChart = () => {
   const { data: deals, isLoading } = useQuery({
     queryKey: ['deals-trend'],
-    queryFn: async () => {
+    queryFn: async (): Promise<DealRegistration[]> => {
       const response = await dealAPI.getAll({ limit: 1000 });
       if (!response.data.success) return [];
-      return response.data.data.data;
+      return (response.data.data || []) as unknown as DealRegistration[];
     },
   });
 

@@ -1,19 +1,104 @@
+// Mock DB so tests don't require a real Postgres instance.
+jest.mock('../db', () => {
+  const query = jest.fn();
+  return {
+    __esModule: true,
+    query,
+    default: {
+      query,
+      end: jest.fn(),
+    },
+  };
+});
+
 import { logError, logParsingError, getErrorById, getErrorsByFile, resolveError } from '../services/errorTrackingService';
-import pool from '../db';
+
+const { query } = require('../db') as { query: jest.Mock };
+
+type MockQueryResult = { rows: any[]; rowCount?: number };
 
 describe('ErrorTrackingService', () => {
-    beforeAll(async () => {
-        // Ensure migrations are run before tests
-        // In real scenarios, this would be handled by test setup
-    });
+    const errorLogs = new Map<string, any>();
+    let nextId = 1;
 
-    afterEach(async () => {
-        // Clean up test data
-        await pool.query('DELETE FROM error_logs WHERE error_message LIKE \'%TEST_%\'');
-    });
+    beforeEach(() => {
+        errorLogs.clear();
+        nextId = 1;
 
-    afterAll(async () => {
-        await pool.end();
+        query.mockImplementation(async (text: string, params: any[] = []): Promise<MockQueryResult> => {
+            const normalized = text.replace(/\s+/g, ' ').trim().toLowerCase();
+
+            if (normalized.startsWith('insert into error_logs')) {
+                const id = `err_${nextId++}`;
+                const now = new Date().toISOString();
+                const row = {
+                    id,
+                    error_category: params[0],
+                    error_type: params[1],
+                    error_severity: params[2],
+                    error_message: params[3],
+                    error_code: params[4],
+                    error_stack: params[5],
+                    source_component: params[6],
+                    source_file_id: params[7],
+                    entity_type: params[8],
+                    entity_id: params[9],
+                    file_name: params[10],
+                    file_type: params[11],
+                    line_number: params[12],
+                    column_number: params[13],
+                    location_context: params[14],
+                    error_data: params[15] ? JSON.parse(params[15]) : null,
+                    input_data: params[16],
+                    expected_format: params[17],
+                    user_id: params[18],
+                    session_id: params[19],
+                    is_resolved: false,
+                    resolved_at: null,
+                    resolved_by: null,
+                    resolution_notes: null,
+                    occurred_at: now,
+                    created_at: now,
+                    updated_at: now,
+                };
+
+                errorLogs.set(id, row);
+                return { rows: [{ id }], rowCount: 1 };
+            }
+
+            if (normalized.startsWith('select * from error_logs where id =')) {
+                const id = params[0];
+                const row = errorLogs.get(id);
+                return { rows: row ? [row] : [], rowCount: row ? 1 : 0 };
+            }
+
+            if (normalized.startsWith('select * from error_logs where source_file_id =')) {
+                const sourceFileId = params[0];
+                const rows = Array.from(errorLogs.values())
+                    .filter((row) => row.source_file_id === sourceFileId)
+                    .sort((a, b) => new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime());
+                return { rows, rowCount: rows.length };
+            }
+
+            if (normalized.startsWith('update error_logs set is_resolved = true')) {
+                const [errorId, resolvedBy, resolutionNotes] = params;
+                const row = errorLogs.get(errorId);
+                if (!row) {
+                    return { rows: [], rowCount: 0 };
+                }
+
+                const now = new Date().toISOString();
+                row.is_resolved = true;
+                row.resolved_at = now;
+                row.resolved_by = resolvedBy;
+                row.resolution_notes = resolutionNotes ?? null;
+                row.updated_at = now;
+
+                return { rows: [], rowCount: 1 };
+            }
+
+            throw new Error(`Unhandled query in test mock: ${text}`);
+        });
     });
 
     describe('logError', () => {

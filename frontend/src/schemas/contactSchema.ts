@@ -13,7 +13,7 @@ export const contactSchema = z.object({
     .or(z.literal('')),
   phone: z
     .string()
-    .regex(/^[\d\s\-\+\(\)\.]+$/, 'Invalid phone number format')
+    .regex(/^[\d\s+().-]+$/, 'Invalid phone number format')
     .optional()
     .or(z.literal('')),
   role: z

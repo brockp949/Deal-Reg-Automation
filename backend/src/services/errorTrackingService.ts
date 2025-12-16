@@ -304,7 +304,7 @@ export async function getUnresolvedErrors(limit = 100): Promise<ErrorLogRecord[]
  */
 export async function getRecentErrors(days = 7, limit = 100): Promise<ErrorLogRecord[]> {
   const result = await query(
-    'SELECT * FROM error_logs WHERE occurred_at >= NOW() - INTERVAL \'$1 days\' ORDER BY occurred_at DESC LIMIT $2',
+    `SELECT * FROM error_logs WHERE occurred_at >= NOW() - ($1::int * INTERVAL '1 day') ORDER BY occurred_at DESC LIMIT $2`,
     [days, limit]
   );
 

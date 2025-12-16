@@ -29,6 +29,11 @@ const LABELS = {
 
 export function WinLossChart({ deals }: WinLossChartProps) {
   const chartData = useMemo(() => {
+    // Guard against undefined deals
+    if (!Array.isArray(deals)) {
+      return [];
+    }
+
     const categories = {
       won: { count: 0, value: 0 },
       lost: { count: 0, value: 0 },
@@ -54,7 +59,7 @@ export function WinLossChart({ deals }: WinLossChartProps) {
     });
 
     return Object.entries(categories)
-      .filter(([_, data]) => data.count > 0)
+      .filter(([, data]) => data.count > 0)
       .map(([key, data]) => ({
         name: LABELS[key as keyof typeof LABELS],
         count: data.count,
@@ -63,7 +68,7 @@ export function WinLossChart({ deals }: WinLossChartProps) {
       }));
   }, [deals]);
 
-  const totalDeals = deals.length;
+  const totalDeals = deals?.length || 0;
   const wonDeals = chartData.find((d) => d.name === 'Won')?.count || 0;
   const lostDeals = chartData.find((d) => d.name === 'Lost')?.count || 0;
   const closedDeals = wonDeals + lostDeals;

@@ -43,7 +43,7 @@ export default function Vendors() {
       if (search) params.search = search;
       const response = await vendorAPI.getAll(params);
       if (!response.data.success) return [];
-      return response.data.data.data;
+      return response.data.data.data || [];
     },
   });
 
@@ -64,14 +64,14 @@ export default function Vendors() {
       if (!selectedVendor?.id) return [];
       const response = await vendorAPI.getDeals(selectedVendor.id);
       if (!response.data.success) return [];
-      return response.data.data.data;
+      return response.data.data.data || [];
     },
     enabled: !!selectedVendor?.id,
   });
 
   // Calculate statistics for selected vendor
-  const totalDeals = deals.length;
-  const totalValue = deals.reduce((sum, deal) => sum + (deal.deal_value || 0), 0);
+  const totalDeals = deals?.length || 0;
+  const totalValue = deals?.reduce((sum, deal) => sum + (deal.deal_value || 0), 0) || 0;
   const avgDealSize = totalDeals > 0 ? totalValue / totalDeals : 0;
 
   const handleEditVendor = (vendor: Vendor, e: React.MouseEvent<HTMLDivElement>) => {

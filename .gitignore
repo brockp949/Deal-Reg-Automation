@@ -61,3 +61,6 @@ Thumbs.db
 *.seed
 *.pid.lock
 nul
+
+# Legacy nested repo copy (avoid duplicate search results)
+Deal-Reg-Automation/

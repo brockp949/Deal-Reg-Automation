@@ -770,8 +770,8 @@ export async function detectDuplicateDeals(
       suggestedAction
     });
 
-    // Trigger webhook if duplicates found
-    if (matches.length > 0) {
+    // Trigger webhook if duplicates found (skip when running with provided deals)
+    if (!usingProvidedDeals && matches.length > 0) {
       triggerWebhook('duplicate.detected', {
         dealId: deal.id,
         dealName: deal.dealName,

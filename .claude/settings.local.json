@@ -53,7 +53,9 @@
       "Bash(docker-compose:*)",
       "Bash(docker info:*)",
       "Bash(docker ps:*)",
-      "Bash(git mv:*)"
+      "Bash(git mv:*)",
+      "Bash(where:*)",
+      "Bash(netstat:*)"
     ],
     "deny": [],
     "ask": []

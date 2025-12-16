@@ -52,6 +52,22 @@ function MetricCard({ title, value, description, icon, trend }: MetricCardProps)
 
 export function DealVelocityMetrics({ deals }: DealVelocityMetricsProps) {
   const metrics = useMemo(() => {
+    // Guard against undefined deals
+    if (!Array.isArray(deals)) {
+      return {
+        dealsPerMonth: 0,
+        dealsPerMonthTrend: 0,
+        avgDealValue: 0,
+        avgDealValueTrend: 0,
+        avgTimeToClose: 0,
+        timeToCloseTrend: 0,
+        winRate: 0,
+        winRateTrend: 0,
+        pipelineValue: 0,
+        pipelineValueTrend: 0,
+      };
+    }
+
     const now = new Date();
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);

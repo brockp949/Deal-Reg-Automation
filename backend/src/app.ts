@@ -49,7 +49,18 @@ import dashboardRoutes from './routes/dashboard';
 const app = express();
 
 // Security and parsing middleware
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-eval'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "blob:"],
+      fontSrc: ["'self'"],
+      connectSrc: ["'self'"],
+    },
+  },
+}));
 app.use((req, _res, next) => runWithContext({ requestId: (req as any).requestId }, next));
 app.use(requestId);
 app.use(cors({

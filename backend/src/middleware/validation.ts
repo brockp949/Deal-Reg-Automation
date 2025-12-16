@@ -109,6 +109,20 @@ export const commonValidations = {
       .withMessage('limit must be between 1 and 100'),
   ],
 
+  // Extended pagination for endpoints that need to fetch more data (e.g., charts)
+  extendedPagination: () => [
+    query('page')
+      .optional()
+      .isInt({ min: 1 })
+      .toInt()
+      .withMessage('page must be a positive integer'),
+    query('limit')
+      .optional()
+      .isInt({ min: 1, max: 5000 })
+      .toInt()
+      .withMessage('limit must be between 1 and 5000'),
+  ],
+
   sortOrder: () =>
     query('sort_order')
       .optional()
@@ -168,7 +182,7 @@ export const dealValidations = {
   ],
 
   getAll: [
-    ...commonValidations.pagination(),
+    ...commonValidations.extendedPagination(),
     query('vendor_id')
       .optional()
       .isUUID()

@@ -69,7 +69,7 @@ export default function UploadStep({
   });
 
   // Validate if file extension matches accepted formats
-  const validateFileType = (file: File): string | undefined => {
+  const validateFileType = useCallback((file: File): string | undefined => {
     const fileName = file.name.toLowerCase();
     const fileExtension = fileName.substring(fileName.lastIndexOf('.'));
 
@@ -78,7 +78,7 @@ export default function UploadStep({
     }
 
     return undefined;
-  };
+  }, [acceptedFormats]);
 
   const onDrop = useCallback((acceptedFiles: File[], rejectedFiles: any[]) => {
     // Handle rejected files from react-dropzone
@@ -111,7 +111,7 @@ export default function UploadStep({
     if (validFiles.length > 0) {
       setSelectedFiles((prev) => [...prev, ...validFiles]);
     }
-  }, [acceptedFormats]);
+  }, [acceptedFormats, validateFileType]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,

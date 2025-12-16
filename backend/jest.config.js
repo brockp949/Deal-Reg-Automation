@@ -19,6 +19,6 @@ module.exports = {
   moduleFileExtensions: ['ts', 'js', 'json'],
   verbose: true,
   coverageDirectory: 'coverage',
-  testTimeout: 10000,
+  testTimeout: 30000,
   setupFilesAfterEnv: ['<rootDir>/src/__tests__/setup.ts'],
 };

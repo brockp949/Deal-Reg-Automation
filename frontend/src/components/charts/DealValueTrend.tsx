@@ -13,6 +13,11 @@ interface DealValueTrendProps {
 
 export function DealValueTrend({ deals }: DealValueTrendProps) {
   const chartData = useMemo(() => {
+    // Guard against undefined deals
+    if (!Array.isArray(deals)) {
+      return [];
+    }
+
     // Group deals by month
     const monthlyData: Record<string, { total: number; count: number }> = {};
 

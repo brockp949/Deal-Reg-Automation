@@ -149,12 +149,12 @@ export default function Deals() {
 
   // Calculate summary statistics (use pagination total for accurate count)
   const totalDeals = pagination.total;
-  const totalValue = deals.reduce((sum, deal) => sum + (deal.deal_value || 0), 0);
-  const avgDealSize = deals.length > 0 ? totalValue / deals.length : 0;
-  const statusBreakdown = deals.reduce((acc, deal) => {
+  const totalValue = deals?.reduce((sum, deal) => sum + (deal.deal_value || 0), 0) || 0;
+  const avgDealSize = (deals?.length || 0) > 0 ? totalValue / deals.length : 0;
+  const statusBreakdown = deals?.reduce((acc, deal) => {
     acc[deal.status] = (acc[deal.status] || 0) + 1;
     return acc;
-  }, {} as Record<string, number>);
+  }, {} as Record<string, number>) || {};
 
   const formatCurrency = (value: number, currency: string = 'USD') => {
     return new Intl.NumberFormat('en-US', {

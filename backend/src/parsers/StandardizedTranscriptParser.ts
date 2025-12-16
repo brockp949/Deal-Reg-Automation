@@ -9,6 +9,7 @@ import { BaseParser } from './BaseParser';
 import { parseTextTranscript, extractInfoFromTranscript } from './transcriptParser';
 import { parseEnhancedTranscript } from './enhancedTranscriptParser';
 import { parsePDFTranscript } from './pdfParser';
+import { parseDocxTranscript } from './docxParser';
 import {
   StandardizedParserOutput,
   TranscriptParserOptions,
@@ -38,6 +39,7 @@ export class StandardizedTranscriptParser extends BaseParser {
       'transcript_parsing',
       'text_parsing',
       'pdf_parsing',
+      'docx_parsing',
       'enhanced_extraction',
       'vendor_extraction',
       'deal_extraction',
@@ -85,6 +87,16 @@ export class StandardizedTranscriptParser extends BaseParser {
         await writeFile(tempFilePath, pdfText, 'utf-8');
         filePathToProcess = tempFilePath;
         logger.info('Extracted PDF text to temporary file', { tempFilePath });
+      }
+
+      // Handle DOCX files - extract text to temp file first
+      if (fileType === 'docx') {
+        const { writeFile } = await import('fs/promises');
+        const docxText = await parseDocxTranscript(filePath);
+        tempFilePath = filePath + '.txt';
+        await writeFile(tempFilePath, docxText, 'utf-8');
+        filePathToProcess = tempFilePath;
+        logger.info('Extracted DOCX text to temporary file', { tempFilePath });
       }
 
       let extractedData: any;

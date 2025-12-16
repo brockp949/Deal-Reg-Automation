@@ -21,7 +21,7 @@ import {
 import { stat } from 'fs/promises';
 import logger from '../utils/logger';
 import { loadSourceMetadata } from '../utils/sourceMetadata';
-import { analyzeOpportunitySignals, inferDealStage } from '../utils/opportunitySignals';
+import { analyzeOpportunitySignals, extractSemanticSections, inferDealStage } from '../utils/opportunitySignals';
 
 export class StandardizedMboxParser extends BaseParser {
   constructor() {
@@ -121,16 +121,41 @@ export class StandardizedMboxParser extends BaseParser {
 
       const threadAnalysis = new Map<string, ReturnType<typeof analyzeOpportunitySignals>>();
       const messageToThreadId = new Map<string, string>();
+      const semanticSectionsAccumulator = {
+        attendees: new Set<string>(),
+        pricing: new Set<string>(),
+        margins: new Set<string>(),
+        actionItems: new Set<string>(),
+        opportunityMentions: new Set<string>(),
+      };
 
       for (const thread of enhancedResult.threads) {
         const combinedText = thread.messages
           .map((message) => `${message.subject || ''}\n${message.cleaned_body || ''}`)
           .join('\n');
-        threadAnalysis.set(thread.thread_id, analyzeOpportunitySignals(combinedText));
+        const analysis = analyzeOpportunitySignals(combinedText);
+        threadAnalysis.set(thread.thread_id, analysis);
+
+        const sections = extractSemanticSections(combinedText, analysis);
+        sections.attendees.forEach((entry) => semanticSectionsAccumulator.attendees.add(entry));
+        sections.pricing.forEach((entry) => semanticSectionsAccumulator.pricing.add(entry));
+        sections.margins.forEach((entry) => semanticSectionsAccumulator.margins.add(entry));
+        sections.actionItems.forEach((entry) => semanticSectionsAccumulator.actionItems.add(entry));
+        sections.opportunityMentions.forEach((entry) =>
+          semanticSectionsAccumulator.opportunityMentions.add(entry)
+        );
         thread.messages.forEach((message) => {
           messageToThreadId.set(message.message_id, thread.thread_id);
         });
       }
+
+      output.semanticSections = {
+        attendees: Array.from(semanticSectionsAccumulator.attendees),
+        pricing: Array.from(semanticSectionsAccumulator.pricing),
+        margins: Array.from(semanticSectionsAccumulator.margins),
+        actionItems: Array.from(semanticSectionsAccumulator.actionItems),
+        opportunityMentions: Array.from(semanticSectionsAccumulator.opportunityMentions),
+      };
 
       const baseTags = new Set(output.metadata.sourceTags ?? ['source:email']);
       const aggregateTags = new Set(baseTags);

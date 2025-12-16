@@ -38,16 +38,16 @@ export default function Dashboard() {
     },
   });
 
-  const vendors = vendorsData?.success ? vendorsData.data.data : [];
-  const deals = dealsData?.success ? dealsData.data.data : [];
-  const files = filesData?.success ? filesData.data.data : [];
+  const vendors = vendorsData?.success ? (vendorsData.data.data || []) : [];
+  const deals = dealsData?.success ? (dealsData.data.data || []) : [];
+  const files = filesData?.success ? (filesData.data.data || []) : [];
 
   const totalVendors = vendorsData?.success ? vendorsData.data.pagination?.total || 0 : 0;
   const totalDeals = dealsData?.success ? dealsData.data.pagination?.total || 0 : 0;
   const totalFiles = filesData?.success ? filesData.data.data?.filter((f) => f.processing_status === 'completed').length || 0 : 0;
 
   // Calculate total deal value
-  const totalDealValue = deals.reduce((sum: number, deal: any) => sum + (deal.deal_value || 0), 0);
+  const totalDealValue = deals?.reduce((sum: number, deal: any) => sum + (deal.deal_value || 0), 0) || 0;
 
   const getStatusBadge = (status: string) => {
     switch (status) {

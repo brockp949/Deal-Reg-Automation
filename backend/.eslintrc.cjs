@@ -1,0 +1,25 @@
+module.exports = {
+  root: true,
+  env: {
+    node: true,
+    es2022: true,
+    jest: true,
+  },
+  parser: '@typescript-eslint/parser',
+  plugins: ['@typescript-eslint'],
+  extends: ['eslint:recommended'],
+  ignorePatterns: ['dist/', 'node_modules/', 'uploads/', 'coverage/'],
+  rules: {
+    'no-undef': 'off',
+    'no-unused-vars': 'off',
+    'no-control-regex': 'off',
+    'no-regex-spaces': 'off',
+    'no-case-declarations': 'off',
+    'no-constant-condition': 'off',
+    'prefer-const': 'off',
+    'no-useless-escape': 'off',
+    '@typescript-eslint/no-unused-vars': 'off',
+    '@typescript-eslint/no-var-requires': 'off',
+    '@typescript-eslint/no-explicit-any': 'off',
+  },
+};
