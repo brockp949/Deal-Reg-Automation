@@ -15,6 +15,7 @@ export default function Layout({ children }: LayoutProps) {
     { path: '/vendors', label: 'Vendors' },
     { path: '/vendor-approval', label: 'Vendor Approval' },
     { path: '/upload', label: 'Upload Files' },
+    { path: '/settings/sync', label: 'Sync Settings' },
     { path: '/errors', label: 'Errors' },
   ];
 

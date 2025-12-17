@@ -19,9 +19,12 @@ export default function ClearDataDialog() {
   const [confirmText, setConfirmText] = useState('');
   const queryClient = useQueryClient();
 
+  // Admin token for clear-all operation (matches CLEAR_ALL_TOKEN in backend .env)
+  const adminToken = import.meta.env.VITE_CLEAR_ALL_TOKEN || 'dev-clear-all-token';
+
   const clearMutation = useMutation({
     mutationFn: async () => {
-      return await fileAPI.clearAll();
+      return await fileAPI.clearAll(adminToken);
     },
     onSuccess: (response) => {
       const stats = response.data?.success ? (response.data as any).data : undefined;

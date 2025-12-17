@@ -7,7 +7,7 @@
 
 import logger from '../utils/logger';
 
-export type JobType = 'file_processing' | 'reprocess' | 'export' | 'ai_extraction';
+export type JobType = 'file_processing' | 'reprocess' | 'export' | 'ai_extraction' | 'sync_processing';
 export type JobStatus = 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled';
 
 export interface Job {

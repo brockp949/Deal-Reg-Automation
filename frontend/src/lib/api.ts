@@ -139,8 +139,10 @@ export const fileAPI = {
     api.delete(`/files/${id}`),
   process: (id: string): Promise<AxiosResponse<ApiResponse<void>>> =>
     api.post(`/files/${id}/process`),
-  clearAll: (): Promise<AxiosResponse<ApiResponse<void>>> =>
-    api.delete('/files/clear-all'),
+  clearAll: (adminToken?: string): Promise<AxiosResponse<ApiResponse<void>>> =>
+    api.delete('/files/clear-all', {
+      headers: adminToken ? { 'X-Admin-Token': adminToken } : undefined,
+    }),
   getSecurityMetrics: (): Promise<AxiosResponse<ApiResponse<SecurityMetrics>>> =>
     api.get('/files/metrics/security'),
 };
@@ -271,3 +273,178 @@ export const agreementAPI = {
 
 // ChroniclerClient SDK for meeting notes parsing
 export { chroniclerClient } from './chronicler-sdk';
+
+// Google Auth API
+export const googleAuthAPI = {
+  getStatus: (): Promise<AxiosResponse<ApiResponse<{ gmailConfigured: boolean; driveConfigured: boolean }>>> =>
+    api.get('/google-auth/status'),
+  startAuthorization: (service: 'gmail' | 'drive'): Promise<AxiosResponse<ApiResponse<{ authUrl: string; state: string }>>> =>
+    api.get(`/google-auth/authorize/${service}`),
+  getAccounts: (): Promise<AxiosResponse<ApiResponse<{ accounts: Array<{
+    id: string;
+    account_email: string;
+    service_type: 'gmail' | 'drive';
+    scopes: string[];
+    created_at: string;
+    updated_at: string;
+  }> }>>> =>
+    api.get('/google-auth/accounts'),
+  disconnectAccount: (id: string): Promise<AxiosResponse<ApiResponse<void>>> =>
+    api.delete(`/google-auth/accounts/${id}`),
+  refreshToken: (id: string): Promise<AxiosResponse<ApiResponse<void>>> =>
+    api.post(`/google-auth/accounts/${id}/refresh`),
+};
+
+// Gmail Sync API
+export const gmailSyncAPI = {
+  getLabels: (tokenId: string): Promise<AxiosResponse<ApiResponse<{ accountEmail: string; labels: Array<{
+    id: string;
+    name: string;
+    type: 'system' | 'user';
+  }> }>>> =>
+    api.get('/sync/gmail/labels', { params: { tokenId } }),
+  getConfigs: (): Promise<AxiosResponse<ApiResponse<any[]>>> =>
+    api.get('/sync/gmail/configs'),
+  getConfig: (id: string): Promise<AxiosResponse<ApiResponse<any>>> =>
+    api.get(`/sync/gmail/configs/${id}`),
+  createConfig: (data: {
+    tokenId: string;
+    name: string;
+    labelIds?: string[];
+    dateFrom?: string;
+    dateTo?: string;
+    syncFrequency?: string;
+  }): Promise<AxiosResponse<ApiResponse<any>>> =>
+    api.post('/sync/gmail/configs', data),
+  updateConfig: (id: string, data: {
+    name?: string;
+    labelIds?: string[];
+    dateFrom?: string;
+    dateTo?: string;
+    syncFrequency?: string;
+    enabled?: boolean;
+  }): Promise<AxiosResponse<ApiResponse<any>>> =>
+    api.put(`/sync/gmail/configs/${id}`, data),
+  deleteConfig: (id: string): Promise<AxiosResponse<ApiResponse<void>>> =>
+    api.delete(`/sync/gmail/configs/${id}`),
+  triggerSync: (id: string): Promise<AxiosResponse<ApiResponse<{ jobId: string }>>> =>
+    api.post(`/sync/gmail/configs/${id}/trigger`),
+  getHistory: (id: string, limit?: number): Promise<AxiosResponse<ApiResponse<any[]>>> =>
+    api.get(`/sync/gmail/configs/${id}/history`, { params: { limit } }),
+  getJobs: (id: string): Promise<AxiosResponse<ApiResponse<any[]>>> =>
+    api.get(`/sync/gmail/configs/${id}/jobs`),
+  preview: (data: {
+    tokenId: string;
+    labelIds?: string[];
+    dateFrom?: string;
+    dateTo?: string;
+    maxResults?: number;
+  }): Promise<AxiosResponse<ApiResponse<{ count: number; sample: Array<{
+    id: string;
+    subject: string;
+    from: string;
+    date: string;
+  }> }>>> =>
+    api.post('/sync/gmail/preview', data),
+  getJobStatus: (jobId: string): Promise<AxiosResponse<ApiResponse<any>>> =>
+    api.get(`/sync/gmail/job/${jobId}`),
+};
+
+// Drive Sync API
+export const driveSyncAPI = {
+  getRootFolders: (tokenId: string): Promise<AxiosResponse<ApiResponse<{ accountEmail: string; folders: Array<{
+    id: string;
+    name: string;
+    mimeType: string;
+    modifiedTime?: string;
+    createdTime?: string;
+  }> }>>> =>
+    api.get('/sync/drive/folders', { params: { tokenId } }),
+  getFolderChildren: (folderId: string, tokenId: string, pageToken?: string): Promise<AxiosResponse<ApiResponse<{
+    items: any[];
+    nextPageToken?: string;
+  }>>> =>
+    api.get(`/sync/drive/folders/${folderId}/children`, { params: { tokenId, pageToken } }),
+  resolveUrl: (url: string, tokenId?: string): Promise<AxiosResponse<ApiResponse<{
+    folderId: string;
+    folderInfo?: any;
+  }>>> =>
+    api.post('/sync/drive/resolve-url', { url, tokenId }),
+  getConfigs: (): Promise<AxiosResponse<ApiResponse<any[]>>> =>
+    api.get('/sync/drive/configs'),
+  getConfig: (id: string): Promise<AxiosResponse<ApiResponse<any>>> =>
+    api.get(`/sync/drive/configs/${id}`),
+  createConfig: (data: {
+    tokenId: string;
+    name: string;
+    folderId?: string;
+    folderUrl?: string;
+    includeSubfolders?: boolean;
+    syncFrequency?: string;
+  }): Promise<AxiosResponse<ApiResponse<any>>> =>
+    api.post('/sync/drive/configs', data),
+  updateConfig: (id: string, data: {
+    name?: string;
+    folderId?: string;
+    folderUrl?: string;
+    includeSubfolders?: boolean;
+    syncFrequency?: string;
+    enabled?: boolean;
+  }): Promise<AxiosResponse<ApiResponse<any>>> =>
+    api.put(`/sync/drive/configs/${id}`, data),
+  deleteConfig: (id: string): Promise<AxiosResponse<ApiResponse<void>>> =>
+    api.delete(`/sync/drive/configs/${id}`),
+  triggerSync: (id: string): Promise<AxiosResponse<ApiResponse<{ jobId: string }>>> =>
+    api.post(`/sync/drive/configs/${id}/trigger`),
+  getHistory: (id: string, limit?: number): Promise<AxiosResponse<ApiResponse<any[]>>> =>
+    api.get(`/sync/drive/configs/${id}/history`, { params: { limit } }),
+  getJobs: (id: string): Promise<AxiosResponse<ApiResponse<any[]>>> =>
+    api.get(`/sync/drive/configs/${id}/jobs`),
+  preview: (data: {
+    tokenId: string;
+    folderId?: string;
+    folderUrl?: string;
+    includeSubfolders?: boolean;
+    maxResults?: number;
+  }): Promise<AxiosResponse<ApiResponse<{ count: number; sample: Array<{
+    id: string;
+    name: string;
+    mimeType: string;
+    modifiedTime?: string;
+  }> }>>> =>
+    api.post('/sync/drive/preview', data),
+  getJobStatus: (jobId: string): Promise<AxiosResponse<ApiResponse<any>>> =>
+    api.get(`/sync/drive/job/${jobId}`),
+};
+
+// Sync Statistics API
+export const syncStatsAPI = {
+  getStats: (): Promise<AxiosResponse<ApiResponse<{
+    activeConfigs: number;
+    lastSyncAt: string | null;
+    nextSyncAt: string | null;
+    recentRuns: Array<{
+      id: string;
+      config_id: string;
+      config_name: string;
+      service_type: 'gmail' | 'drive';
+      status: string;
+      started_at: string;
+      completed_at?: string;
+      items_found: number;
+      items_processed: number;
+      deals_created: number;
+      errors_count: number;
+      error_message?: string;
+      trigger_type: string;
+    }>;
+    totalItemsSynced: number;
+  }>>> =>
+    api.get('/sync/stats'),
+  getSummary: (): Promise<AxiosResponse<ApiResponse<{
+    activeConfigs: number;
+    lastSyncAt: string | null;
+    runningSyncs: number;
+  }>>> =>
+    api.get('/sync/stats/summary'),
+};

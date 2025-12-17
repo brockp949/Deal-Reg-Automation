@@ -45,6 +45,10 @@ import opsRoutes from './routes/ops';
 import metricsRoutes from './routes/metrics';
 import healthRoutes from './routes/health';
 import dashboardRoutes from './routes/dashboard';
+import googleAuthRoutes from './routes/googleAuth';
+import gmailSyncRoutes from './routes/gmailSync';
+import driveSyncRoutes from './routes/driveSync';
+import syncStatsRoutes from './routes/syncStats';
 
 const app = express();
 
@@ -163,6 +167,10 @@ app.use(`${config.apiPrefix}/ops`, opsRoutes);
 app.use('/', healthRoutes);
 app.use(`${config.apiPrefix}/metrics`, metricsRoutes);
 app.use(`${config.apiPrefix}/dashboard`, dashboardRoutes);
+app.use(`${config.apiPrefix}/google-auth`, googleAuthRoutes);
+app.use(`${config.apiPrefix}/sync/gmail`, gmailSyncRoutes);
+app.use(`${config.apiPrefix}/sync/drive`, driveSyncRoutes);
+app.use(`${config.apiPrefix}/sync/stats`, syncStatsRoutes);
 
 // 404 handler
 app.use((req: Request, res: Response) => {

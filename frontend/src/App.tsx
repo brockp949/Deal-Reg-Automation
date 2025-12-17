@@ -6,6 +6,7 @@ import VendorDetail from './pages/VendorDetail';
 import VendorApproval from './pages/VendorApproval';
 import FileUpload from './pages/FileUpload';
 import Errors from './pages/Errors';
+import SyncSettingsPage from './pages/SyncSettingsPage';
 import Layout from './components/Layout';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
@@ -20,6 +21,7 @@ function App() {
           <Route path="/vendors/:id" element={<VendorDetail />} />
           <Route path="/vendor-approval" element={<VendorApproval />} />
           <Route path="/upload" element={<FileUpload />} />
+          <Route path="/settings/sync" element={<SyncSettingsPage />} />
           <Route path="/errors" element={<Errors />} />
         </Routes>
       </Layout>

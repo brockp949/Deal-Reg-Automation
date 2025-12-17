@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Building2, Briefcase, FileText, TrendingUp, Plus, Upload, ArrowRight } from 'lucide-react';
-import { vendorAPI, dealAPI, fileAPI } from '@/lib/api';
+import { Building2, Briefcase, FileText, TrendingUp, Plus, Upload, ArrowRight, Cloud, Mail, HardDrive, Lightbulb } from 'lucide-react';
+import { vendorAPI, dealAPI, fileAPI, syncStatsAPI } from '@/lib/api';
 import { formatCurrency, formatDate, formatFileSize } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -38,6 +38,14 @@ export default function Dashboard() {
     },
   });
 
+  const { data: syncStatsData, isLoading: syncLoading } = useQuery({
+    queryKey: ['sync-stats-dashboard'],
+    queryFn: async () => {
+      const response = await syncStatsAPI.getStats();
+      return response.data;
+    },
+  });
+
   const vendors = vendorsData?.success ? (vendorsData.data.data || []) : [];
   const deals = dealsData?.success ? (dealsData.data.data || []) : [];
   const files = filesData?.success ? (filesData.data.data || []) : [];
@@ -48,6 +56,40 @@ export default function Dashboard() {
 
   // Calculate total deal value
   const totalDealValue = deals?.reduce((sum: number, deal: any) => sum + (deal.deal_value || 0), 0) || 0;
+
+  // Sync stats
+  const syncStats = syncStatsData?.success ? syncStatsData.data : null;
+  const activeConfigs = syncStats?.activeConfigs || 0;
+  const recentSyncs = syncStats?.recentRuns || [];
+
+  // Helper to format relative time
+  const getRelativeTime = (dateStr: string | null) => {
+    if (!dateStr) return null;
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    return `${diffDays}d ago`;
+  };
+
+  const getSyncStatusBadge = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return <Badge variant="success">Completed</Badge>;
+      case 'running':
+        return <Badge variant="warning">Running</Badge>;
+      case 'failed':
+        return <Badge variant="destructive">Failed</Badge>;
+      default:
+        return <Badge variant="secondary">{status}</Badge>;
+    }
+  };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -123,14 +165,33 @@ export default function Dashboard() {
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Link>
             </Button>
+
+            {/* Google Sync Alternative Callout */}
+            <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-800 flex items-start gap-3">
+              <Lightbulb className="h-5 w-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="font-medium text-blue-900 dark:text-blue-100">
+                  Alternative: Connect Gmail & Google Drive
+                </p>
+                <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                  Import deals automatically from your email and documents.
+                </p>
+              </div>
+              <Button asChild variant="outline" size="sm" className="flex-shrink-0">
+                <Link to="/settings/sync">
+                  Set Up Google Sync
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Link>
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        {vendorsLoading || dealsLoading || filesLoading ? (
-          <KPICardSkeleton count={4} />
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+        {vendorsLoading || dealsLoading || filesLoading || syncLoading ? (
+          <KPICardSkeleton count={5} />
         ) : (
           <>
             <Card>
@@ -188,6 +249,21 @@ export default function Dashboard() {
                 </div>
               </CardContent>
             </Card>
+
+            <Card className="cursor-pointer hover:bg-accent/50 transition-colors" onClick={() => window.location.href = '/settings/sync'}>
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground mb-1">Google Sync</p>
+                    <p className="text-3xl font-bold">{activeConfigs}</p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {syncStats?.lastSyncAt ? `Last: ${getRelativeTime(syncStats.lastSyncAt)}` : 'No syncs yet'}
+                    </p>
+                  </div>
+                  <Cloud className="h-10 w-10 text-blue-500" />
+                </div>
+              </CardContent>
+            </Card>
           </>
         )}
       </div>
@@ -200,7 +276,7 @@ export default function Dashboard() {
         <DealFunnelChart />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
         {/* Recent Activity */}
         {filesLoading ? (
           <ActivityListSkeleton items={5} />
@@ -315,6 +391,62 @@ export default function Dashboard() {
             </CardContent>
           </Card>
         )}
+
+        {/* Recent Syncs */}
+        {syncLoading ? (
+          <ActivityListSkeleton items={5} />
+        ) : (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>Recent Syncs</CardTitle>
+                <Button asChild size="sm" variant="outline">
+                  <Link to="/settings/sync">View All</Link>
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {recentSyncs.length === 0 ? (
+                <div className="text-center py-8">
+                  <Cloud className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                  <p className="text-muted-foreground mb-4">No syncs configured yet</p>
+                  <Button asChild size="sm">
+                    <Link to="/settings/sync">
+                      <Plus className="mr-2 h-4 w-4" />
+                      Set Up Google Sync
+                    </Link>
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {recentSyncs.slice(0, 5).map((sync: any) => (
+                    <div
+                      key={sync.id}
+                      className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent/50 transition-colors"
+                    >
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        {sync.service_type === 'gmail' ? (
+                          <Mail className="h-4 w-4 text-red-500 flex-shrink-0" />
+                        ) : (
+                          <HardDrive className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium truncate">{sync.config_name || 'Sync'}</p>
+                          <div className="flex gap-2 text-sm text-muted-foreground mt-1">
+                            <span>{sync.items_processed || 0} items</span>
+                            <span>•</span>
+                            <span>{getRelativeTime(sync.started_at)}</span>
+                          </div>
+                        </div>
+                      </div>
+                      {getSyncStatusBadge(sync.status)}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Quick Actions */}
@@ -323,7 +455,7 @@ export default function Dashboard() {
           <CardTitle>Quick Actions</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Button asChild className="h-auto py-6 flex-col">
               <Link to="/upload">
                 <FileText className="h-8 w-8 mb-2" />
@@ -340,6 +472,16 @@ export default function Dashboard() {
                 <span className="text-lg">View Vendors</span>
                 <span className="text-xs font-normal opacity-80 mt-1">
                   Manage vendor partnerships
+                </span>
+              </Link>
+            </Button>
+
+            <Button asChild variant="outline" className="h-auto py-6 flex-col">
+              <Link to="/settings/sync">
+                <Cloud className="h-8 w-8 mb-2" />
+                <span className="text-lg">Google Sync</span>
+                <span className="text-xs font-normal opacity-80 mt-1">
+                  Manage Gmail & Drive imports
                 </span>
               </Link>
             </Button>

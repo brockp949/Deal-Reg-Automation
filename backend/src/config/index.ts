@@ -54,10 +54,15 @@ const envSchema = z.object({
   // Logging
   LOG_LEVEL: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
 
-  // Google connectors
+  // Google connectors (Service Account)
   GOOGLE_CLIENT_EMAIL: z.string().optional(),
   GOOGLE_PRIVATE_KEY: z.string().optional(),
   GOOGLE_IMPERSONATED_USER: z.string().optional(),
+
+  // Google OAuth2 (User Authentication)
+  GOOGLE_GMAIL_CREDENTIALS_PATH: z.string().optional(),
+  GOOGLE_DRIVE_CREDENTIALS_PATH: z.string().optional(),
+  GOOGLE_OAUTH_REDIRECT_URI: z.string().default('http://localhost:4000/api/google-auth/callback'),
   GMAIL_SYNC_ENABLED: z.string().default('false'),
   GMAIL_SYNC_QUERIES: z.string().default('4IEC,quote,RFQ'),
   GMAIL_SYNC_WINDOW_DAYS: z.string().default('180'),
@@ -184,6 +189,11 @@ export const config = {
             impersonatedUser: env.GOOGLE_IMPERSONATED_USER,
           }
         : undefined,
+    googleOAuth2: {
+      gmailCredentialsPath: env.GOOGLE_GMAIL_CREDENTIALS_PATH,
+      driveCredentialsPath: env.GOOGLE_DRIVE_CREDENTIALS_PATH,
+      redirectUri: env.GOOGLE_OAUTH_REDIRECT_URI,
+    },
     gmailSync: {
       enabled: env.GMAIL_SYNC_ENABLED === 'true',
       windowDays: parseInt(env.GMAIL_SYNC_WINDOW_DAYS, 10) || 180,

@@ -141,14 +141,7 @@ export default function UploadWizard() {
   const stepFiles = getStepFiles();
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold mb-2">Deal Registration Upload Wizard</h1>
-        <p className="text-muted-foreground">
-          Follow these steps to import your deal registration data into the system.
-        </p>
-      </div>
-
+    <div className="space-y-6">
       <Stepper steps={STEPS} currentStep={currentStep} onStepClick={handleStepClick} />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

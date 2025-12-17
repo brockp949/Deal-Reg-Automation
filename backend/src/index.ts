@@ -3,6 +3,8 @@ import { config } from './config';
 import logger from './utils/logger';
 import pool from './db';
 import ensureMigrations from './db/ensureMigrations';
+import { startSyncScheduler, stopSyncScheduler } from './services/syncScheduler';
+import { closeSyncQueue } from './queues/syncProcessingQueue';
 
 function registerDiagnostics() {
   process.on('unhandledRejection', (reason: any) => {
@@ -32,12 +34,24 @@ async function start() {
     logger.info(`Server started on port ${PORT}`);
     logger.info(`Environment: ${config.env}`);
     logger.info(`API prefix: ${config.apiPrefix}`);
+
+    // Start sync scheduler after server is up
+    if (config.connectors.googleOAuth2?.gmailCredentialsPath || config.connectors.googleOAuth2?.driveCredentialsPath) {
+      startSyncScheduler();
+      logger.info('Google sync scheduler started');
+    }
   });
 
   // Graceful shutdown
   async function shutdown(signal: string) {
     logger.info(`${signal} received, shutting down gracefully`);
     server.close(() => logger.info('HTTP server closed'));
+
+    // Stop sync scheduler and close queue
+    stopSyncScheduler();
+    await closeSyncQueue();
+    logger.info('Sync services stopped');
+
     await pool.end();
     process.exit(0);
   }
