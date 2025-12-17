@@ -85,8 +85,6 @@ function validateUploadRequest(req: Request): { valid: boolean; error?: string }
   return { valid: true };
 }
 
-
-
 function buildUploadMetadata(req: Request, originalName: string, extras?: Record<string, any>) {
   return {
     ip: req.ip,
