@@ -179,7 +179,7 @@ export async function parseEnhancedMboxFile(
     for (const thread of threads) {
       logger.info(`Processing thread: "${thread.subject_normalized}" (${thread.messages.length} messages)`);
 
-      const deals = processThread(thread);
+      const deals = await processThread(thread);
 
       // Filter by confidence threshold
       const highConfidenceDeals = deals.filter(

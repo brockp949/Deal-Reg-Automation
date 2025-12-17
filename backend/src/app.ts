@@ -51,6 +51,10 @@ import driveSyncRoutes from './routes/driveSync';
 import syncStatsRoutes from './routes/syncStats';
 import vendorSpreadsheetExportRoutes from './routes/vendorSpreadsheetExport';
 import progressRoutes from './routes/progress';
+import feedbackRoutes from './routes/feedback';
+import chunkedUploadRoutes from './routes/chunkedUpload';
+import monitoringRoutes from './routes/monitoring';
+import validationRoutes from './routes/validation';
 
 const app = express();
 
@@ -169,12 +173,16 @@ app.use(`${config.apiPrefix}/merge`, requireRole(['admin']), mergeAuditRoutes);
 app.use(`${config.apiPrefix}/ops`, opsRoutes);
 app.use('/', healthRoutes);
 app.use(`${config.apiPrefix}/metrics`, metricsRoutes);
+app.use(`${config.apiPrefix}/monitoring`, monitoringRoutes);
 app.use(`${config.apiPrefix}/dashboard`, dashboardRoutes);
 app.use(`${config.apiPrefix}/google-auth`, googleAuthRoutes);
 app.use(`${config.apiPrefix}/sync/gmail`, gmailSyncRoutes);
 app.use(`${config.apiPrefix}/sync/drive`, driveSyncRoutes);
 app.use(`${config.apiPrefix}/sync/stats`, syncStatsRoutes);
 app.use(`${config.apiPrefix}/progress`, progressRoutes);
+app.use(`${config.apiPrefix}/feedback`, feedbackRoutes);
+app.use(`${config.apiPrefix}/files/upload/chunked`, uploadLimiter, chunkedUploadRoutes);
+app.use(`${config.apiPrefix}/validation`, uploadLimiter, validationRoutes);
 
 // 404 handler
 app.use((req: Request, res: Response) => {

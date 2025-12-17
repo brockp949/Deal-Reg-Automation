@@ -15,6 +15,10 @@ import { ensureVendorApproved } from '../services/vendorApprovalService';
 import { VendorApprovalPendingError, VendorApprovalDeniedError } from '../errors/vendorApprovalErrors';
 import { trackDealProvenance, trackVendorProvenance, trackContactProvenance } from '../services/provenanceTracker';
 import { EventEmitter } from 'events';
+import { getParallelProcessingService } from '../services/ParallelProcessingService';
+import { getDuplicateDetector } from '../skills/SemanticDuplicateDetector';
+import { getErrorGuidanceService, type ActionableError } from '../services/ErrorGuidanceService';
+import { isSkillEnabled } from '../config/claude';
 
 // Job data structure
 export interface UnifiedJobData {
@@ -39,6 +43,7 @@ export interface UnifiedJobResult {
   contactsCreated: number;
   errors: string[];
   warnings: string[];
+  errorGuidance?: ActionableError;  // Smart error guidance when available
   statistics: {
     totalRows: number;
     successCount: number;
@@ -63,6 +68,105 @@ function emitProgress(fileId: string, progress: number, stage: string, message?:
     result,
     timestamp: new Date().toISOString(),
   });
+}
+
+/**
+ * Check for semantic duplicates using AI-powered similarity detection
+ * Falls back to exact string matching when skill is disabled
+ */
+async function checkSemanticDuplicate(
+  dealName: string,
+  vendorId: string,
+  dealValue?: number
+): Promise<{ isDuplicate: boolean; matchedId?: string; similarity?: number }> {
+  // Check if skill is enabled
+  if (!isSkillEnabled('semanticDuplicateDetector')) {
+    logger.debug('SemanticDuplicateDetector skill disabled, using exact string matching');
+    // Fallback to exact string matching
+    const existingDeal = await query(
+      `SELECT id FROM deal_registrations
+       WHERE vendor_id = $1 AND LOWER(deal_name) = LOWER($2)`,
+      [vendorId, dealName]
+    );
+    return {
+      isDuplicate: existingDeal.rows.length > 0,
+      matchedId: existingDeal.rows[0]?.id,
+    };
+  }
+
+  try {
+    logger.info('Using SemanticDuplicateDetector skill for deal duplicate check');
+    const detector = getDuplicateDetector();
+
+    // Fetch potential duplicates from database (same vendor, recent deals)
+    const candidates = await query(
+      `SELECT id, deal_name, deal_value, currency, customer_name
+       FROM deal_registrations
+       WHERE vendor_id = $1
+       ORDER BY created_at DESC
+       LIMIT 50`,
+      [vendorId]
+    );
+
+    if (candidates.rows.length === 0) {
+      return { isDuplicate: false };
+    }
+
+    // Use semantic duplicate detection
+    const result = await detector.checkDuplicate({
+      entity: {
+        type: 'deal',
+        data: {
+          deal_name: dealName,
+          deal_value: dealValue,
+        },
+      },
+      candidates: candidates.rows.map(row => ({
+        id: row.id,
+        data: {
+          deal_name: row.deal_name,
+          deal_value: row.deal_value,
+          currency: row.currency,
+          customer_name: row.customer_name,
+        },
+      })),
+      threshold: 0.85, // High threshold for deals (85% similarity)
+    });
+
+    if (result.isDuplicate && result.matches.length > 0) {
+      const bestMatch = result.matches[0];
+      logger.info('Semantic duplicate detected', {
+        newDeal: dealName,
+        matchedDeal: bestMatch.candidateId,
+        similarity: bestMatch.similarity,
+        reason: bestMatch.matchReason,
+      });
+
+      return {
+        isDuplicate: true,
+        matchedId: bestMatch.candidateId,
+        similarity: bestMatch.similarity,
+      };
+    }
+
+    return { isDuplicate: false };
+  } catch (error: any) {
+    logger.error('Semantic duplicate detection failed, falling back to exact match', {
+      error: error.message,
+      dealName,
+    });
+
+    // Fallback to exact string matching on error
+    const existingDeal = await query(
+      `SELECT id FROM deal_registrations
+       WHERE vendor_id = $1 AND LOWER(deal_name) = LOWER($2)`,
+      [vendorId, dealName]
+    );
+    return {
+      isDuplicate: existingDeal.rows.length > 0,
+      matchedId: existingDeal.rows[0]?.id,
+    };
+  }
 }
 
 // Create the unified queue
@@ -196,33 +300,99 @@ unifiedProcessingQueue.process(async (job) => {
     updateJobProgress(trackerId, 50, 'Creating records');
     emitProgress(fileId, 50, 'persisting', 'Creating database records');
 
-    // Persist vendors
+    // Persist vendors (parallel processing for large batches)
     const vendorMap = new Map<string, string>();  // vendor name -> vendor ID
     const totalItems = parseResult.vendors.length + parseResult.deals.length + parseResult.contacts.length;
     let processedItems = 0;
 
-    for (const vendor of parseResult.vendors) {
-      try {
-        const vendorIdResult = await ensureVendorApproved(vendor.name, {
-          source_file_id: fileId,
-          detection_source: 'unified_processor',
-          metadata: { vendor },
-        });
-        vendorMap.set(vendor.name, vendorIdResult);
-        result.vendorsCreated++;
-        processedItems++;
+    const USE_PARALLEL_PROCESSING = parseResult.vendors.length > 100;
 
-        const progress = 50 + Math.round((processedItems / totalItems) * 15);
-        await job.progress(progress);
-        emitProgress(fileId, progress, 'persisting', `Created vendor: ${vendor.name}`);
+    if (USE_PARALLEL_PROCESSING && config.performance?.parallelChunkSize) {
+      // Use parallel processing for large vendor batches
+      const parallelService = getParallelProcessingService();
 
-      } catch (error: any) {
-        if (error instanceof VendorApprovalPendingError) {
-          result.warnings.push(`Vendor "${vendor.name}" pending approval`);
-        } else if (error instanceof VendorApprovalDeniedError) {
-          result.warnings.push(`Vendor "${vendor.name}" denied`);
-        } else {
-          result.errors.push(`Vendor error (${vendor.name}): ${error.message}`);
+      const vendorResult = await parallelService.processInParallel(
+        parseResult.vendors,
+        async (vendorChunk, metadata) => {
+          const results: Array<{ name: string; id?: string; error?: string }> = [];
+
+          for (const vendor of vendorChunk) {
+            try {
+              const vendorIdResult = await ensureVendorApproved(vendor.name, {
+                source_file_id: fileId,
+                detection_source: 'unified_processor',
+                metadata: { vendor },
+              });
+              results.push({ name: vendor.name, id: vendorIdResult });
+            } catch (error: any) {
+              if (error instanceof VendorApprovalPendingError) {
+                results.push({ name: vendor.name, error: 'pending' });
+              } else if (error instanceof VendorApprovalDeniedError) {
+                results.push({ name: vendor.name, error: 'denied' });
+              } else {
+                results.push({ name: vendor.name, error: error.message });
+              }
+            }
+          }
+
+          return results;
+        },
+        {
+          onProgress: (progress) => {
+            const overallProgress = 50 + Math.round(progress.overallProgress * 0.15);
+            emitProgress(fileId, overallProgress, 'persisting', progress.currentOperation);
+          },
+        }
+      );
+
+      // Process results
+      for (const vendorData of vendorResult.records) {
+        if (vendorData.id) {
+          vendorMap.set(vendorData.name, vendorData.id);
+          result.vendorsCreated++;
+        } else if (vendorData.error) {
+          if (vendorData.error === 'pending') {
+            result.warnings.push(`Vendor "${vendorData.name}" pending approval`);
+          } else if (vendorData.error === 'denied') {
+            result.warnings.push(`Vendor "${vendorData.name}" denied`);
+          } else {
+            result.errors.push(`Vendor error (${vendorData.name}): ${vendorData.error}`);
+          }
+        }
+      }
+
+      processedItems += parseResult.vendors.length;
+      logger.info('Parallel vendor processing completed', {
+        totalVendors: parseResult.vendors.length,
+        created: result.vendorsCreated,
+        processingTimeMs: vendorResult.processingTimeMs,
+        speedup: `${Math.round(vendorResult.processingTimeMs / vendorResult.averageChunkTimeMs)}x`,
+      });
+    } else {
+      // Use sequential processing for small batches
+      for (const vendor of parseResult.vendors) {
+        try {
+          const vendorIdResult = await ensureVendorApproved(vendor.name, {
+            source_file_id: fileId,
+            detection_source: 'unified_processor',
+            metadata: { vendor },
+          });
+          vendorMap.set(vendor.name, vendorIdResult);
+          result.vendorsCreated++;
+          processedItems++;
+
+          const progress = 50 + Math.round((processedItems / totalItems) * 15);
+          await job.progress(progress);
+          emitProgress(fileId, progress, 'persisting', `Created vendor: ${vendor.name}`);
+
+        } catch (error: any) {
+          if (error instanceof VendorApprovalPendingError) {
+            result.warnings.push(`Vendor "${vendor.name}" pending approval`);
+          } else if (error instanceof VendorApprovalDeniedError) {
+            result.warnings.push(`Vendor "${vendor.name}" denied`);
+          } else {
+            result.errors.push(`Vendor error (${vendor.name}): ${error.message}`);
+          }
         }
       }
     }
@@ -231,99 +401,232 @@ unifiedProcessingQueue.process(async (job) => {
     await job.progress(65);
     emitProgress(fileId, 65, 'persisting', 'Vendors created, processing deals');
 
-    // Persist deals
-    for (const deal of parseResult.deals) {
-      try {
-        let dealVendorId = vendorId;
+    // Persist deals (parallel processing for large batches)
+    const USE_PARALLEL_DEALS = parseResult.deals.length > 100;
 
-        // Try to find vendor ID from vendor name
-        if (!dealVendorId && deal.vendor_name) {
-          dealVendorId = vendorMap.get(deal.vendor_name);
+    if (USE_PARALLEL_DEALS && config.performance?.parallelChunkSize) {
+      // Use parallel processing for large deal batches
+      const parallelService = getParallelProcessingService();
 
-          if (!dealVendorId) {
-            // Try to create/find vendor
+      const dealResult = await parallelService.processInParallel(
+        parseResult.deals,
+        async (dealChunk, metadata) => {
+          const results: Array<{ name: string; created?: boolean; updated?: boolean; skipped?: boolean; duplicate?: boolean; error?: string }> = [];
+
+          for (const deal of dealChunk) {
             try {
-              dealVendorId = await ensureVendorApproved(deal.vendor_name, {
-                source_file_id: fileId,
-                detection_source: 'unified_processor',
-                metadata: { fromDeal: deal.deal_name },
-              });
-              vendorMap.set(deal.vendor_name, dealVendorId);
-            } catch (error: any) {
-              if (error instanceof VendorApprovalPendingError || error instanceof VendorApprovalDeniedError) {
-                result.warnings.push(`Deal "${deal.deal_name}" skipped: vendor pending/denied`);
+              let dealVendorId = vendorId;
+
+              // Try to find vendor ID from vendor name
+              if (!dealVendorId && deal.vendor_name) {
+                dealVendorId = vendorMap.get(deal.vendor_name);
+
+                if (!dealVendorId) {
+                  // Try to create/find vendor
+                  try {
+                    dealVendorId = await ensureVendorApproved(deal.vendor_name, {
+                      source_file_id: fileId,
+                      detection_source: 'unified_processor',
+                      metadata: { fromDeal: deal.deal_name },
+                    });
+                    vendorMap.set(deal.vendor_name, dealVendorId);
+                  } catch (error: any) {
+                    if (error instanceof VendorApprovalPendingError || error instanceof VendorApprovalDeniedError) {
+                      results.push({ name: deal.deal_name, skipped: true, error: 'vendor pending/denied' });
+                      continue;
+                    }
+                    throw error;
+                  }
+                }
+              }
+
+              if (!dealVendorId) {
+                results.push({ name: deal.deal_name, skipped: true, error: 'no vendor' });
                 continue;
               }
-              throw error;
+
+              // Check for duplicate deals using semantic detection
+              const duplicateCheck = await checkSemanticDuplicate(
+                deal.deal_name,
+                dealVendorId,
+                deal.deal_value
+              );
+
+              if (duplicateCheck.isDuplicate) {
+                if (options.skipDuplicates) {
+                  results.push({ name: deal.deal_name, duplicate: true });
+                  continue;
+                }
+                // Update existing deal
+                await query(
+                  `UPDATE deal_registrations
+                   SET deal_value = COALESCE($2, deal_value),
+                       currency = COALESCE($3, currency),
+                       customer_name = COALESCE($4, customer_name),
+                       deal_stage = COALESCE($5, deal_stage),
+                       notes = COALESCE($6, notes),
+                       updated_at = CURRENT_TIMESTAMP,
+                       metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{updated_by_import}', 'true'::jsonb)
+                   WHERE id = $1`,
+                  [duplicateCheck.matchedId, deal.deal_value, deal.currency, deal.customer_name, deal.deal_stage, deal.notes]
+                );
+                results.push({ name: deal.deal_name, updated: true });
+              } else {
+                // Insert new deal
+                await query(
+                  `INSERT INTO deal_registrations (
+                     vendor_id, deal_name, deal_value, currency, customer_name,
+                     customer_industry, registration_date, expected_close_date,
+                     status, deal_stage, probability, notes, metadata
+                   ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+                  [
+                    dealVendorId,
+                    deal.deal_name,
+                    deal.deal_value || 0,
+                    deal.currency || 'USD',
+                    deal.customer_name,
+                    deal.customer_industry,
+                    deal.registration_date || new Date().toISOString().split('T')[0],
+                    deal.expected_close_date,
+                    deal.status || 'imported',
+                    deal.deal_stage,
+                    deal.probability,
+                    deal.notes,
+                    JSON.stringify({ source_file_id: fileId, ...deal.metadata }),
+                  ]
+                );
+                results.push({ name: deal.deal_name, created: true });
+              }
+            } catch (error: any) {
+              results.push({ name: deal.deal_name, error: error.message });
             }
           }
+
+          return results;
+        },
+        {
+          onProgress: (progress) => {
+            const overallProgress = 65 + Math.round(progress.overallProgress * 0.20);
+            emitProgress(fileId, overallProgress, 'persisting', progress.currentOperation);
+          },
         }
+      );
 
-        if (!dealVendorId) {
-          result.warnings.push(`Deal "${deal.deal_name}" skipped: no vendor`);
-          continue;
+      // Process results
+      for (const dealData of dealResult.records) {
+        if (dealData.created) {
+          result.dealsCreated++;
+        } else if (dealData.duplicate) {
+          result.statistics.duplicates++;
+        } else if (dealData.skipped) {
+          result.warnings.push(`Deal "${dealData.name}" skipped: ${dealData.error}`);
+        } else if (dealData.error) {
+          result.errors.push(`Deal error (${dealData.name}): ${dealData.error}`);
         }
+      }
 
-        // Check for duplicate deals
-        const existingDeal = await query(
-          `SELECT id FROM deal_registrations
-           WHERE vendor_id = $1 AND LOWER(deal_name) = LOWER($2)`,
-          [dealVendorId, deal.deal_name]
-        );
+      processedItems += parseResult.deals.length;
+      logger.info('Parallel deal processing completed', {
+        totalDeals: parseResult.deals.length,
+        created: result.dealsCreated,
+        processingTimeMs: dealResult.processingTimeMs,
+        speedup: `${Math.round(dealResult.processingTimeMs / dealResult.averageChunkTimeMs)}x`,
+      });
+    } else {
+      // Use sequential processing for small batches
+      for (const deal of parseResult.deals) {
+        try {
+          let dealVendorId = vendorId;
 
-        if (existingDeal.rows.length > 0) {
-          if (options.skipDuplicates) {
-            result.statistics.duplicates++;
+          // Try to find vendor ID from vendor name
+          if (!dealVendorId && deal.vendor_name) {
+            dealVendorId = vendorMap.get(deal.vendor_name);
+
+            if (!dealVendorId) {
+              // Try to create/find vendor
+              try {
+                dealVendorId = await ensureVendorApproved(deal.vendor_name, {
+                  source_file_id: fileId,
+                  detection_source: 'unified_processor',
+                  metadata: { fromDeal: deal.deal_name },
+                });
+                vendorMap.set(deal.vendor_name, dealVendorId);
+              } catch (error: any) {
+                if (error instanceof VendorApprovalPendingError || error instanceof VendorApprovalDeniedError) {
+                  result.warnings.push(`Deal "${deal.deal_name}" skipped: vendor pending/denied`);
+                  continue;
+                }
+                throw error;
+              }
+            }
+          }
+
+          if (!dealVendorId) {
+            result.warnings.push(`Deal "${deal.deal_name}" skipped: no vendor`);
             continue;
           }
-          // Update existing deal
-          await query(
-            `UPDATE deal_registrations
-             SET deal_value = COALESCE($2, deal_value),
-                 currency = COALESCE($3, currency),
-                 customer_name = COALESCE($4, customer_name),
-                 deal_stage = COALESCE($5, deal_stage),
-                 notes = COALESCE($6, notes),
-                 updated_at = CURRENT_TIMESTAMP,
-                 metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{updated_by_import}', 'true'::jsonb)
-             WHERE id = $1`,
-            [existingDeal.rows[0].id, deal.deal_value, deal.currency, deal.customer_name, deal.deal_stage, deal.notes]
+
+          // Check for duplicate deals using semantic detection
+          const duplicateCheck = await checkSemanticDuplicate(
+            deal.deal_name,
+            dealVendorId,
+            deal.deal_value
           );
-        } else {
-          // Insert new deal
-          await query(
-            `INSERT INTO deal_registrations (
-               vendor_id, deal_name, deal_value, currency, customer_name,
-               customer_industry, registration_date, expected_close_date,
-               status, deal_stage, probability, notes, metadata
-             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-            [
-              dealVendorId,
-              deal.deal_name,
-              deal.deal_value || 0,
-              deal.currency || 'USD',
-              deal.customer_name,
-              deal.customer_industry,
-              deal.registration_date || new Date().toISOString().split('T')[0],
-              deal.expected_close_date,
-              deal.status || 'imported',
-              deal.deal_stage,
-              deal.probability,
-              deal.notes,
-              JSON.stringify({ source_file_id: fileId, ...deal.metadata }),
-            ]
-          );
-          result.dealsCreated++;
+
+          if (duplicateCheck.isDuplicate) {
+            if (options.skipDuplicates) {
+              result.statistics.duplicates++;
+              continue;
+            }
+            // Update existing deal
+            await query(
+              `UPDATE deal_registrations
+               SET deal_value = COALESCE($2, deal_value),
+                   currency = COALESCE($3, currency),
+                   customer_name = COALESCE($4, customer_name),
+                   deal_stage = COALESCE($5, deal_stage),
+                   notes = COALESCE($6, notes),
+                   updated_at = CURRENT_TIMESTAMP,
+                   metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{updated_by_import}', 'true'::jsonb)
+               WHERE id = $1`,
+              [duplicateCheck.matchedId, deal.deal_value, deal.currency, deal.customer_name, deal.deal_stage, deal.notes]
+            );
+          } else {
+            // Insert new deal
+            await query(
+              `INSERT INTO deal_registrations (
+                 vendor_id, deal_name, deal_value, currency, customer_name,
+                 customer_industry, registration_date, expected_close_date,
+                 status, deal_stage, probability, notes, metadata
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+              [
+                dealVendorId,
+                deal.deal_name,
+                deal.deal_value || 0,
+                deal.currency || 'USD',
+                deal.customer_name,
+                deal.customer_industry,
+                deal.registration_date || new Date().toISOString().split('T')[0],
+                deal.expected_close_date,
+                deal.status || 'imported',
+                deal.deal_stage,
+                deal.probability,
+                deal.notes,
+                JSON.stringify({ source_file_id: fileId, ...deal.metadata }),
+              ]
+            );
+            result.dealsCreated++;
+          }
+
+          processedItems++;
+          const progress = 65 + Math.round((processedItems / totalItems) * 20);
+          await job.progress(progress);
+          emitProgress(fileId, progress, 'persisting', `Processed deal: ${deal.deal_name}`);
+
+        } catch (error: any) {
+          result.errors.push(`Deal error (${deal.deal_name}): ${error.message}`);
+          logger.error('Error creating deal', { deal: deal.deal_name, error: error.message });
         }
-
-        processedItems++;
-        const progress = 65 + Math.round((processedItems / totalItems) * 20);
-        await job.progress(progress);
-        emitProgress(fileId, progress, 'persisting', `Processed deal: ${deal.deal_name}`);
-
-      } catch (error: any) {
-        result.errors.push(`Deal error (${deal.deal_name}): ${error.message}`);
-        logger.error('Error creating deal', { deal: deal.deal_name, error: error.message });
       }
     }
 
@@ -410,12 +713,42 @@ unifiedProcessingQueue.process(async (job) => {
     });
 
     result.errors.push(error.message);
+
+    // Generate actionable error guidance
+    try {
+      const errorGuidanceService = getErrorGuidanceService();
+      const errorGuidance = await errorGuidanceService.generateActionableError({
+        message: error.message,
+        code: error.code,
+        context: {
+          fileName: fileMetadata.filename,
+          fileType: fileMetadata.mime_type,
+          stage: result.errors.length > 0 ? 'parsing' : 'processing',
+        },
+      });
+
+      result.errorGuidance = errorGuidance;
+      logger.info('Generated actionable error guidance', {
+        fileId,
+        guidanceTitle: errorGuidance.title,
+      });
+    } catch (guidanceError: any) {
+      logger.warn('Failed to generate error guidance', {
+        error: guidanceError.message,
+      });
+      // Continue without guidance - not critical
+    }
+
     emitProgress(fileId, 0, 'failed', error.message, result);
 
-    // Update file status to failed
+    // Update file status to failed with error guidance if available
+    const errorMetadata = result.errorGuidance
+      ? JSON.stringify({ guidance: result.errorGuidance })
+      : null;
+
     await query(
-      'UPDATE source_files SET processing_status = $1, error_message = $2 WHERE id = $3',
-      ['failed', error.message, fileId]
+      'UPDATE source_files SET processing_status = $1, error_message = $2, metadata = COALESCE(metadata, \'{}\'::jsonb) || COALESCE($3::jsonb, \'{}\'::jsonb) WHERE id = $4',
+      ['failed', error.message, errorMetadata, fileId]
     );
 
     failJob(trackerId, error.message);

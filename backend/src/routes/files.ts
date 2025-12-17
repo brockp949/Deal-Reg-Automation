@@ -12,6 +12,7 @@ import { storeConfigFile } from '../services/configStorage';
 import { uploadLimiter, batchUploadLimiter } from '../middleware/rateLimiter';
 import { requireRole } from '../api/middleware/apiKeyAuth';
 import type { FileIntent } from '../parsers/ParserRegistry';
+import { getFileValidationAgent } from '../agents/FileValidationAgent';
 
 const router = Router();
 
@@ -113,6 +114,74 @@ async function findDuplicateByChecksum(checksum: string): Promise<SourceFile | n
   );
   return existing.rows[0] ?? null;
 }
+
+/**
+ * POST /api/files/validate
+ * Validate a file before upload using AI-powered validation agent
+ */
+router.post('/validate', requireRole(['write', 'admin']), async (req: Request, res: Response) => {
+  try {
+    const { file, intent } = req.body;
+
+    // Validate request body
+    if (!file || !file.name || !file.type || !file.size || !file.sampleContent) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: file.name, file.type, file.size, file.sampleContent',
+      });
+    }
+
+    // Quick validation first (file size, type)
+    const validationAgent = getFileValidationAgent();
+    const quickCheck = await validationAgent.quickValidate({
+      name: file.name,
+      type: file.type,
+      size: file.size,
+    });
+
+    if (!quickCheck.isValid) {
+      return res.status(400).json({
+        success: false,
+        error: quickCheck.errors.join('; '),
+        errors: quickCheck.errors,
+      });
+    }
+
+    // AI-powered validation
+    logger.info('Validating file with AI agent', {
+      fileName: file.name,
+      fileSize: file.size,
+      intent,
+    });
+
+    const validationResult = await validationAgent.validate({
+      file: {
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        sampleContent: file.sampleContent,
+      },
+      userIntent: intent,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: validationResult,
+    });
+
+  } catch (error: any) {
+    logger.error('File validation error', {
+      error: error.message,
+      stack: error.stack,
+    });
+
+    return res.status(500).json({
+      success: false,
+      error: 'File validation failed',
+      message: error.message,
+    });
+  }
+});
 
 /**
  * POST /api/files/upload

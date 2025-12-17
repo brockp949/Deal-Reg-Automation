@@ -2,6 +2,53 @@
 
 This folder contains all project documentation organized by category.
 
+---
+
+## 🚀 **NEW: Claude Skills Integration (Phase 5)** - Start Here!
+
+**Ready to deploy and test Claude AI Skills?** Start with these guides:
+
+### Quick Start (15 minutes)
+- **[QUICK_START.md](./QUICK_START.md)** - Get Claude Skills running in 15 minutes
+  - Configure environment (5 min)
+  - Start services (5 min)
+  - Run smoke test (5 min)
+
+### Full Deployment (1-2 hours)
+- **[DEPLOYMENT_CHECKLIST.md](./DEPLOYMENT_CHECKLIST.md)** - Complete staging deployment
+  - Pre-deployment verification
+  - 8-step deployment process
+  - Health checks & smoke tests
+  - Rollback procedures
+
+### Comprehensive Testing (8-10 hours)
+- **[TESTING_GUIDE.md](./TESTING_GUIDE.md)** - Full test suite
+  - 7 test phases (feature flags → skills → performance)
+  - Test data templates
+  - Accuracy measurement methodology
+  - Cost tracking procedures
+
+### Technical Deep-Dive (45 minutes)
+- **[CLAUDE_SKILLS_INTEGRATION.md](./CLAUDE_SKILLS_INTEGRATION.md)** - Technical details
+  - All 4 skills explained (IntelligentColumnMapper, SemanticEntityExtractor, etc.)
+  - Architecture & integration patterns
+  - Configuration guide
+  - Performance & cost analysis
+
+### Project Status (15 minutes)
+- **[IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md)** - Current progress
+  - 85% complete overall
+  - Phase 5 (Claude Skills) ✅ Complete
+  - Next steps prioritization
+  - ROI analysis
+
+### Helper Scripts
+Located in `../scripts/`:
+- `verify-setup.js` - Verify environment is ready (run this first!)
+- `generate-test-data.js` - Generate test files for skills testing
+
+---
+
 ## Directory Structure
 
 ```
@@ -71,8 +118,12 @@ docs/
 - [Phase 4 Security Metrics](phases/phase-4/PHASE_4_SECURITY_METRICS.md) - Security audit
 - [Phase 4-5 Review Summary](phases/phase-4/PHASE_4_5_REVIEW_SUMMARY.md) - Combined review
 
-#### Phase 5: Enhancements
-- [Phase 5 Progress](phases/phase-5/PHASE_5_PROGRESS.md) - Enhancement progress
+#### Phase 5: Claude Skills Integration ✅ COMPLETE
+- **[CLAUDE_SKILLS_INTEGRATION.md](./CLAUDE_SKILLS_INTEGRATION.md)** - Complete technical documentation
+- **[IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md)** - Project status with Phase 5 complete
+- [Phase 3 Parallel Processing](./PHASE_3_PARALLEL_PROCESSING.md) - 4-5x speedup for large files
+- [Phase 4 Enhanced UX](./PHASE_4_ENHANCED_UX.md) - AI-powered error messages & validation
+- [Phase 5 Progress](phases/phase-5/PHASE_5_PROGRESS.md) - Original enhancement progress
 
 #### Phase 6: Testing & Validation
 - [Phase 6 Plan](phases/phase-6/PHASE_6_PLAN.md) - Testing strategy

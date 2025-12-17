@@ -3,12 +3,16 @@
  *
  * Manages the unified file import process with intent-based routing
  * and real-time progress tracking via SSE.
+ * Supports chunked uploads for large files (>50MB).
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { fileAPI, progressAPI, type FileIntent, type UnifiedUploadOptions } from '@/lib/api';
 import { toast } from 'sonner';
+import { useChunkedUpload } from './useChunkedUpload';
+
+const CHUNKED_UPLOAD_THRESHOLD = 50 * 1024 * 1024; // 50MB
 
 // File with intent and progress tracking
 export interface ImportFile {
@@ -27,6 +31,7 @@ export interface ImportFile {
   };
   error?: string;
   fileId?: string;  // Backend file ID after upload
+  isChunkedUpload?: boolean; // True if using chunked upload for large files
 }
 
 // Auto-detect intent from file
@@ -86,6 +91,55 @@ export function useUnifiedImport() {
   const [files, setFiles] = useState<ImportFile[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const eventSourcesRef = useRef<Map<string, EventSource>>(new Map());
+  const currentChunkedFileIdRef = useRef<string | null>(null);
+
+  // Initialize chunked upload hook for large files (>50MB)
+  const chunkedUpload = useChunkedUpload({
+    onProgress: (progress) => {
+      const fileId = currentChunkedFileIdRef.current;
+      if (fileId) {
+        setFiles((prev) =>
+          prev.map((f) =>
+            f.id === fileId ? { ...f, uploadProgress: progress.progress } : f
+          )
+        );
+      }
+    },
+    onComplete: (uploadId, jobId) => {
+      const fileId = currentChunkedFileIdRef.current;
+      if (fileId) {
+        setFiles((prev) =>
+          prev.map((f) =>
+            f.id === fileId
+              ? { ...f, status: 'processing', uploadProgress: 100, fileId: jobId }
+              : f
+          )
+        );
+
+        // Subscribe to processing progress
+        const file = files.find((f) => f.id === fileId);
+        if (file) {
+          subscribeToProgress({ ...file, fileId: jobId });
+        }
+      }
+      currentChunkedFileIdRef.current = null;
+    },
+    onError: (error) => {
+      const fileId = currentChunkedFileIdRef.current;
+      if (fileId) {
+        setFiles((prev) =>
+          prev.map((f) =>
+            f.id === fileId ? { ...f, status: 'failed', error: error.message } : f
+          )
+        );
+        const file = files.find((f) => f.id === fileId);
+        if (file) {
+          toast.error(`Failed to upload ${file.file.name}: ${error.message}`);
+        }
+      }
+      currentChunkedFileIdRef.current = null;
+    },
+  });
 
   // Cleanup event sources on unmount
   useEffect(() => {
@@ -189,44 +243,68 @@ export function useUnifiedImport() {
 
   // Upload a single file
   const uploadFile = useCallback(async (importFile: ImportFile) => {
+    const isLargeFile = importFile.file.size > CHUNKED_UPLOAD_THRESHOLD;
+
     setFiles((prev) =>
-      prev.map((f) => (f.id === importFile.id ? { ...f, status: 'uploading' } : f))
+      prev.map((f) =>
+        f.id === importFile.id
+          ? { ...f, status: 'uploading', isChunkedUpload: isLargeFile }
+          : f
+      )
     );
 
     try {
-      const options: UnifiedUploadOptions = {
-        uploadIntent: importFile.intent,
-      };
+      if (isLargeFile) {
+        // Use chunked upload for large files (>50MB)
+        currentChunkedFileIdRef.current = importFile.id;
 
-      const response = await fileAPI.uploadWithIntent(
-        importFile.file,
-        options,
-        (progressEvent) => {
-          const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-          setFiles((prev) =>
-            prev.map((f) => (f.id === importFile.id ? { ...f, uploadProgress: progress } : f))
-          );
-        }
-      );
-
-      if (response.data.success) {
-        const fileId = response.data.data?.id;
-        setFiles((prev) =>
-          prev.map((f) =>
-            f.id === importFile.id
-              ? { ...f, status: 'processing', uploadProgress: 100, fileId }
-              : f
-          )
+        const result = await chunkedUpload.uploadFile(
+          importFile.file,
+          importFile.intent
         );
 
-        // Subscribe to progress updates
-        if (fileId) {
-          subscribeToProgress({ ...importFile, fileId });
+        if (result) {
+          // Success - callbacks will handle state updates
+          return true;
+        } else {
+          throw new Error('Chunked upload failed');
         }
-
-        return true;
       } else {
-        throw new Error(response.data.error || 'Upload failed');
+        // Use regular upload for small files
+        const options: UnifiedUploadOptions = {
+          uploadIntent: importFile.intent,
+        };
+
+        const response = await fileAPI.uploadWithIntent(
+          importFile.file,
+          options,
+          (progressEvent) => {
+            const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            setFiles((prev) =>
+              prev.map((f) => (f.id === importFile.id ? { ...f, uploadProgress: progress } : f))
+            );
+          }
+        );
+
+        if (response.data.success) {
+          const fileId = response.data.data?.id;
+          setFiles((prev) =>
+            prev.map((f) =>
+              f.id === importFile.id
+                ? { ...f, status: 'processing', uploadProgress: 100, fileId }
+                : f
+            )
+          );
+
+          // Subscribe to progress updates
+          if (fileId) {
+            subscribeToProgress({ ...importFile, fileId });
+          }
+
+          return true;
+        } else {
+          throw new Error(response.data.error || 'Upload failed');
+        }
       }
     } catch (error: any) {
       setFiles((prev) =>
@@ -237,9 +315,10 @@ export function useUnifiedImport() {
         )
       );
       toast.error(`Failed to upload ${importFile.file.name}: ${error.message}`);
+      currentChunkedFileIdRef.current = null;
       return false;
     }
-  }, [subscribeToProgress]);
+  }, [subscribeToProgress, chunkedUpload]);
 
   // Upload all pending files
   const uploadAll = useCallback(async () => {
@@ -301,6 +380,10 @@ export function useUnifiedImport() {
     uploadAll,
     clearAll,
     retryFile,
+    // Chunked upload controls (for large files >50MB)
+    chunkedUploadProgress: chunkedUpload.progress,
+    isChunkedUploading: chunkedUpload.isUploading,
+    cancelChunkedUpload: chunkedUpload.cancelUpload,
   };
 }
 

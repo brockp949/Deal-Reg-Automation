@@ -260,6 +260,12 @@ export const config = {
   ingestion: {
     useFileProcessorV2: env.USE_FILE_PROCESSOR_V2 === 'true',
   },
+
+  // Performance Configuration (Phase 3)
+  performance: {
+    parallelChunkSize: parseInt(env.PARALLEL_CHUNK_SIZE || '1000', 10),
+    maxConcurrentChunks: parseInt(env.MAX_CONCURRENT_CHUNKS || '5', 10),
+  },
 };
 
 export default config;

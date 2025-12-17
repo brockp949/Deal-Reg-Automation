@@ -16,6 +16,8 @@ import ExcelJS from 'exceljs';
 import { createReadStream } from 'fs';
 import csv from 'csv-parser';
 import logger from '../utils/logger';
+import { getColumnMapper } from '../skills/IntelligentColumnMapper';
+import { isSkillEnabled } from '../config/claude';
 
 export interface VendorSpreadsheetDeal {
   opportunity: string;
@@ -251,11 +253,137 @@ function parseDate(value: unknown): string | null {
 }
 
 /**
- * Map column header to field name
+ * Map column header to field name (fallback when skill disabled)
  */
 function mapColumnToField(header: string): string | null {
   const normalized = header.toLowerCase().trim();
   return COLUMN_MAPPINGS[normalized] || null;
+}
+
+/**
+ * Define target schema for vendor spreadsheet
+ */
+const VENDOR_SPREADSHEET_SCHEMA = {
+  opportunity: {
+    type: 'string' as const,
+    description: 'Deal or opportunity name',
+    required: true,
+    examples: ['Project Phoenix', 'Acme Corp Deal', 'Q1 Expansion'],
+  },
+  stage: {
+    type: 'string' as const,
+    description: 'Deal stage or status',
+    required: false,
+    examples: ['Qualified', 'Proposal', 'Negotiation', 'Closed Won'],
+  },
+  nextSteps: {
+    type: 'string' as const,
+    description: 'Next action items or notes',
+    required: false,
+    examples: ['Follow up call', 'Send proposal', 'Schedule demo'],
+  },
+  lastUpdate: {
+    type: 'date' as const,
+    description: 'Last update date',
+    required: false,
+    examples: ['2025-12-17', '12/17/2025', '17 Dec 2025'],
+  },
+  yearlyUnitOpportunity: {
+    type: 'string' as const,
+    description: 'Unit volume or quantity information',
+    required: false,
+    examples: ['1000 units', '500K annually', '250 licenses'],
+  },
+  costUpside: {
+    type: 'string' as const,
+    description: 'Revenue potential or deal value',
+    required: false,
+    examples: ['$500K', '$1.2M-2.5M', '€750K per year'],
+  },
+};
+
+/**
+ * Build intelligent column mapping using Claude skill
+ */
+async function buildIntelligentColumnMapping(
+  headers: string[],
+  sampleRows: Array<Record<string, any>>
+): Promise<Map<number, string>> {
+  const columnMapping = new Map<number, string>();
+
+  // Check if skill is enabled
+  if (!isSkillEnabled('intelligentColumnMapper')) {
+    logger.info('IntelligentColumnMapper skill disabled, using fallback');
+    // Fallback to hardcoded mappings
+    headers.forEach((header, index) => {
+      const field = mapColumnToField(header);
+      if (field) {
+        columnMapping.set(index + 1, field); // ExcelJS uses 1-based indexing
+      }
+    });
+    return columnMapping;
+  }
+
+  try {
+    logger.info('Using IntelligentColumnMapper skill for dynamic column mapping');
+    const mapper = getColumnMapper();
+
+    // Prepare sample data for intelligent mapping
+    const sampleData = sampleRows.map((row) => {
+      const obj: Record<string, any> = {};
+      headers.forEach((header, index) => {
+        obj[header] = row[index];
+      });
+      return obj;
+    });
+
+    const mappingResult = await mapper.mapColumns({
+      headers,
+      sampleRows: sampleData,
+      targetSchema: VENDOR_SPREADSHEET_SCHEMA,
+    });
+
+    logger.info('IntelligentColumnMapper result', {
+      mappingCount: mappingResult.mappings.length,
+      averageConfidence: mappingResult.summary.averageConfidence,
+      unmappedColumns: mappingResult.summary.unmappedSourceColumns,
+    });
+
+    // Build column mapping from result
+    mappingResult.mappings.forEach((mapping) => {
+      const columnIndex = headers.indexOf(mapping.sourceColumn) + 1; // ExcelJS 1-based
+      if (columnIndex > 0 && mapping.confidence >= 0.5) {
+        columnMapping.set(columnIndex, mapping.targetField);
+        logger.debug('Mapped column', {
+          source: mapping.sourceColumn,
+          target: mapping.targetField,
+          confidence: mapping.confidence,
+        });
+      } else if (columnIndex > 0) {
+        logger.warn('Low confidence mapping skipped', {
+          source: mapping.sourceColumn,
+          target: mapping.targetField,
+          confidence: mapping.confidence,
+        });
+      }
+    });
+
+    return columnMapping;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    logger.error('IntelligentColumnMapper failed, falling back to hardcoded mappings', {
+      error: message,
+    });
+
+    // Fallback to hardcoded mappings on error
+    headers.forEach((header, index) => {
+      const field = mapColumnToField(header);
+      if (field) {
+        columnMapping.set(index + 1, field);
+      }
+    });
+    return columnMapping;
+  }
 }
 
 /**
@@ -299,21 +427,33 @@ export async function parseVendorSpreadsheet(filePath: string): Promise<VendorSp
     // Get headers from first row
     const headerRow = worksheet.getRow(1);
     const headers: string[] = [];
-    const columnMapping: Map<number, string> = new Map();
 
     headerRow.eachCell((cell, colNumber) => {
       const headerValue = String(cell.value || '').trim();
       headers[colNumber - 1] = headerValue;
-
-      const field = mapColumnToField(headerValue);
-      if (field) {
-        columnMapping.set(colNumber, field);
-      }
     });
 
-    logger.info('Column mapping', {
+    // Extract sample rows for intelligent mapping (first 5 data rows)
+    const sampleRows: Array<Record<string, any>> = [];
+    let sampleRowCount = 0;
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber === 1 || sampleRowCount >= 5) return; // Skip header, limit to 5 samples
+
+      const rowData: Record<string, any> = {};
+      row.eachCell((cell, colNumber) => {
+        rowData[colNumber - 1] = cell.value;
+      });
+      sampleRows.push(rowData);
+      sampleRowCount++;
+    });
+
+    // Build intelligent column mapping
+    const columnMapping = await buildIntelligentColumnMapping(headers, sampleRows);
+
+    logger.info('Column mapping complete', {
       headers,
-      mappedFields: Array.from(columnMapping.entries())
+      mappedFieldCount: columnMapping.size,
+      mappedFields: Array.from(columnMapping.entries()),
     });
 
     // Check if we have the required opportunity column
@@ -439,84 +579,116 @@ async function parseVendorSpreadsheetCSV(
 ): Promise<VendorSpreadsheetResult> {
   return new Promise((resolve) => {
     let rowNumber = 1;
+    let headers: string[] = [];
+    const allRows: Array<Record<string, unknown>> = [];
+    let columnMapping: Map<number, string> | null = null;
 
     createReadStream(filePath)
       .pipe(csv())
-      .on('headers', (headers: string[]) => {
+      .on('headers', (csvHeaders: string[]) => {
+        headers = csvHeaders;
         logger.info('CSV headers', { headers });
       })
       .on('data', (row: Record<string, unknown>) => {
-        rowNumber++;
-        result.totalRows++;
-
+        allRows.push(row);
+      })
+      .on('end', async () => {
         try {
-          const deal: Partial<VendorSpreadsheetDeal> = {
-            rowNumber,
-            opportunity: '',
-            stage: '',
-            nextSteps: '',
-            lastUpdate: null,
-            yearlyUnitOpportunity: '',
-            costUpside: '',
-            parsedDealValue: null,
-            parsedCurrency: 'USD',
-          };
+          // Extract sample rows for intelligent mapping (first 5 rows)
+          const sampleRows = allRows.slice(0, 5).map((row) => {
+            const rowData: Record<string, any> = {};
+            headers.forEach((header, index) => {
+              rowData[index] = row[header];
+            });
+            return rowData;
+          });
 
-          for (const [header, value] of Object.entries(row)) {
-            const field = mapColumnToField(header);
-            if (!field) continue;
+          // Build intelligent column mapping
+          columnMapping = await buildIntelligentColumnMapping(headers, sampleRows);
 
-            switch (field) {
-              case 'opportunity':
-                deal.opportunity = String(value || '').trim();
-                break;
-              case 'stage':
-                deal.stage = String(value || '').trim();
-                break;
-              case 'nextSteps':
-                deal.nextSteps = String(value || '').trim();
-                break;
-              case 'lastUpdate':
-                deal.lastUpdate = parseDate(value);
-                break;
-              case 'yearlyUnitOpportunity':
-                deal.yearlyUnitOpportunity = String(value || '').trim();
-                break;
-              case 'costUpside':
-                const costUpsideText = String(value || '').trim();
-                deal.costUpside = costUpsideText;
-                const parsed = parseCostUpside(costUpsideText);
-                deal.parsedDealValue = parsed.value;
-                deal.parsedCurrency = parsed.currency;
-                break;
-            }
-          }
+          logger.info('CSV column mapping complete', {
+            headers,
+            mappedFieldCount: columnMapping.size,
+          });
 
-          if (!deal.opportunity) {
-            const hasAnyValue = Object.values(row).some(v => v && String(v).trim());
-            if (hasAnyValue) {
-              result.errors.push(`Row ${rowNumber}: Missing opportunity/deal name`);
+          // Process all rows with the mapping
+          for (const row of allRows) {
+            rowNumber++;
+            result.totalRows++;
+
+            try {
+              const deal: Partial<VendorSpreadsheetDeal> = {
+                rowNumber,
+                opportunity: '',
+                stage: '',
+                nextSteps: '',
+                lastUpdate: null,
+                yearlyUnitOpportunity: '',
+                costUpside: '',
+                parsedDealValue: null,
+                parsedCurrency: 'USD',
+              };
+
+              for (const [header, value] of Object.entries(row)) {
+                const headerIndex = headers.indexOf(header) + 1; // 1-based
+                const field = columnMapping.get(headerIndex);
+                if (!field) continue;
+
+                switch (field) {
+                  case 'opportunity':
+                    deal.opportunity = String(value || '').trim();
+                    break;
+                  case 'stage':
+                    deal.stage = String(value || '').trim();
+                    break;
+                  case 'nextSteps':
+                    deal.nextSteps = String(value || '').trim();
+                    break;
+                  case 'lastUpdate':
+                    deal.lastUpdate = parseDate(value);
+                    break;
+                  case 'yearlyUnitOpportunity':
+                    deal.yearlyUnitOpportunity = String(value || '').trim();
+                    break;
+                  case 'costUpside':
+                    const costUpsideText = String(value || '').trim();
+                    deal.costUpside = costUpsideText;
+                    const parsed = parseCostUpside(costUpsideText);
+                    deal.parsedDealValue = parsed.value;
+                    deal.parsedCurrency = parsed.currency;
+                    break;
+                }
+              }
+
+              if (!deal.opportunity) {
+                const hasAnyValue = Object.values(row).some((v) => v && String(v).trim());
+                if (hasAnyValue) {
+                  result.errors.push(`Row ${rowNumber}: Missing opportunity/deal name`);
+                  result.errorCount++;
+                }
+                continue;
+              }
+
+              result.deals.push(deal as VendorSpreadsheetDeal);
+              result.successCount++;
+            } catch (error) {
+              const message = error instanceof Error ? error.message : 'Unknown error';
+              result.errors.push(`Row ${rowNumber}: ${message}`);
               result.errorCount++;
             }
-            return;
           }
 
-          result.deals.push(deal as VendorSpreadsheetDeal);
-          result.successCount++;
-
+          result.success = result.successCount > 0;
+          logger.info('Vendor CSV parsing complete', {
+            totalRows: result.totalRows,
+            successCount: result.successCount,
+          });
+          resolve(result);
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Unknown error';
-          result.errors.push(`Row ${rowNumber}: ${message}`);
-          result.errorCount++;
+          result.errors.push(`CSV parsing error: ${message}`);
+          resolve(result);
         }
-      })
-      .on('end', () => {
-        result.success = result.successCount > 0;
-        logger.info('Vendor CSV parsing complete', {
-          totalRows: result.totalRows,
-          successCount: result.successCount,
-        });
-        resolve(result);
       })
       .on('error', (error: Error) => {
         result.errors.push(`CSV parsing error: ${error.message}`);

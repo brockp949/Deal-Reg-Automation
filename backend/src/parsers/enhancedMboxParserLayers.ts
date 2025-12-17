@@ -13,6 +13,8 @@ import {
   extractTimeline,
   calculateEnhancedConfidence,
 } from './enhancedExtraction';
+import { getEntityExtractor } from '../skills/SemanticEntityExtractor';
+import { isSkillEnabled } from '../config/claude';
 
 // ============================================================================
 // LAYER 2: PATTERN-BASED EXTRACTION WITH REGEX
@@ -323,6 +325,170 @@ export function applyLayer2Extraction(message: ParsedEmailMessage): Partial<Extr
 }
 
 // ============================================================================
+// LAYER 2.5: SEMANTIC ENTITY EXTRACTION (AI-Powered)
+// ============================================================================
+
+/**
+ * Apply semantic entity extraction using Claude skill
+ * This replaces/enhances regex-based extraction with AI-powered understanding
+ */
+export async function applySemanticExtraction(message: ParsedEmailMessage): Promise<Partial<ExtractedDeal>> {
+  const extracted: Partial<ExtractedDeal> = {};
+
+  // Check if skill is enabled
+  if (!isSkillEnabled('semanticEntityExtractor')) {
+    logger.debug('SemanticEntityExtractor skill disabled, skipping semantic extraction');
+    return extracted;
+  }
+
+  try {
+    logger.info('Using SemanticEntityExtractor skill for email entity extraction');
+    const extractor = getEntityExtractor();
+
+    const text = message.cleaned_body + '\n\nSubject: ' + message.subject;
+
+    // Request comprehensive entity extraction
+    const result = await extractor.extract({
+      text,
+      entityTypes: [
+        'organization', // For end user / company names
+        'person', // For decision makers
+        'contact', // For contact information
+        'email', // Email addresses
+        'phone', // Phone numbers
+        'value', // Deal values
+        'currency', // Currency codes
+        'date', // Timeline dates
+        'product', // Product names
+        'deal', // Deal names
+      ],
+      context: {
+        documentType: 'email',
+        language: 'auto-detect',
+        additionalInfo: {
+          subject: message.subject,
+          from: message.from,
+          hasKeywords: message.tier1_matches.length > 0 || message.tier2_matches.length > 0,
+        },
+      },
+    });
+
+    logger.info('Semantic entity extraction completed', {
+      entityCount: result.entities.length,
+      averageConfidence: result.summary.averageConfidence,
+      byType: result.summary.byType,
+    });
+
+    // Map extracted entities to ExtractedDeal fields
+
+    // Extract end user / customer organization
+    const customerOrg = result.entities.find(e =>
+      e.type === 'organization' &&
+      e.confidence > 0.7 &&
+      e.metadata?.role !== 'vendor'
+    );
+    if (customerOrg) {
+      extracted.end_user_name = customerOrg.normalizedValue || customerOrg.value;
+    }
+
+    // Extract decision maker
+    const decisionMaker = result.entities.find(e =>
+      e.type === 'person' &&
+      e.confidence > 0.7
+    );
+    if (decisionMaker) {
+      extracted.decision_maker_contact = decisionMaker.normalizedValue || decisionMaker.value;
+    }
+
+    // Extract contact information
+    const contactEmail = result.entities.find(e =>
+      e.type === 'email' &&
+      e.confidence > 0.7 &&
+      !e.value.includes(message.from) // Exclude sender's own email
+    );
+    if (contactEmail) {
+      extracted.decision_maker_email = contactEmail.value;
+    }
+
+    const contactPhone = result.entities.find(e =>
+      e.type === 'phone' &&
+      e.confidence > 0.7
+    );
+    if (contactPhone) {
+      extracted.decision_maker_phone = contactPhone.normalizedValue || contactPhone.value;
+    }
+
+    // Extract deal value and currency
+    const dealValue = result.entities.find(e =>
+      e.type === 'value' &&
+      e.confidence > 0.7
+    );
+    if (dealValue && dealValue.metadata?.numeric) {
+      extracted.deal_value = dealValue.metadata.numeric;
+      extracted.currency = dealValue.metadata.currency || 'USD';
+    }
+
+    // Extract dates for timeline
+    const dates = result.entities
+      .filter(e => e.type === 'date' && e.confidence > 0.6)
+      .map(e => {
+        const dateStr = e.normalizedValue || e.value;
+        const date = new Date(dateStr);
+        return !isNaN(date.getTime()) ? date : null;
+      })
+      .filter((d): d is Date => d !== null);
+
+    if (dates.length > 0) {
+      const now = new Date();
+      const futureDates = dates.filter(d => d > now);
+      if (futureDates.length > 0) {
+        extracted.expected_close_date = futureDates[0];
+      }
+    }
+
+    // Extract product names
+    const products = result.entities
+      .filter(e => e.type === 'product' && e.confidence > 0.6)
+      .map(e => e.normalizedValue || e.value);
+    if (products.length > 0) {
+      extracted.product_name = products.join(', ');
+    }
+
+    // Extract deal/project name
+    const dealName = result.entities.find(e =>
+      e.type === 'deal' &&
+      e.confidence > 0.7
+    );
+    if (dealName) {
+      extracted.deal_name = dealName.normalizedValue || dealName.value;
+    }
+
+    // Extract relationships for additional context
+    const customerRelationships = result.relationships.filter(r =>
+      r.relation === 'works_for' ||
+      r.relation === 'employed_by'
+    );
+    for (const rel of customerRelationships) {
+      if (rel.entity2Type === 'organization' && !extracted.end_user_name) {
+        extracted.end_user_name = rel.entity2;
+      }
+      if (rel.entity1Type === 'person' && !extracted.decision_maker_contact) {
+        extracted.decision_maker_contact = rel.entity1;
+      }
+    }
+
+    return extracted;
+  } catch (error: any) {
+    logger.error('Semantic entity extraction failed', {
+      error: error.message,
+      messageId: message.message_id,
+    });
+    // Return empty object on error - fallback to regex extraction will be used
+    return {};
+  }
+}
+
+// ============================================================================
 // LAYER 3: CONTEXTUAL ENTITY EXTRACTION (Simplified NLP)
 // ============================================================================
 
@@ -578,8 +744,9 @@ export function scanForKeywords(text: string): {
 
 /**
  * Process email thread and extract deals
+ * Now async to support semantic extraction
  */
-export function processThread(thread: EmailThread): ExtractedDeal[] {
+export async function processThread(thread: EmailThread): Promise<ExtractedDeal[]> {
   const extractedDeals: ExtractedDeal[] = [];
 
   // Scan all messages for keywords first
@@ -599,7 +766,10 @@ export function processThread(thread: EmailThread): ExtractedDeal[] {
       continue;
     }
 
-    // Apply Layer 2 (Regex extraction)
+    // Apply Layer 2.5 (Semantic extraction with AI) - runs first for best results
+    const semanticData = await applySemanticExtraction(message);
+
+    // Apply Layer 2 (Regex extraction) - fallback for when semantic extraction is disabled
     const layer2Data = applyLayer2Extraction(message);
 
     // Apply Layer 3 (Contextual extraction)
@@ -611,17 +781,18 @@ export function processThread(thread: EmailThread): ExtractedDeal[] {
       ? senderEmail.split('@')[1].toLowerCase()
       : '';
 
-    // Combine data from all layers
+    // Combine data from all layers (semantic data takes priority)
     const combinedDeal: Partial<ExtractedDeal> = {
-      ...layer2Data,
-      ...layer3Data,
+      ...layer2Data, // Base layer (regex fallback)
+      ...layer3Data, // Enhanced contextual extraction
+      ...semanticData, // AI-powered extraction (highest priority)
       source_email_id: message.message_id,
       source_email_from: senderEmail,
       source_email_domain: senderDomain,
       tier1_matches: message.tier1_matches,
       tier2_matches: message.tier2_matches,
       tier3_matches: message.tier3_matches,
-      extraction_method: 'multi-layer',
+      extraction_method: Object.keys(semanticData).length > 0 ? 'semantic-ai' : 'multi-layer',
       registration_date: message.date,
     };
 
@@ -629,13 +800,23 @@ export function processThread(thread: EmailThread): ExtractedDeal[] {
     const confidence = calculateConfidenceScore(combinedDeal, message);
     combinedDeal.confidence_score = confidence;
 
+    // Boost confidence if semantic extraction was used and successful
+    if (Object.keys(semanticData).length > 3) {
+      combinedDeal.confidence_score = Math.min(confidence * 1.2, 1.0);
+      logger.info('Semantic extraction boosted confidence', {
+        original: confidence,
+        boosted: combinedDeal.confidence_score,
+      });
+    }
+
     // Lower confidence threshold to 0.15 (from 0.3)
-    if (confidence >= 0.15) {
+    if (combinedDeal.confidence_score >= 0.15) {
       extractedDeals.push(combinedDeal as ExtractedDeal);
-      logger.info(`Extracted deal with confidence ${confidence.toFixed(2)}`, {
+      logger.info(`Extracted deal with confidence ${combinedDeal.confidence_score.toFixed(2)}`, {
         email_id: message.message_id,
         end_user: combinedDeal.end_user_name,
         deal_value: combinedDeal.deal_value,
+        extraction_method: combinedDeal.extraction_method,
       });
     }
   }
@@ -650,6 +831,7 @@ export default {
   extractCompanyNames,
   extractProjectNames,
   applyLayer2Extraction,
+  applySemanticExtraction,
   applyLayer3Extraction,
   calculateConfidenceScore,
   scanForKeywords,

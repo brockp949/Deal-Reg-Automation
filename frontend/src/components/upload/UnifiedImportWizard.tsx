@@ -44,6 +44,7 @@ import {
   type ImportFile,
 } from '@/hooks/useUnifiedImport';
 import type { FileIntent } from '@/lib/api';
+import { ChunkedUploadProgress } from './ChunkedUploadProgress';
 
 // Icon mapping for intents
 const intentIcons: Record<FileIntent, React.ReactNode> = {
@@ -110,6 +111,9 @@ export default function UnifiedImportWizard() {
     uploadAll,
     clearAll,
     retryFile,
+    chunkedUploadProgress,
+    isChunkedUploading,
+    cancelChunkedUpload,
   } = useUnifiedImport();
 
   const [showCompleted, setShowCompleted] = useState(true);
@@ -235,6 +239,8 @@ export default function UnifiedImportWizard() {
                     onIntentChange={(intent) => updateIntent(importFile.id, intent)}
                     onRetry={() => retryFile(importFile.id)}
                     disabled={isUploading}
+                    chunkedUploadProgress={importFile.isChunkedUpload ? chunkedUploadProgress : null}
+                    onCancelChunkedUpload={cancelChunkedUpload}
                   />
                 ))}
               </div>
@@ -419,6 +425,8 @@ interface FileRowProps {
   onIntentChange: (intent: FileIntent) => void;
   onRetry: () => void;
   disabled: boolean;
+  chunkedUploadProgress: any | null;
+  onCancelChunkedUpload: () => void;
 }
 
 function FileRow({
@@ -427,8 +435,10 @@ function FileRow({
   onIntentChange,
   onRetry,
   disabled,
+  chunkedUploadProgress,
+  onCancelChunkedUpload,
 }: FileRowProps) {
-  const { status, uploadProgress, processingProgress, error, result, intent } =
+  const { status, uploadProgress, processingProgress, error, result, intent, isChunkedUpload } =
     importFile;
   const config = statusConfig[status];
 
@@ -516,12 +526,25 @@ function FileRow({
           {/* Progress Bar */}
           {(status === 'uploading' || status === 'processing') && (
             <div className="mt-2">
-              <Progress value={overallProgress} className="h-2" />
-              <p className="text-xs text-muted-foreground mt-1">
-                {status === 'uploading'
-                  ? `Uploading... ${uploadProgress}%`
-                  : `Processing... ${processingProgress}%`}
-              </p>
+              {isChunkedUpload && chunkedUploadProgress && status === 'uploading' ? (
+                // Show detailed chunked upload progress for large files
+                <ChunkedUploadProgress
+                  progress={chunkedUploadProgress}
+                  fileName={importFile.file.name}
+                  onCancel={onCancelChunkedUpload}
+                  showDetails={true}
+                />
+              ) : (
+                // Show regular progress bar for small files
+                <>
+                  <Progress value={overallProgress} className="h-2" />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {status === 'uploading'
+                      ? `Uploading... ${uploadProgress}%`
+                      : `Processing... ${processingProgress}%`}
+                  </p>
+                </>
+              )}
             </div>
           )}
 

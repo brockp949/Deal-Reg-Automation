@@ -15,6 +15,10 @@
 
 import { readFileSync } from 'fs';
 import logger from '../utils/logger';
+import { analyzeBuyingSignalsWithAI } from './aiEnhancedExtraction';
+import { config } from '../config';
+import { getEntityExtractor } from '../skills/SemanticEntityExtractor';
+import { isSkillEnabled } from '../config/claude';
 
 /**
  * Buying Signals Taxonomy
@@ -347,7 +351,107 @@ export class TranscriptPreprocessor {
  */
 export class TranscriptNER {
   /**
-   * Extract all entities from text
+   * Extract entities using semantic AI extraction
+   */
+  static async extractEntitiesSemantic(text: string): Promise<ExtractedEntity[]> {
+    const entities: ExtractedEntity[] = [];
+
+    // Check if skill is enabled
+    if (!isSkillEnabled('semanticEntityExtractor')) {
+      logger.debug('SemanticEntityExtractor skill disabled, falling back to regex');
+      return TranscriptNER.extractEntities(text);
+    }
+
+    try {
+      logger.info('Using SemanticEntityExtractor skill for transcript entity extraction');
+      const extractor = getEntityExtractor();
+
+      const result = await extractor.extract({
+        text,
+        entityTypes: [
+          'organization', // Company names
+          'person', // Person names
+          'email', // Email addresses
+          'phone', // Phone numbers
+          'value', // Monetary values
+          'currency', // Currency codes
+          'date', // Dates and timelines
+          'product', // Product names
+          'deal', // Deal names
+          'contact', // Contact information
+        ],
+        context: {
+          documentType: 'transcript',
+          language: 'auto-detect',
+          additionalInfo: {
+            type: 'meeting_transcript',
+          },
+        },
+      });
+
+      logger.info('Semantic entity extraction completed', {
+        entityCount: result.entities.length,
+        averageConfidence: result.summary.averageConfidence,
+        byType: result.summary.byType,
+      });
+
+      // Map extracted entities to TranscriptNER format
+      for (const entity of result.entities) {
+        let type: ExtractedEntity['type'] = 'TEXT';
+
+        // Map entity types to TranscriptNER types
+        switch (entity.type) {
+          case 'email':
+            type = 'EMAIL';
+            break;
+          case 'phone':
+            type = 'PHONE';
+            break;
+          case 'value':
+          case 'currency':
+            type = 'MONEY';
+            break;
+          case 'date':
+            type = 'DATE';
+            break;
+          case 'organization':
+            type = 'ORGANIZATION';
+            break;
+          case 'person':
+            type = 'PERSON';
+            break;
+          case 'product':
+            type = 'PRODUCT';
+            break;
+          default:
+            type = 'TEXT';
+        }
+
+        entities.push({
+          text: entity.value,
+          type,
+          confidence: entity.confidence,
+          position: entity.position || { start: 0, end: entity.value.length },
+          metadata: entity.metadata,
+        });
+      }
+
+      logger.info('Mapped semantic entities to transcript format', {
+        entityCount: entities.length,
+      });
+
+      return entities;
+    } catch (error: any) {
+      logger.error('Semantic entity extraction failed, falling back to regex', {
+        error: error.message,
+      });
+      // Fallback to regex extraction
+      return TranscriptNER.extractEntities(text);
+    }
+  }
+
+  /**
+   * Extract all entities from text using regex patterns (fallback method)
    */
   static extractEntities(text: string): ExtractedEntity[] {
     const entities: ExtractedEntity[] = [];
@@ -588,9 +692,48 @@ export class IntentClassifier {
 export class BuyingSignalDetector {
   /**
    * Calculate buying signal score (0.0 to 1.0)
-   * Uses weighted scoring based on signal types
+   * Enhanced with AI-powered analysis when enabled, with fallback to regex
    */
-  static calculateBuyingSignalScore(turns: SpeakerTurn[]): number {
+  static async calculateBuyingSignalScore(turns: SpeakerTurn[]): Promise<number> {
+    // Build transcript text from turns
+    const transcriptText = turns.map(t => `${t.speaker}: ${t.utterance}`).join('\n');
+
+    // === AI-ENHANCED BUYING SIGNAL ANALYSIS ===
+    try {
+      const aiAnalysis = await analyzeBuyingSignalsWithAI(
+        {
+          transcript: transcriptText,
+        },
+        () => {
+          // Fallback to regex-based analysis
+          return BuyingSignalDetector.calculateBuyingSignalScoreRegex(turns);
+        }
+      );
+
+      logger.info('AI-powered buying signal analysis completed', {
+        overallScore: aiAnalysis.overallScore.toFixed(2),
+        signalCount: aiAnalysis.signals.length,
+        objectionCount: aiAnalysis.objections.length,
+        isRegisterable: aiAnalysis.isRegisterable,
+        confidence: aiAnalysis.confidence.toFixed(2),
+      });
+
+      return aiAnalysis.overallScore;
+    } catch (error: any) {
+      logger.error('AI buying signal analysis failed, using regex fallback', {
+        error: error.message,
+      });
+
+      // Fallback to regex-based analysis
+      return BuyingSignalDetector.calculateBuyingSignalScoreRegex(turns);
+    }
+  }
+
+  /**
+   * Legacy regex-based buying signal scoring
+   * Used as fallback when AI is disabled or fails
+   */
+  static calculateBuyingSignalScoreRegex(turns: SpeakerTurn[]): number {
     let score = 0.0;
     const weights = {
       explicit: 0.4,
@@ -645,11 +788,12 @@ export class BuyingSignalDetector {
       (implicitScore * weights.implicit) +
       (engagementScore * weights.engagement);
 
-    logger.info('Buying signal analysis', {
+    logger.info('Regex-based buying signal analysis', {
       score: score.toFixed(2),
       explicit: explicitCount,
       implicit: implicitCount,
       engagement: engagementCount,
+      method: config.featureFlags.buyingSignalAnalyzer ? 'fallback' : 'primary',
     });
 
     return Math.min(score, 1.0);
@@ -926,8 +1070,8 @@ export async function parseEnhancedTranscript(
     };
   }
 
-  // STAGE 2: Buying Signal Detection (Triage)
-  const buyingSignalScore = BuyingSignalDetector.calculateBuyingSignalScore(turns);
+  // STAGE 2: Buying Signal Detection (Triage) - Now AI-enhanced
+  const buyingSignalScore = await BuyingSignalDetector.calculateBuyingSignalScore(turns);
   const isRegisterable = BuyingSignalDetector.isRegisterableDeal(buyingSignalScore, buyingSignalThreshold);
 
   if (!isRegisterable) {
@@ -940,9 +1084,9 @@ export async function parseEnhancedTranscript(
     };
   }
 
-  // STAGE 3: Named Entity Recognition
+  // STAGE 3: Named Entity Recognition (AI-enhanced)
   const fullText = turns.map(t => t.utterance).join(' ');
-  const entities = TranscriptNER.extractEntities(fullText);
+  const entities = await TranscriptNER.extractEntitiesSemantic(fullText);
 
   // STAGE 4: Intent Classification
   for (const turn of turns) {
