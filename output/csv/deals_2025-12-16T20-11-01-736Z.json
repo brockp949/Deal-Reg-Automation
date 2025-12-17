@@ -1,0 +1,54 @@
+{
+  "metadata": {
+    "exportDate": "2025-12-16T20:11:01.736Z",
+    "recordCount": 3,
+    "generator": "Deal Registration Automation"
+  },
+  "deals": [
+    {
+      "Deal Name": "Acme Corporation",
+      "Customer Name": "Acme Corporation",
+      "Deal Value": "$150,000",
+      "Currency": "USD",
+      "Status": "Qualified\nExpected",
+      "Owner": "",
+      "Expected Close": "2025-03-30",
+      "Probability": "",
+      "Decision Maker": "",
+      "Confidence": "100%",
+      "Source File": "manual_2024-12-16_test-deals.txt",
+      "Start Line": 5,
+      "End Line": 16
+    },
+    {
+      "Deal Name": "Beta Technologies Inc",
+      "Customer Name": "Beta Tech",
+      "Deal Value": "$75,000",
+      "Currency": "USD",
+      "Status": "Discovery\nExpected",
+      "Owner": "",
+      "Expected Close": "2025-06-30",
+      "Probability": "",
+      "Decision Maker": "",
+      "Confidence": "100%",
+      "Source File": "manual_2024-12-16_test-deals.txt",
+      "Start Line": 17,
+      "End Line": 28
+    },
+    {
+      "Deal Name": "Gamma Solutions LLC",
+      "Customer Name": "Gamma Solutions",
+      "Deal Value": "$250,000",
+      "Currency": "USD",
+      "Status": "Negotiation\nClose",
+      "Owner": "",
+      "Expected Close": "2025-01-31",
+      "Probability": "",
+      "Decision Maker": "",
+      "Confidence": "100%",
+      "Source File": "manual_2024-12-16_test-deals.txt",
+      "Start Line": 29,
+      "End Line": 29
+    }
+  ]
+}

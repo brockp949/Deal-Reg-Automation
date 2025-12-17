@@ -9,8 +9,9 @@ import { ApiResponse, SourceFile } from '../types';
 import logger from '../utils/logger';
 import { computeFileChecksum, performVirusScan, recordFileSecurityEvent } from '../services/fileSecurity';
 import { storeConfigFile } from '../services/configStorage';
-import { createRateLimiter, uploadLimiter } from '../middleware/rateLimiter';
+import { uploadLimiter, batchUploadLimiter } from '../middleware/rateLimiter';
 import { requireRole } from '../api/middleware/apiKeyAuth';
+import type { FileIntent } from '../parsers/ParserRegistry';
 
 const router = Router();
 
@@ -57,11 +58,24 @@ function resolveOperatorId(req: Request): string {
 }
 
 function validateUploadRequest(req: Request): { valid: boolean; error?: string } {
-  const { intent, source, configName } = req.body || {};
-  const allowedIntents = ['update-config', 'ingest', 'test', undefined, null, ''];
-  if (!allowedIntents.includes(intent)) {
-    return { valid: false, error: 'Invalid intent. Use update-config, ingest, or test.' };
+  const { intent, source, configName, uploadIntent } = req.body || {};
+
+  // Legacy intents for config management
+  const configIntents = ['update-config', 'ingest', 'test', undefined, null, ''];
+
+  // New file processing intents
+  const fileIntents = ['vendor', 'deal', 'email', 'transcript', 'vendor_spreadsheet', 'auto'];
+
+  // Accept either legacy config intents or new file intents
+  if (intent && !configIntents.includes(intent) && !fileIntents.includes(intent)) {
+    return { valid: false, error: 'Invalid intent. Use vendor, deal, email, transcript, auto, or update-config.' };
   }
+
+  // Validate uploadIntent if provided
+  if (uploadIntent && !fileIntents.includes(uploadIntent)) {
+    return { valid: false, error: 'Invalid uploadIntent. Use vendor, deal, email, transcript, vendor_spreadsheet, or auto.' };
+  }
+
   if (source && typeof source !== 'string') {
     return { valid: false, error: 'source must be a string if provided.' };
   }
@@ -71,13 +85,7 @@ function validateUploadRequest(req: Request): { valid: boolean; error?: string }
   return { valid: true };
 }
 
-// Use the new uploadLimiter from middleware (10 uploads per 15 min)
-// For batch uploads, keep stricter limit
-const batchUploadLimiter = createRateLimiter({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
-  message: 'Batch upload rate limit exceeded. Please try again later.',
-});
+
 
 function buildUploadMetadata(req: Request, originalName: string, extras?: Record<string, any>) {
   return {
@@ -85,6 +93,9 @@ function buildUploadMetadata(req: Request, originalName: string, extras?: Record
     userAgent: req.get('user-agent'),
     source: req.body?.source || 'upload_wizard',
     intent: req.body?.intent,
+    uploadIntent: req.body?.uploadIntent || 'auto',  // New file processing intent
+    vendorId: req.body?.vendorId,      // For deal imports to specific vendor
+    vendorName: req.body?.vendorName,  // For deal imports with vendor name
     configName: req.body?.configName,
     requestId: req.get('x-request-id'),
     originalFilename: originalName,
@@ -189,9 +200,10 @@ router.post('/upload', requireRole(['write', 'admin']), uploadLimiter, upload.si
         quarantined_at,
         quarantine_reason,
         uploaded_by,
-        upload_metadata
+        upload_metadata,
+        upload_intent
       )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14, $15::jsonb)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14, $15::jsonb, $16)
        RETURNING *`,
       [
         req.file.originalname,
@@ -213,6 +225,7 @@ router.post('/upload', requireRole(['write', 'admin']), uploadLimiter, upload.si
         quarantineInfo.reason,
         operatorId,
         JSON.stringify(uploadMetadata),
+        uploadMetadata.uploadIntent || 'auto',
       ]
     );
 
@@ -310,11 +323,17 @@ router.post('/upload', requireRole(['write', 'admin']), uploadLimiter, upload.si
     });
 
     if (scanResult.status === 'passed') {
-      const { addFileProcessingJob } = await import('../queues/fileProcessingQueue');
-      const job = await addFileProcessingJob(sourceFile.id);
-      logger.info('File queued for processing', {
+      const { addUnifiedJob } = await import('../queues/unifiedProcessingQueue');
+      const job = await addUnifiedJob({
+        fileId: sourceFile.id,
+        intent: uploadMetadata.uploadIntent || 'auto',
+        vendorId: uploadMetadata.vendorId,
+        vendorName: uploadMetadata.vendorName,
+      });
+      logger.info('File queued for unified processing', {
         fileId: sourceFile.id,
         jobId: job.id,
+        intent: uploadMetadata.uploadIntent,
       });
     } else {
       logger.warn('File not queued due to scan status', {
@@ -363,7 +382,7 @@ router.post('/batch-upload', requireRole(['write', 'admin']), batchUploadLimiter
     }
 
     const uploadedFiles: SourceFile[] = [];
-    const { addFileProcessingJob } = await import('../queues/fileProcessingQueue');
+    const { addUnifiedJob } = await import('../queues/unifiedProcessingQueue');
     const operatorId = resolveOperatorId(req);
     let queuedCount = 0;
     let quarantinedCount = 0;
@@ -430,9 +449,10 @@ router.post('/batch-upload', requireRole(['write', 'admin']), batchUploadLimiter
           quarantined_at,
           quarantine_reason,
           uploaded_by,
-          upload_metadata
+          upload_metadata,
+          upload_intent
         )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14, $15::jsonb)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14, $15::jsonb, $16)
          RETURNING *`,
         [
           file.originalname,
@@ -454,6 +474,7 @@ router.post('/batch-upload', requireRole(['write', 'admin']), batchUploadLimiter
           quarantineInfo.reason,
           operatorId,
           JSON.stringify(uploadMetadata),
+          uploadMetadata.uploadIntent || 'auto',
         ]
       );
 
@@ -535,11 +556,17 @@ router.post('/batch-upload', requireRole(['write', 'admin']), batchUploadLimiter
       uploadedFiles.push(sourceFile);
 
       if (scanResult.status === 'passed') {
-        const job = await addFileProcessingJob(sourceFile.id);
+        const job = await addUnifiedJob({
+          fileId: sourceFile.id,
+          intent: uploadMetadata.uploadIntent || 'auto',
+          vendorId: uploadMetadata.vendorId,
+          vendorName: uploadMetadata.vendorName,
+        });
         queuedCount++;
-        logger.info('File queued for processing', {
+        logger.info('File queued for unified processing (batch)', {
           fileId: sourceFile.id,
           jobId: job.id,
+          intent: uploadMetadata.uploadIntent,
         });
       } else {
         quarantinedCount++;
@@ -928,11 +955,15 @@ router.post('/:id/process', requireRole(['write', 'admin']), async (req: Request
       });
     }
 
-    // Add file to processing queue
-    const { addFileProcessingJob } = await import('../queues/fileProcessingQueue');
-    const job = await addFileProcessingJob(id);
+    // Add file to unified processing queue
+    const { addUnifiedJob } = await import('../queues/unifiedProcessingQueue');
+    const intent = (file.upload_intent || 'auto') as FileIntent;
+    const job = await addUnifiedJob({
+      fileId: id,
+      intent,
+    });
 
-    logger.info('Manual file processing requested', { fileId: id, actor, jobId: job.id });
+    logger.info('Manual file processing requested', { fileId: id, actor, jobId: job.id, intent });
 
     res.json({
       success: true,

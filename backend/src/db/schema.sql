@@ -97,7 +97,10 @@ ALTER TABLE source_files
   ADD COLUMN IF NOT EXISTS scan_details JSONB DEFAULT '{}'::jsonb,
   ADD COLUMN IF NOT EXISTS scan_completed_at TIMESTAMP,
   ADD COLUMN IF NOT EXISTS quarantined_at TIMESTAMP,
-  ADD COLUMN IF NOT EXISTS quarantine_reason TEXT;
+  ADD COLUMN IF NOT EXISTS quarantine_reason TEXT,
+  ADD COLUMN IF NOT EXISTS upload_intent VARCHAR(50),
+  ADD COLUMN IF NOT EXISTS detected_intent VARCHAR(50),
+  ADD COLUMN IF NOT EXISTS parser_used VARCHAR(100);
 
 CREATE INDEX IF NOT EXISTS idx_files_status ON source_files(processing_status);
 CREATE INDEX IF NOT EXISTS idx_files_upload_date ON source_files(upload_date);

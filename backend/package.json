@@ -84,6 +84,7 @@
     "pdf-parse": "^1.1.1",
     "pdf2pic": "^3.2.0",
     "pg": "^8.11.3",
+    "rate-limit-redis": "^4.2.0",
     "redis": "^4.6.12",
     "string-similarity": "^4.0.4",
     "tesseract.js": "^5.1.1",

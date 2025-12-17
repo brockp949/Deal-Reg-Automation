@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import { fileProcessingQueue, getQueueStats, cleanOldJobs, closeQueue } from '../queues/fileProcessingQueue';
 import { vendorImportQueue, getVendorImportQueueStats } from '../queues/vendorImportQueue';
+import '../queues/unifiedProcessingQueue'; // Import to register the processor
 import logger from '../utils/logger';
 
 // Load environment variables

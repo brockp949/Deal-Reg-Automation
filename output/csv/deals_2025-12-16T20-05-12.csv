@@ -1,0 +1,7 @@
+Deal Name,Customer Name,Deal Value,Currency,Status,Owner,Expected Close,Probability,Decision Maker,Confidence,Source File,Start Line
+Acme Corporation,Acme Corporation,150000,USD,"Qualified
+Expected",,2025-03-30,,,100.0%,manual_2024-12-16_test-deals.txt,5
+Beta Technologies Inc,Beta Tech,75000,USD,"Discovery
+Expected",,2025-06-30,,,100.0%,manual_2024-12-16_test-deals.txt,17
+Gamma Solutions LLC,Gamma Solutions,250000,USD,"Negotiation
+Close",,2025-01-31,,,100.0%,manual_2024-12-16_test-deals.txt,29

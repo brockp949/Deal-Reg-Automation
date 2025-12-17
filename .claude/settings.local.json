@@ -55,7 +55,17 @@
       "Bash(docker ps:*)",
       "Bash(git mv:*)",
       "Bash(where:*)",
-      "Bash(netstat:*)"
+      "Bash(netstat:*)",
+      "Bash(cd:*)",
+      "Bash(grep:*)",
+      "Bash(npm run transcript:watch:*)",
+      "Bash(timeout 3 npm run:*)",
+      "Bash(timeout 5 npm run transcript:watch:*)",
+      "Bash(timeout 10 npm run transcript:process:*)",
+      "Bash(npm run transcript:process:*)",
+      "Bash(npm run transcript:export:*)",
+      "Bash(docker run:*)",
+      "Bash(docker volume:*)"
     ],
     "deny": [],
     "ask": []

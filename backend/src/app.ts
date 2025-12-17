@@ -49,6 +49,8 @@ import googleAuthRoutes from './routes/googleAuth';
 import gmailSyncRoutes from './routes/gmailSync';
 import driveSyncRoutes from './routes/driveSync';
 import syncStatsRoutes from './routes/syncStats';
+import vendorSpreadsheetExportRoutes from './routes/vendorSpreadsheetExport';
+import progressRoutes from './routes/progress';
 
 const app = express();
 
@@ -138,6 +140,7 @@ app.get('/health', async (req: Request, res: Response) => {
 app.use(`${config.apiPrefix}/vendors`, vendorRoutes);
 app.use(`${config.apiPrefix}/vendors`, vendorImportRoutes); // Vendor import endpoints
 app.use(`${config.apiPrefix}/vendors/:vendorId/deals`, uploadLimiter, dealImportRoutes); // Deal import per vendor
+app.use(`${config.apiPrefix}/vendors/:vendorId/deals`, vendorSpreadsheetExportRoutes); // Vendor spreadsheet export
 app.use(`${config.apiPrefix}/vendors/:vendorId/agreements`, uploadLimiter, agreementRoutes); // Vendor agreements
 app.use(`${config.apiPrefix}/deals`, dealRoutes);
 app.use(`${config.apiPrefix}/files`, uploadLimiter, fileRoutes);
@@ -171,6 +174,7 @@ app.use(`${config.apiPrefix}/google-auth`, googleAuthRoutes);
 app.use(`${config.apiPrefix}/sync/gmail`, gmailSyncRoutes);
 app.use(`${config.apiPrefix}/sync/drive`, driveSyncRoutes);
 app.use(`${config.apiPrefix}/sync/stats`, syncStatsRoutes);
+app.use(`${config.apiPrefix}/progress`, progressRoutes);
 
 // 404 handler
 app.use((req: Request, res: Response) => {

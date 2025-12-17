@@ -1,3 +1,8 @@
+/**
+ * @deprecated This component is deprecated and will be removed in a future version.
+ * Use the UnifiedImportWizard component instead.
+ */
+
 import { useCallback, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { useMutation, useQueryClient } from '@tanstack/react-query';

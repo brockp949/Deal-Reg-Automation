@@ -1,0 +1,44 @@
+Meeting Transcript - Q4 Deal Review
+Date: December 16, 2024
+Attendees: John Smith, Jane Doe, Mike Wilson
+
+Deal: Acme Corporation
+Customer: Acme Corporation
+Value: $150,000
+Status: Qualified
+Expected Close: Q1 2025
+
+We discussed the following details:
+- Customer is looking for network infrastructure upgrade
+- Decision maker is Bob Johnson, CTO
+- Timeline is aggressive - Q1 2025
+- Competing against Cisco
+
+Deal: Beta Technologies Inc
+Customer: Beta Tech
+Value: $75,000
+Status: Discovery
+Expected Close: Q2 2025
+
+Notes:
+- Initial discovery call completed
+- Customer interested in our security solution
+- Need to schedule technical deep-dive
+- Budget approved for this quarter
+
+Deal: Gamma Solutions LLC
+Customer: Gamma Solutions
+Amount: $250,000
+Status: Negotiation
+Close Date: 01/31/2025
+
+Key points:
+- Final contract review in progress
+- Legal review expected next week
+- High probability of close
+- Multi-year deal structure
+
+Action Items:
+1. Follow up with Acme on technical requirements
+2. Schedule Beta Tech deep-dive
+3. Review Gamma contract terms

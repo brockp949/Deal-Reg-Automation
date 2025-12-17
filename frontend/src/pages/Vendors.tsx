@@ -20,6 +20,7 @@ import { ConfirmDeleteDialog } from '@/components/ConfirmDeleteDialog';
 import { DealImportDialog } from '@/components/DealImportDialog';
 import { AgreementUploadDialog } from '@/components/AgreementUploadDialog';
 import { useDeleteVendor } from '@/hooks/useVendors';
+import { useVendorSpreadsheetExport } from '@/hooks/useVendorSpreadsheet';
 import { DealStatusBadge } from '@/components/status';
 import type { Vendor } from '@/types';
 import type { VendorQueryParams } from '@/types/api';
@@ -73,6 +74,12 @@ export default function Vendors() {
   const totalDeals = deals?.length || 0;
   const totalValue = deals?.reduce((sum, deal) => sum + (deal.deal_value || 0), 0) || 0;
   const avgDealSize = totalDeals > 0 ? totalValue / totalDeals : 0;
+
+  // Export hook
+  const { exportSpreadsheet, isExporting } = useVendorSpreadsheetExport({
+    vendorId: selectedVendor?.id || '',
+    vendorName: selectedVendor?.name || '',
+  });
 
   const handleEditVendor = (vendor: Vendor, e: React.MouseEvent<HTMLDivElement>) => {
     e.stopPropagation();
@@ -238,8 +245,17 @@ export default function Vendors() {
                     <FileText className="h-4 w-4 mr-2" />
                     Upload Agreement
                   </Button>
-                  <Button variant="outline" size="sm">
-                    <FileDown className="h-4 w-4 mr-2" />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => exportSpreadsheet()}
+                    disabled={isExporting || deals.length === 0}
+                  >
+                    {isExporting ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <FileDown className="h-4 w-4 mr-2" />
+                    )}
                     Export
                   </Button>
                 </div>

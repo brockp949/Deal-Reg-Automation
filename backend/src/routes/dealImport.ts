@@ -7,6 +7,7 @@ import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import { unlink } from 'fs/promises';
 import { parseDealFile } from '../parsers/dealImporter';
+import { parseVendorSpreadsheet, extractVendorFromFilename } from '../parsers/vendorSpreadsheetParser';
 import { addDealImportJob, getDealImportJobStatus } from '../queues/dealImportQueue';
 import { query } from '../db';
 import logger from '../utils/logger';
@@ -238,6 +239,310 @@ router.post('/preview-import', validateVendor, upload.single('file'), async (req
     return res.status(500).json({
       success: false,
       error: 'Preview failed',
+      details: message,
+    });
+  }
+});
+
+/**
+ * POST /api/vendors/:vendorId/deals/spreadsheet/extract-vendor
+ * Extract vendor name from filename and return suggestions
+ */
+router.post('/spreadsheet/extract-vendor', async (req: Request, res: Response) => {
+  try {
+    const { filename } = req.body;
+
+    if (!filename) {
+      return res.status(400).json({
+        success: false,
+        error: 'Filename is required',
+      });
+    }
+
+    const extractedVendor = extractVendorFromFilename(filename);
+
+    // Search for matching vendors
+    let matchingVendors: Array<{ id: string; name: string; matchType: string }> = [];
+
+    if (extractedVendor) {
+      // Exact match
+      const exactResult = await query(
+        'SELECT id, name FROM vendors WHERE LOWER(name) = LOWER($1)',
+        [extractedVendor]
+      );
+
+      if (exactResult.rows.length > 0) {
+        matchingVendors = exactResult.rows.map(v => ({
+          id: v.id,
+          name: v.name,
+          matchType: 'exact',
+        }));
+      } else {
+        // Similar matches
+        const similarResult = await query(
+          `SELECT id, name FROM vendors
+           WHERE LOWER(name) LIKE LOWER($1)
+           OR LOWER($2) LIKE '%' || LOWER(name) || '%'
+           LIMIT 5`,
+          [`%${extractedVendor}%`, extractedVendor]
+        );
+
+        matchingVendors = similarResult.rows.map(v => ({
+          id: v.id,
+          name: v.name,
+          matchType: 'similar',
+        }));
+      }
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        extractedVendorName: extractedVendor,
+        matchingVendors,
+        canCreateNew: extractedVendor ? true : false,
+      },
+    });
+
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    logger.error('Failed to extract vendor from filename', { error: message });
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to extract vendor',
+      details: message,
+    });
+  }
+});
+
+/**
+ * POST /api/vendors/:vendorId/deals/spreadsheet/preview
+ * Preview vendor spreadsheet without saving to database
+ */
+router.post('/spreadsheet/preview', upload.single('file'), async (req: Request, res: Response) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: 'No file uploaded',
+      });
+    }
+
+    const filePath = req.file.path;
+    const originalFilename = req.file.originalname;
+
+    // Parse the vendor spreadsheet
+    const parseResult = await parseVendorSpreadsheet(filePath);
+
+    // Extract vendor name from filename
+    const extractedVendor = extractVendorFromFilename(originalFilename);
+
+    // Clean up file
+    await unlink(filePath).catch(() => {});
+
+    if (!parseResult.success) {
+      return res.status(400).json({
+        success: false,
+        error: 'Failed to parse spreadsheet',
+        details: parseResult.errors,
+      });
+    }
+
+    // Search for matching vendor
+    let matchingVendors: Array<{ id: string; name: string; matchType: string }> = [];
+    if (extractedVendor) {
+      const vendorResult = await query(
+        'SELECT id, name FROM vendors WHERE LOWER(name) = LOWER($1)',
+        [extractedVendor]
+      );
+      if (vendorResult.rows.length > 0) {
+        matchingVendors = vendorResult.rows.map(v => ({
+          id: v.id,
+          name: v.name,
+          matchType: 'exact',
+        }));
+      }
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        extractedVendorName: extractedVendor || parseResult.vendorNameFromFile,
+        matchingVendors,
+        preview: {
+          totalRows: parseResult.totalRows,
+          successCount: parseResult.successCount,
+          errorCount: parseResult.errorCount,
+          deals: parseResult.deals,
+          errors: parseResult.errors,
+          warnings: parseResult.warnings,
+        },
+      },
+    });
+
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    logger.error('Failed to preview spreadsheet', { error: message });
+
+    if (req.file) {
+      await unlink(req.file.path).catch(() => {});
+    }
+
+    return res.status(500).json({
+      success: false,
+      error: 'Preview failed',
+      details: message,
+    });
+  }
+});
+
+/**
+ * POST /api/vendors/:vendorId/deals/spreadsheet/import
+ * Import deals from vendor spreadsheet with vendor creation/selection
+ */
+router.post('/spreadsheet/import', upload.single('file'), async (req: Request, res: Response) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: 'No file uploaded',
+      });
+    }
+
+    const { vendorId, vendorName, createNewVendor } = req.body;
+    const filePath = req.file.path;
+    const originalFilename = req.file.originalname;
+
+    let targetVendorId = vendorId;
+    let targetVendorName = vendorName;
+
+    // Create new vendor if requested
+    if (createNewVendor === 'true' && vendorName) {
+      // Atomically insert the vendor if it doesn't exist, preventing race conditions.
+      // This requires a unique index on LOWER(name).
+      const upsertResult = await query(
+        `INSERT INTO vendors (name, status) VALUES ($1, 'active')
+         ON CONFLICT (LOWER(name)) DO UPDATE SET name = EXCLUDED.name
+         RETURNING id, name`,
+        [vendorName]
+      );
+      targetVendorId = upsertResult.rows[0].id;
+      targetVendorName = upsertResult.rows[0].name;
+      logger.info('Found or created vendor for spreadsheet import', {
+        vendorId: targetVendorId,
+        vendorName: targetVendorName,
+      });
+    }
+
+    if (!targetVendorId) {
+      await unlink(filePath).catch(() => {});
+      return res.status(400).json({
+        success: false,
+        error: 'Vendor ID is required. Either select an existing vendor or create a new one.',
+      });
+    }
+
+    // Verify vendor exists
+    const vendorResult = await query('SELECT id, name FROM vendors WHERE id = $1', [targetVendorId]);
+    if (vendorResult.rows.length === 0) {
+      await unlink(filePath).catch(() => {});
+      return res.status(404).json({
+        success: false,
+        error: 'Vendor not found',
+      });
+    }
+    targetVendorName = vendorResult.rows[0].name;
+
+    // Parse the spreadsheet
+    const parseResult = await parseVendorSpreadsheet(filePath);
+
+    // Clean up file
+    await unlink(filePath).catch(() => {});
+
+    if (!parseResult.success) {
+      return res.status(400).json({
+        success: false,
+        error: 'Failed to parse spreadsheet',
+        details: parseResult.errors,
+      });
+    }
+
+    // Import deals
+    const importResults = {
+      totalDeals: parseResult.deals.length,
+      imported: 0,
+      skipped: 0,
+      errors: [] as string[],
+    };
+
+        for (const deal of parseResult.deals) {
+      try {
+        const dealMetadata = JSON.stringify({
+          last_update: deal.lastUpdate,
+          yearly_unit_opportunity: deal.yearlyUnitOpportunity,
+          cost_upside: deal.costUpside,
+          spreadsheet_row: deal.rowNumber,
+          imported_from: originalFilename,
+        });
+
+        // Atomically insert or update a deal. This requires a unique index on (vendor_id, LOWER(deal_name)).
+        await query(
+          `INSERT INTO deal_registregistrations (
+            vendor_id, deal_name, deal_stage, notes, deal_value, currency, status, metadata
+          ) VALUES ($1, $2, $3, $4, $5, COALESCE($6, 'USD'), 'imported', $7)
+          ON CONFLICT (vendor_id, LOWER(deal_name)) DO UPDATE SET
+            deal_stage = COALESCE(EXCLUDED.deal_stage, deal_registrations.deal_stage),
+            notes = COALESCE(EXCLUDED.notes, deal_registrations.notes),
+            deal_value = COALESCE(EXCLUDED.deal_value, deal_registrations.deal_value),
+            currency = COALESCE(EXCLUDED.currency, deal_registrations.currency),
+            metadata = COALESCE(deal_registrations.metadata, '{}'::jsonb) || EXCLUDED.metadata,
+            updated_at = NOW()`,
+          [
+            targetVendorId,
+            deal.opportunity,
+            deal.stage || null,
+            deal.nextSteps || null,
+            deal.parsedDealValue,
+            deal.parsedCurrency,
+            dealMetadata,
+          ]
+        );
+        importResults.imported++;
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        importResults.errors.push(`Row ${deal.rowNumber}: ${message}`);
+        importResults.skipped++;
+      }
+    }
+
+    logger.info('Spreadsheet import complete', {
+      vendorId: targetVendorId,
+      vendorName: targetVendorName,
+      filename: originalFilename,
+      ...importResults,
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        vendorId: targetVendorId,
+        vendorName: targetVendorName,
+        filename: originalFilename,
+        ...importResults,
+      },
+    });
+
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    logger.error('Failed to import spreadsheet', { error: message });
+
+    if (req.file) {
+      await unlink(req.file.path).catch(() => {});
+    }
+
+    return res.status(500).json({
+      success: false,
+      error: 'Import failed',
       details: message,
     });
   }

@@ -114,6 +114,15 @@ export const dealAPI = {
 };
 
 // File API
+// File intent types
+export type FileIntent = 'vendor' | 'deal' | 'email' | 'transcript' | 'vendor_spreadsheet' | 'auto';
+
+export interface UnifiedUploadOptions {
+  uploadIntent?: FileIntent;
+  vendorId?: string;
+  vendorName?: string;
+}
+
 export const fileAPI = {
   getAll: (params?: FileQueryParams): Promise<AxiosResponse<ApiResponse<FilesResponse>>> =>
     api.get('/files', { params }),
@@ -127,9 +136,41 @@ export const fileAPI = {
       onUploadProgress,
     });
   },
+  // New unified upload with intent support
+  uploadWithIntent: (
+    file: File,
+    options: UnifiedUploadOptions,
+    onUploadProgress?: (progressEvent: any) => void
+  ): Promise<AxiosResponse<ApiResponse<FileUploadResponse>>> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (options.uploadIntent) formData.append('uploadIntent', options.uploadIntent);
+    if (options.vendorId) formData.append('vendorId', options.vendorId);
+    if (options.vendorName) formData.append('vendorName', options.vendorName);
+    return api.post('/files/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress,
+    });
+  },
   batchUpload: (files: File[], onUploadProgress: (progressEvent: any) => void): Promise<AxiosResponse<ApiResponse<BatchUploadResponse>>> => {
     const formData = new FormData();
     files.forEach((file) => formData.append('files', file));
+    return api.post('/files/batch-upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress,
+    });
+  },
+  // New batch upload with intent
+  batchUploadWithIntent: (
+    files: File[],
+    options: UnifiedUploadOptions,
+    onUploadProgress?: (progressEvent: any) => void
+  ): Promise<AxiosResponse<ApiResponse<BatchUploadResponse>>> => {
+    const formData = new FormData();
+    files.forEach((file) => formData.append('files', file));
+    if (options.uploadIntent) formData.append('uploadIntent', options.uploadIntent);
+    if (options.vendorId) formData.append('vendorId', options.vendorId);
+    if (options.vendorName) formData.append('vendorName', options.vendorName);
     return api.post('/files/batch-upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       onUploadProgress,
@@ -145,6 +186,21 @@ export const fileAPI = {
     }),
   getSecurityMetrics: (): Promise<AxiosResponse<ApiResponse<SecurityMetrics>>> =>
     api.get('/files/metrics/security'),
+};
+
+// Progress API for real-time updates
+export const progressAPI = {
+  getStatus: (fileId: string): Promise<AxiosResponse<ApiResponse<any>>> =>
+    api.get(`/progress/${fileId}/status`),
+  getProcessingFiles: (): Promise<AxiosResponse<ApiResponse<any>>> =>
+    api.get('/progress/files/processing'),
+  getQueueStats: (): Promise<AxiosResponse<ApiResponse<any>>> =>
+    api.get('/progress/queue/stats'),
+  // SSE subscription - returns EventSource
+  subscribe: (fileId: string): EventSource => {
+    const url = `${API_URL}/api/progress/${fileId}`;
+    return new EventSource(url);
+  },
 };
 
 export const configAPI = {
@@ -238,6 +294,104 @@ export const dealImportAPI = {
     jobId: string
   ): Promise<AxiosResponse<ApiResponse<DealImportJobStatus>>> =>
     api.get(`/vendors/${vendorId}/deals/import/${jobId}/status`),
+};
+
+// Vendor Spreadsheet API
+export interface VendorSpreadsheetDeal {
+  opportunity: string;
+  stage: string;
+  nextSteps: string;
+  lastUpdate: string | null;
+  yearlyUnitOpportunity: string;
+  costUpside: string;
+  parsedDealValue: number | null;
+  parsedCurrency: string;
+  rowNumber: number;
+}
+
+export interface VendorMatch {
+  id: string;
+  name: string;
+  matchType: 'exact' | 'similar';
+}
+
+export interface SpreadsheetPreviewResponse {
+  extractedVendorName: string | null;
+  matchingVendors: VendorMatch[];
+  preview: {
+    totalRows: number;
+    successCount: number;
+    errorCount: number;
+    deals: VendorSpreadsheetDeal[];
+    errors: string[];
+    warnings: string[];
+  };
+}
+
+export interface SpreadsheetImportResponse {
+  vendorId: string;
+  vendorName: string;
+  filename: string;
+  totalDeals: number;
+  imported: number;
+  skipped: number;
+  errors: string[];
+}
+
+export const vendorSpreadsheetAPI = {
+  extractVendor: (
+    filename: string
+  ): Promise<AxiosResponse<ApiResponse<{
+    extractedVendorName: string | null;
+    matchingVendors: VendorMatch[];
+    canCreateNew: boolean;
+  }>>> =>
+    api.post('/vendors/0/deals/spreadsheet/extract-vendor', { filename }),
+
+  preview: (
+    file: File,
+    onUploadProgress?: (progressEvent: AxiosProgressEvent) => void
+  ): Promise<AxiosResponse<ApiResponse<SpreadsheetPreviewResponse>>> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post('/vendors/0/deals/spreadsheet/preview', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress,
+    });
+  },
+
+  import: (
+    file: File,
+    options: {
+      vendorId?: string;
+      vendorName?: string;
+      createNewVendor?: boolean;
+    },
+    onUploadProgress?: (progressEvent: AxiosProgressEvent) => void
+  ): Promise<AxiosResponse<ApiResponse<SpreadsheetImportResponse>>> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (options.vendorId) formData.append('vendorId', options.vendorId);
+    if (options.vendorName) formData.append('vendorName', options.vendorName);
+    if (options.createNewVendor) formData.append('createNewVendor', 'true');
+    return api.post('/vendors/0/deals/spreadsheet/import', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress,
+    });
+  },
+
+  exportSpreadsheet: (vendorId: string): Promise<AxiosResponse<Blob>> =>
+    api.get(`/vendors/${vendorId}/deals/export-spreadsheet`, {
+      responseType: 'blob',
+    }),
+
+  exportSelectedDeals: (
+    vendorId: string,
+    dealIds: string[]
+  ): Promise<AxiosResponse<Blob>> =>
+    api.post(`/vendors/${vendorId}/deals/export-spreadsheet`, { dealIds }, {
+      responseType: 'blob',
+    }),
 };
 
 // Agreement API

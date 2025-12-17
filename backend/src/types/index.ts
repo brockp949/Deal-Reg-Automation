@@ -104,6 +104,9 @@ export interface SourceFile {
   uploaded_by?: string;
   upload_metadata?: Record<string, any>;
   duplicate_of_id?: string;
+  upload_intent?: string;
+  detected_intent?: string;
+  parser_used?: string;
 }
 
 export type FileType = 'mbox' | 'transcript' | 'vtiger_csv' | 'csv' | 'pdf' | 'docx' | 'txt' | 'json';

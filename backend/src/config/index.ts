@@ -20,10 +20,20 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(32),
   JWT_EXPIRES_IN: z.string().default('7d'),
 
+  // Rate Limiting
+  RATE_LIMIT_API_WINDOW_MS: z.string().default((1 * 60 * 1000).toString()), // 1 minute
+  RATE_LIMIT_API_MAX: z.string().default('100'),
+  RATE_LIMIT_MUTATION_WINDOW_MS: z.string().default((1 * 60 * 1000).toString()), // 1 minute
+  RATE_LIMIT_MUTATION_MAX: z.string().default('30'),
+  RATE_LIMIT_UPLOAD_WINDOW_MS: z.string().default((15 * 60 * 1000).toString()), // 15 minutes
+  RATE_LIMIT_UPLOAD_MAX: z.string().default('100'),
+  RATE_LIMIT_BATCH_UPLOAD_WINDOW_MS: z.string().default((15 * 60 * 1000).toString()), // 15 minutes
+  RATE_LIMIT_BATCH_UPLOAD_MAX: z.string().default('50'),
+
   // File Upload
   UPLOAD_DIR: z.string().default('./uploads'),
   MAX_FILE_SIZE: z.string().default('5368709120'), // 5GB (5368709120 bytes)
-  ALLOWED_FILE_TYPES: z.string().default('.mbox,.csv,.txt,.pdf,.docx,.json'),
+  ALLOWED_FILE_TYPES: z.string().default('.mbox,.csv,.txt,.pdf,.docx,.json,.png,.jpg,.jpeg,.gif'),
   CONFIG_STORAGE_DIR: z.string().default('./config-uploads'),
   VIRUS_SCAN_PROVIDER: z.enum(['stub', 'clamd']).default('stub'),
   CLAMAV_HOST: z.string().default('127.0.0.1'),
@@ -128,6 +138,25 @@ export const config = {
   jwt: {
     secret: env.JWT_SECRET,
     expiresIn: env.JWT_EXPIRES_IN,
+  },
+
+  rateLimit: {
+    api: {
+      windowMs: parseInt(env.RATE_LIMIT_API_WINDOW_MS, 10),
+      max: parseInt(env.RATE_LIMIT_API_MAX, 10),
+    },
+    mutation: {
+      windowMs: parseInt(env.RATE_LIMIT_MUTATION_WINDOW_MS, 10),
+      max: parseInt(env.RATE_LIMIT_MUTATION_MAX, 10),
+    },
+    upload: {
+      windowMs: parseInt(env.RATE_LIMIT_UPLOAD_WINDOW_MS, 10),
+      max: parseInt(env.RATE_LIMIT_UPLOAD_MAX, 10),
+    },
+    batchUpload: {
+      windowMs: parseInt(env.RATE_LIMIT_BATCH_UPLOAD_WINDOW_MS, 10),
+      max: parseInt(env.RATE_LIMIT_BATCH_UPLOAD_MAX, 10),
+    },
   },
 
   upload: {

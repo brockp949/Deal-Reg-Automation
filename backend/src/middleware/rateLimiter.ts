@@ -1,88 +1,93 @@
-import { Request, Response, NextFunction } from 'express';
+import { Request } from 'express';
+import rateLimit from 'express-rate-limit';
+import { RedisStore } from 'rate-limit-redis';
+import { createClient } from 'redis';
+import { config } from '../config';
 import logger from '../utils/logger';
 
-type RateLimiterOptions = {
-  windowMs: number;
-  max: number;
-  keyGenerator?: (req: Request) => string;
-  message?: string;
-};
-
-type Counter = {
-  count: number;
-  resetAt: number;
-};
-
-const buckets = new Map<string, Counter>();
-
-// Legacy rate limiter (keep for backwards compatibility)
-export function createRateLimiter(options: RateLimiterOptions) {
-  const windowMs = options.windowMs;
-  const max = options.max;
-  const keyGenerator = options.keyGenerator || ((req: Request) => req.ip || 'global');
-  const message = options.message || 'Too many requests, please try again later.';
-
-  return function rateLimiter(req: Request, res: Response, next: NextFunction) {
-    const key = keyGenerator(req);
-    const now = Date.now();
-    const current = buckets.get(key);
-
-    if (!current || current.resetAt <= now) {
-      buckets.set(key, { count: 1, resetAt: now + windowMs });
-      return next();
-    }
-
-    if (current.count >= max) {
-      const retryAfterSeconds = Math.ceil((current.resetAt - now) / 1000);
-      res.setHeader('Retry-After', retryAfterSeconds.toString());
-      return res.status(429).json({
-        success: false,
-        error: message,
-        retryAfterSeconds,
-      });
-    }
-
-    current.count += 1;
-    return next();
-  };
-}
-
-/**
- * Rate limiter for file upload endpoints
- * Limits: 10 uploads per 15 minutes per IP
- */
-export const uploadLimiter = createRateLimiter({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10,
-  message: 'Too many file uploads. Please try again in 15 minutes.',
+// Create a Redis client
+const redisClient = createClient({
+  url: config.redisUrl,
 });
+
+redisClient.on('error', (err) => {
+  logger.error('Redis Client Error for rate limiter', err);
+});
+
+// Connect the client
+redisClient.connect().catch(logger.error);
+
+// Initialize a Redis store using the connected client
+const store = new RedisStore({
+  // @ts-expect-error - Known issue with rate-limit-redis and redis v4 types
+  sendCommand: (...args: string[]) => redisClient.sendCommand(args),
+});
+
+// Use API Key for rate limiting, falling back to IP address
+const getApiKey = (req: Request): string => (req as any).apiKey?.key || req.ip;
 
 /**
  * Rate limiter for general API endpoints
- * Limits: 100 requests per minute per IP
  */
-export const apiLimiter = rateLimiterWithSkip({
-  windowMs: 1 * 60 * 1000,
-  max: 100,
-  message: 'Too many requests. Please try again in a minute.',
+export const apiLimiter = rateLimit({
+  store,
+  windowMs: config.rateLimit.api.windowMs,
+  max: config.rateLimit.api.max,
+  message: {
+    success: false,
+    error: 'Too many requests. Please try again in a minute.',
+  },
+  keyGenerator: getApiKey,
   skip: (req) => req.path === '/health' || req.path === '/api/health',
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 
 /**
- * Rate limiter for mutation endpoints
- * Limits: 30 mutations per minute per IP
+ * Rate limiter for mutation endpoints (POST, PUT, PATCH, DELETE)
  */
-export const mutationLimiter = rateLimiterWithSkip({
-  windowMs: 1 * 60 * 1000,
-  max: 30,
-  message: 'Too many write operations. Please try again in a minute.',
+export const mutationLimiter = rateLimit({
+  store,
+  windowMs: config.rateLimit.mutation.windowMs,
+  max: config.rateLimit.mutation.max,
+  message: {
+    success: false,
+    error: 'Too many write operations. Please try again in a minute.',
+  },
+  keyGenerator: getApiKey,
   skip: (req) => !['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method),
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 
-function rateLimiterWithSkip(options: RateLimiterOptions & { skip?: (req: Request) => boolean }) {
-  const limiter = createRateLimiter(options);
-  return (req: Request, res: Response, next: NextFunction) => {
-    if (options.skip && options.skip(req)) return next();
-    return limiter(req, res, next);
-  };
-}
+/**
+ * Rate limiter for file upload endpoints
+ */
+export const uploadLimiter = rateLimit({
+  store,
+  windowMs: config.rateLimit.upload.windowMs,
+  max: config.rateLimit.upload.max,
+  message: {
+    success: false,
+    error: 'Too many file uploads. Please try again in 15 minutes.',
+  },
+  keyGenerator: getApiKey,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+/**
+ * Rate limiter for batch file upload endpoints
+ */
+export const batchUploadLimiter = rateLimit({
+  store,
+  windowMs: config.rateLimit.batchUpload.windowMs,
+  max: config.rateLimit.batchUpload.max,
+  message: {
+    success: false,
+    error: 'Batch upload rate limit exceeded. Please try again later.',
+  },
+  keyGenerator: getApiKey,
+  standardHeaders: true,
+  legacyHeaders: false,
+});

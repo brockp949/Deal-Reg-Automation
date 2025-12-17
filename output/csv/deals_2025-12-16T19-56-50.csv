@@ -1,0 +1,10 @@
+Deal Name,Customer Name,Deal Value,Status,Confidence,Source File,Source Location
+Acme Corporation,,,,30.0%,manual_2024-12-16_test-deals.txt,manual_2024-12-16_test-deals.txt:106
+Acme Corporation,Acme Corporation,150000,"Qualified
+Expected",100.0%,manual_2024-12-16_test-deals.txt,manual_2024-12-16_test-deals.txt:129
+Beta Technologies Inc,,,,30.0%,manual_2024-12-16_test-deals.txt,manual_2024-12-16_test-deals.txt:407
+Beta Tech,Beta Tech,75000,"Discovery
+Expected",100.0%,manual_2024-12-16_test-deals.txt,manual_2024-12-16_test-deals.txt:435
+Gamma Solutions LLC,,,,30.0%,manual_2024-12-16_test-deals.txt,manual_2024-12-16_test-deals.txt:677
+structure,Gamma Solutions,250000,"Negotiation
+Close",100.0%,manual_2024-12-16_test-deals.txt,manual_2024-12-16_test-deals.txt:703

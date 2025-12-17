@@ -1,3 +1,9 @@
+/**
+ * @deprecated This component is deprecated and will be removed in a future version.
+ * Use the UnifiedImportWizard component instead, which provides a unified file import
+ * experience with intent-based routing and real-time progress tracking via SSE.
+ */
+
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
