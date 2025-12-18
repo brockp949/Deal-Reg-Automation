@@ -103,7 +103,7 @@ export function useFeedback(): UseFeedbackReturn {
 
       try {
         const response = await api.post<{
-          data: { successful: number; failed: number; results: Array<{ success: boolean }> };
+          successful: number; failed: number; results: Array<{ success: boolean }>;
         }>('/feedback/batch', { feedbacks });
 
         return {
@@ -127,7 +127,7 @@ export function useFeedback(): UseFeedbackReturn {
    */
   const getInsights = useCallback(async (): Promise<LearningInsight[]> => {
     try {
-      const response = await api.get<{ data: { insights: LearningInsight[] } }>('/feedback/insights');
+      const response = await api.get<{ insights: LearningInsight[] }>('/feedback/insights');
       return response.data.insights;
     } catch (err: any) {
       const errorMessage = err.response?.data?.message || err.message || 'Failed to get insights';

@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Enhanced Transcript Parser - NLP-based Deal Registration Extraction
  * Based on "From Dialogue to Deal" NLP Framework

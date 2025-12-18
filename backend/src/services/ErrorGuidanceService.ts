@@ -7,10 +7,8 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
-import { getLogger } from '../utils/logger';
+import logger from '../utils/logger';
 import config from '../config';
-
-const logger = getLogger('error-guidance-service');
 
 // Singleton instance
 let instance: ErrorGuidanceService | null = null;
@@ -48,15 +46,15 @@ export interface ActionableError {
 }
 
 export class ErrorGuidanceService {
-  private anthropic: Anthropic;
+  private anthropic?: Anthropic;
   private enabled: boolean;
 
   constructor() {
-    this.enabled = config.claude?.apiKey ? true : false;
+    this.enabled = config.anthropicApiKey ? true : false;
 
     if (this.enabled) {
       this.anthropic = new Anthropic({
-        apiKey: config.claude!.apiKey,
+        apiKey: config.anthropicApiKey!,
       });
       logger.info('ErrorGuidanceService initialized with AI support');
     } else {
@@ -75,7 +73,7 @@ export class ErrorGuidanceService {
     try {
       const prompt = this.buildErrorAnalysisPrompt(error);
 
-      const response = await this.anthropic.messages.create({
+      const response = await this.anthropic!.messages.create({
         model: 'claude-3-5-sonnet-20241022',
         max_tokens: 2000,
         temperature: 0.3, // Lower temperature for more consistent, factual responses

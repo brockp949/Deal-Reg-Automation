@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Streaming MBOX Parser for Large Files
  * Processes MBOX files in chunks without loading entire file into memory

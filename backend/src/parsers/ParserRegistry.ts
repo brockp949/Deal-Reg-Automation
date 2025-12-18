@@ -23,6 +23,10 @@ export interface FileMetadata {
   fileType: string;  // csv, xlsx, mbox, txt, pdf, docx
   filePath: string;
   fileSize?: number;
+  // Aliases for compatibility
+  name?: string;
+  size?: number;
+  type?: string;
 }
 
 // Unified parse result structure
@@ -90,6 +94,7 @@ export interface ParseOptions {
   skipDuplicates?: boolean;
   confidenceThreshold?: number;
   onProgress?: (progress: number, message: string) => void;
+  preview?: boolean;          // For validation preview mode
 }
 
 // Parser strategy interface
@@ -445,7 +450,7 @@ class TranscriptParserStrategy implements ParserStrategy {
 
     // Use enhanced NLP parser
     const result = await parseEnhancedTranscript(
-      file.fileType === 'txt' || file.fileType === 'transcript' ? file.filePath : file.filePath + '.txt',
+      file.filePath,
       {
         buyingSignalThreshold: 0.5,
         confidenceThreshold: options.confidenceThreshold || 0.6,

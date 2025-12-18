@@ -105,7 +105,7 @@ export function useUnifiedImport() {
         );
       }
     },
-    onComplete: (uploadId, jobId) => {
+    onComplete: (_uploadId, jobId) => {
       const fileId = currentChunkedFileIdRef.current;
       if (fileId) {
         setFiles((prev) =>

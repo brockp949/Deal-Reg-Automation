@@ -116,7 +116,7 @@ export function useFileValidation(): UseFileValidationReturn {
         const sampleContent = await readFileSample(file);
 
         // Call validation API
-        const response = await api.post<{ data: ValidationResult }>('/files/validate', {
+        const response = await api.post<ValidationResult>('/files/validate', {
           file: {
             name: file.name,
             type: file.type,

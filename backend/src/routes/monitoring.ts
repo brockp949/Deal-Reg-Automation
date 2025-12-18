@@ -9,13 +9,12 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { pool } from '../db';
+import pool from '../db';
 import Redis from 'ioredis';
 import config from '../config';
-import { getLogger } from '../utils/logger';
+import logger from '../utils/logger';
 
 const router = Router();
-const logger = getLogger('monitoring-routes');
 
 // Redis client for upload metadata
 const redis = new Redis(config.redisUrl, {
@@ -292,7 +291,7 @@ async function getRecentUploads(limit: number) {
 
   const result = await pool.query(query, [limit]);
 
-  return result.rows.map((row) => {
+  return result.rows.map((row: any) => {
     const metadata = row.metadata || {};
     const uploadTimeMs = parseFloat(metadata.uploadTimeMs) || 0;
     const processingTimeMs = parseFloat(metadata.processingTimeMs) || 0;

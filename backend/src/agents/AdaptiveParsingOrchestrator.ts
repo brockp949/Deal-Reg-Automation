@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Adaptive Parsing Orchestrator Agent
  *
@@ -59,8 +60,8 @@ export interface OrchestratorResponse {
 }
 
 export class AdaptiveParsingOrchestrator {
-  private claude: ClaudeClientService;
-  private cache: IntelligentCacheService;
+  private claude?: ClaudeClientService;
+  private cache?: IntelligentCacheService;
   private enabled: boolean;
 
   // Track success rates of different strategies

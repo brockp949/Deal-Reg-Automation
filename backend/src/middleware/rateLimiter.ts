@@ -19,7 +19,6 @@ redisClient.connect().catch(logger.error);
 
 // Initialize a Redis store using the connected client
 const store = new RedisStore({
-  // @ts-expect-error - Known issue with rate-limit-redis and redis v4 types
   sendCommand: (...args: string[]) => redisClient.sendCommand(args),
 });
 
@@ -91,3 +90,25 @@ export const batchUploadLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+/**
+ * Factory function to create custom rate limiters
+ */
+export function createRateLimiter(options: {
+  windowMs: number;
+  max: number;
+  message?: string;
+}) {
+  return rateLimit({
+    store,
+    windowMs: options.windowMs,
+    max: options.max,
+    message: {
+      success: false,
+      error: options.message || 'Rate limit exceeded. Please try again later.',
+    },
+    keyGenerator: getApiKey,
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+}

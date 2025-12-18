@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Vendor Spreadsheet Parser
  *

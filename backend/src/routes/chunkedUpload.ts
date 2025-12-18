@@ -439,12 +439,13 @@ router.post('/complete', async (req: Request, res: Response) => {
     }
 
     // Queue file for processing
-    const jobId = await unifiedProcessingQueue.addJob({
+    const job = await unifiedProcessingQueue.add({
       filePath: finalFilePath,
       fileName: metadata.fileName,
       intent: metadata.intent,
       source: 'chunked_upload',
     });
+    const jobId = job.id;
 
     // Cleanup metadata from Redis
     await deleteUploadMetadata(uploadId);

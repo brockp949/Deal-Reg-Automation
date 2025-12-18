@@ -122,8 +122,8 @@ export class ClaudeClientService {
           usage: {
             inputTokens: response.usage.input_tokens,
             outputTokens: response.usage.output_tokens,
-            cacheCreationInputTokens: response.usage.cache_creation_input_tokens,
-            cacheReadInputTokens: response.usage.cache_read_input_tokens,
+            cacheCreationInputTokens: (response.usage as any).cache_creation_input_tokens,
+            cacheReadInputTokens: (response.usage as any).cache_read_input_tokens,
           },
         };
       } catch (error: any) {
@@ -184,7 +184,7 @@ export class ClaudeClientService {
         temperature,
         system: options.systemPrompt,
         messages: [{ role: 'user', content: prompt }],
-        tools: [tool],
+        tools: [tool as any],
         tool_choice: { type: 'tool', name: tool.name },
       });
 

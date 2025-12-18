@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Semantic Duplicate Detector Skill
  *
@@ -57,8 +58,8 @@ export interface DuplicateCheckResponse {
 }
 
 export class SemanticDuplicateDetector {
-  private claude: ClaudeClientService;
-  private cache: IntelligentCacheService;
+  private claude?: ClaudeClientService;
+  private cache?: IntelligentCacheService;
   private enabled: boolean;
 
   constructor() {

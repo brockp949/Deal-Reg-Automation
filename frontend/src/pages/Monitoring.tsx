@@ -7,7 +7,7 @@
  * - Recent upload history
  */
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -62,7 +62,7 @@ interface MonitoringMetrics {
 }
 
 export default function Monitoring() {
-  const [timeRange, setTimeRange] = useState('24h');
+  const [timeRange, _setTimeRange] = useState('24h');
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['monitoring-metrics', timeRange],

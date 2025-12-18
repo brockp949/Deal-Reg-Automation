@@ -29,6 +29,8 @@ const envSchema = z.object({
   RATE_LIMIT_UPLOAD_MAX: z.string().default('100'),
   RATE_LIMIT_BATCH_UPLOAD_WINDOW_MS: z.string().default((15 * 60 * 1000).toString()), // 15 minutes
   RATE_LIMIT_BATCH_UPLOAD_MAX: z.string().default('50'),
+  RATE_LIMIT_AI_WINDOW_MS: z.string().default((1 * 60 * 1000).toString()), // 1 minute
+  RATE_LIMIT_AI_MAX: z.string().default('20'),
 
   // File Upload
   UPLOAD_DIR: z.string().default('./uploads'),
@@ -101,6 +103,10 @@ const envSchema = z.object({
 
   // Ingestion
   USE_FILE_PROCESSOR_V2: z.string().default('false'),
+
+  // Performance
+  PARALLEL_CHUNK_SIZE: z.string().default('1000'),
+  MAX_CONCURRENT_CHUNKS: z.string().default('5'),
 });
 
 // Parse and validate environment variables
@@ -164,6 +170,7 @@ export const config = {
     maxFileSize: parseInt(env.MAX_FILE_SIZE, 10),
     allowedTypes: env.ALLOWED_FILE_TYPES.split(','),
   },
+  uploadPath: env.UPLOAD_DIR,
   configStorage: {
     directory: env.CONFIG_STORAGE_DIR,
   },
@@ -265,6 +272,12 @@ export const config = {
   performance: {
     parallelChunkSize: parseInt(env.PARALLEL_CHUNK_SIZE || '1000', 10),
     maxConcurrentChunks: parseInt(env.MAX_CONCURRENT_CHUNKS || '5', 10),
+  },
+
+  // Feature flags
+  featureFlags: {
+    semanticEntityExtraction: false,
+    buyingSignalAnalyzer: false,
   },
 };
 

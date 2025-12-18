@@ -721,8 +721,8 @@ unifiedProcessingQueue.process(async (job) => {
         message: error.message,
         code: error.code,
         context: {
-          fileName: fileMetadata.filename,
-          fileType: fileMetadata.mime_type,
+          fileName: job.data.fileId || 'unknown',
+          fileType: intent || 'unknown',
           stage: result.errors.length > 0 ? 'parsing' : 'processing',
         },
       });

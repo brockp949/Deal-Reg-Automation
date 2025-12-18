@@ -112,7 +112,7 @@ export default function UnifiedImportWizard() {
     clearAll,
     retryFile,
     chunkedUploadProgress,
-    isChunkedUploading,
+    isChunkedUploading: _isChunkedUploading,
     cancelChunkedUpload,
   } = useUnifiedImport();
 

@@ -12,12 +12,11 @@ import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs/promises';
-import { getLogger } from '../utils/logger';
+import logger from '../utils/logger';
 import { getParserRegistry, type FileIntent } from '../parsers/ParserRegistry';
 import { getErrorGuidanceService } from '../services/ErrorGuidanceService';
 
 const router = Router();
-const logger = getLogger('validation-routes');
 
 // Configure multer for temporary file uploads
 const upload = multer({
@@ -115,7 +114,7 @@ router.post('/preview', upload.single('file'), async (req: Request, res: Respons
     };
 
     // Parse first portion of file for preview
-    const parseResult = await registry.parseFile(fileMetadata, { intent, preview: true });
+    const parseResult = await registry.parse(fileMetadata as any, intent as any, { preview: true });
 
     // Analyze structure and extract insights
     const validation = await analyzeFileStructure(

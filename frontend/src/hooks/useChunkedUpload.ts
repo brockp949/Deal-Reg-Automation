@@ -105,7 +105,7 @@ export function useChunkedUpload(options: ChunkedUploadOptions = {}): UseChunked
     async (file: File, intent?: string): Promise<string> => {
       const chunks = createChunks(file);
 
-      const response = await api.post<{ data: { uploadId: string } }>(
+      const response = await api.post<{ uploadId: string }>(
         '/files/upload/chunked/init',
         {
           fileName: file.name,
@@ -235,7 +235,7 @@ export function useChunkedUpload(options: ChunkedUploadOptions = {}): UseChunked
    * Complete upload
    */
   const completeUpload = useCallback(async (uploadId: string): Promise<string> => {
-    const response = await api.post<{ data: { jobId: string } }>(
+    const response = await api.post<{ jobId: string }>(
       '/files/upload/chunked/complete',
       { uploadId }
     );
@@ -320,11 +320,9 @@ export function useChunkedUpload(options: ChunkedUploadOptions = {}): UseChunked
       try {
         // Get upload status
         const statusResponse = await api.get<{
-          data: {
-            uploadedChunks: number;
-            totalChunks: number;
-            missingChunks: number[];
-          };
+          uploadedChunks: number;
+          totalChunks: number;
+          missingChunks: number[];
         }>(`/files/upload/chunked/status/${uploadId}`);
 
         const { missingChunks } = statusResponse.data;
@@ -343,7 +341,7 @@ export function useChunkedUpload(options: ChunkedUploadOptions = {}): UseChunked
 
         // Upload missing chunks
         const chunks = createChunks(file);
-        const missingChunkBlobs = missingChunks.map(idx => chunks[idx]);
+        const missingChunkBlobs = missingChunks.map((idx: number) => chunks[idx]);
 
         await uploadChunks(uploadId, missingChunkBlobs);
 
