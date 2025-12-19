@@ -25,6 +25,12 @@ router.get('/:fileId', async (req: Request, res: Response) => {
   }
 
   const file = fileResult.rows[0];
+  const initialProgress =
+    typeof file.metadata?.progress === 'number'
+      ? file.metadata?.progress
+      : parseInt(file.metadata?.progress, 10) || 0;
+  let lastProgress = initialProgress;
+  let lastStatus = file.processing_status;
 
   // Set SSE headers
   res.setHeader('Content-Type', 'text/event-stream');
@@ -43,6 +49,7 @@ router.get('/:fileId', async (req: Request, res: Response) => {
     fileId,
     filename: file.filename,
     status: file.processing_status,
+    progress: lastProgress,
   });
 
   // If already completed or failed, send final status and close
@@ -58,31 +65,105 @@ router.get('/:fileId', async (req: Request, res: Response) => {
     return;
   }
 
-  // Subscribe to progress events
-  const unsubscribe = subscribeToProgress(fileId, (event) => {
+  let pollInterval: ReturnType<typeof setInterval> | null = null;
+  let heartbeat: ReturnType<typeof setInterval> | null = null;
+  let unsubscribe: (() => void) | null = null;
+
+  const cleanup = () => {
+    if (pollInterval) {
+      clearInterval(pollInterval);
+      pollInterval = null;
+    }
+    if (heartbeat) {
+      clearInterval(heartbeat);
+      heartbeat = null;
+    }
+    if (unsubscribe) {
+      unsubscribe();
+      unsubscribe = null;
+    }
+  };
+
+  const sendSnapshotIfChanged = async () => {
+    const snapshot = await query(
+      'SELECT processing_status, metadata, error_message FROM source_files WHERE id = $1',
+      [fileId]
+    );
+    if (snapshot.rows.length === 0) {
+      return;
+    }
+
+    const row = snapshot.rows[0];
+    const progress =
+      typeof row.metadata?.progress === 'number'
+        ? row.metadata?.progress
+        : parseInt(row.metadata?.progress, 10) || 0;
+    const status = row.processing_status as string;
+    const error = row.error_message as string | null;
+
+    if (progress !== lastProgress || status !== lastStatus) {
+      lastProgress = progress;
+      lastStatus = status;
+      sendEvent('progress', {
+        fileId,
+        progress,
+        stage: status,
+        status,
+        message: status === 'completed'
+          ? 'Processing completed'
+          : status === 'failed' || status === 'blocked'
+            ? 'Processing failed'
+            : 'Processing...',
+        result: row.metadata?.result,
+        error,
+      });
+    }
+
+    if (status === 'completed' || status === 'failed' || status === 'blocked') {
+      sendEvent('complete', {
+        fileId,
+        status,
+        result: row.metadata?.result,
+        error,
+      });
+      cleanup();
+      res.end();
+    }
+  };
+
+  // Subscribe to progress events (local process only)
+  unsubscribe = subscribeToProgress(fileId, (event) => {
     sendEvent('progress', event);
 
-    // Close connection when complete or failed
     if (event.stage === 'completed' || event.stage === 'failed') {
+      cleanup();
       setTimeout(() => {
         res.end();
       }, 100);
     }
   });
 
-  // Handle client disconnect
-  req.on('close', () => {
-    unsubscribe();
-    logger.debug('SSE client disconnected', { fileId });
-  });
+  // Poll the database for progress updates from workers
+  pollInterval = setInterval(() => {
+    sendSnapshotIfChanged().catch((error) =>
+      logger.warn('Failed to poll progress snapshot', { fileId, error: error.message })
+    );
+  }, 2000);
+
+  // Send an immediate snapshot after connection
+  sendSnapshotIfChanged().catch((error) =>
+    logger.warn('Failed to send initial progress snapshot', { fileId, error: error.message })
+  );
 
   // Keep connection alive with heartbeat
-  const heartbeat = setInterval(() => {
+  heartbeat = setInterval(() => {
     res.write(':heartbeat\n\n');
   }, 30000);
 
+  // Handle client disconnect
   req.on('close', () => {
-    clearInterval(heartbeat);
+    cleanup();
+    logger.debug('SSE client disconnected', { fileId });
   });
 
   logger.info('SSE progress connection established', { fileId });
@@ -113,6 +194,11 @@ router.get('/:fileId/status', async (req: Request, res: Response) => {
     // Get job status from queue
     const jobStatus = await findJobByFileId(fileId);
 
+    const progress =
+      typeof file.metadata?.progress === 'number'
+        ? file.metadata?.progress
+        : parseInt(file.metadata?.progress, 10) || 0;
+
     res.json({
       success: true,
       data: {
@@ -123,7 +209,7 @@ router.get('/:fileId/status', async (req: Request, res: Response) => {
         intent: file.upload_intent,
         detectedIntent: file.detected_intent,
         parserUsed: file.parser_used,
-        progress: file.metadata?.progress || 0,
+        progress,
         result: file.metadata?.result,
         error: file.error_message,
         startedAt: file.processing_started_at,

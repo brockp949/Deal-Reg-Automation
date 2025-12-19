@@ -554,8 +554,9 @@ async function processTranscriptFile(filePath: string) {
 
   // Use enhanced 5-stage NLP parser
   const { deal, turns, isRegisterable, buyingSignalScore } = await parseEnhancedTranscript(filePath, {
-    buyingSignalThreshold: 0.5,
+    buyingSignalThreshold: 0.35,
     confidenceThreshold: 0.6,
+    allowLowSignal: true,
   });
 
   logger.info('Enhanced transcript parsing complete', {
@@ -565,11 +566,9 @@ async function processTranscriptFile(filePath: string) {
     turnCount: turns.length,
   });
 
-  // If deal is not registerable, return empty data
-  if (!deal || !isRegisterable) {
-    logger.warn('Transcript does not contain registerable deal', {
+  if (!deal) {
+    logger.warn('Transcript did not yield a deal', {
       buyingSignalScore: buyingSignalScore.toFixed(2),
-      reason: buyingSignalScore < 0.5 ? 'Low buying signal score' : 'Failed confidence threshold',
     });
 
     return {
@@ -577,6 +576,12 @@ async function processTranscriptFile(filePath: string) {
       deals: [],
       contacts: [],
     };
+  }
+
+  if (!isRegisterable) {
+    logger.warn('Transcript below buying signal threshold; continuing extraction', {
+      buyingSignalScore: buyingSignalScore.toFixed(2),
+    });
   }
 
   // Map enhanced deal data to file processor format

@@ -25,6 +25,18 @@ const store = new RedisStore({
 // Use API Key for rate limiting, falling back to IP address
 const getApiKey = (req: Request): string => (req as any).apiKey?.key || req.ip;
 
+const getRequestPath = (req: Request): string => {
+  if (req.originalUrl) {
+    return req.originalUrl;
+  }
+  return `${req.baseUrl || ''}${req.path || ''}`;
+};
+
+const isChunkedUploadPath = (req: Request): boolean => {
+  const path = getRequestPath(req);
+  return path.includes('/files/upload/chunked');
+};
+
 /**
  * Rate limiter for general API endpoints
  */
@@ -37,7 +49,7 @@ export const apiLimiter = rateLimit({
     error: 'Too many requests. Please try again in a minute.',
   },
   keyGenerator: getApiKey,
-  skip: (req) => req.path === '/health' || req.path === '/api/health',
+  skip: (req) => isChunkedUploadPath(req) || req.path === '/health' || req.path === '/api/health',
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -54,7 +66,7 @@ export const mutationLimiter = rateLimit({
     error: 'Too many write operations. Please try again in a minute.',
   },
   keyGenerator: getApiKey,
-  skip: (req) => !['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method),
+  skip: (req) => isChunkedUploadPath(req) || !['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method),
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -71,6 +83,7 @@ export const uploadLimiter = rateLimit({
     error: 'Too many file uploads. Please try again in 15 minutes.',
   },
   keyGenerator: getApiKey,
+  skip: (req) => isChunkedUploadPath(req),
   standardHeaders: true,
   legacyHeaders: false,
 });

@@ -3,8 +3,59 @@ import { query } from '../db';
 import { DealRegistration, CreateDealInput, UpdateDealInput, ApiResponse, PaginatedResponse } from '../types';
 import logger from '../utils/logger';
 import { dealValidations } from '../middleware/validation';
+import { getLearningAgent } from '../agents/ContinuousLearningAgent';
 
 const router = Router();
+
+function normalizeFeedbackValue(value: any): string {
+  if (value === null || value === undefined) return '';
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+
+function buildDealFeedbackSnapshot(deal: any): Record<string, any> {
+  const fields = [
+    'deal_name',
+    'deal_value',
+    'currency',
+    'customer_name',
+    'customer_industry',
+    'registration_date',
+    'expected_close_date',
+    'status',
+    'deal_stage',
+    'probability',
+    'notes',
+  ];
+
+  return fields.reduce<Record<string, any>>((snapshot, field) => {
+    snapshot[field] = deal?.[field] ?? null;
+    return snapshot;
+  }, {});
+}
+
+function getDealSourceInfo(deal: any): { fileId: string | null; fileName?: string } {
+  const directId = deal?.source_file_id;
+  let metadata: any = deal?.metadata;
+
+  if (metadata && typeof metadata === 'string') {
+    try {
+      metadata = JSON.parse(metadata);
+    } catch {
+      metadata = null;
+    }
+  }
+
+  const metadataId = metadata?.source_file_id || metadata?.sourceFileId;
+  const arrayId = Array.isArray(deal?.source_file_ids) && deal.source_file_ids.length > 0
+    ? deal.source_file_ids[0]
+    : null;
+  const fileId = directId || metadataId || arrayId || null;
+  const fileName = metadata?.source_filename || metadata?.sourceFilename;
+
+  return { fileId, fileName };
+}
 
 /**
  * GET /api/deals
@@ -254,6 +305,36 @@ router.put('/:id', dealValidations.update, async (req: Request, res: Response) =
       params
     );
 
+    try {
+      const beforeSnapshot = buildDealFeedbackSnapshot(existingResult.rows[0]);
+      const afterSnapshot = buildDealFeedbackSnapshot(result.rows[0]);
+      const hasChanges = Object.keys(afterSnapshot).some(
+        (key) => normalizeFeedbackValue(beforeSnapshot[key]) !== normalizeFeedbackValue(afterSnapshot[key])
+      );
+      const { fileId, fileName } = getDealSourceInfo(existingResult.rows[0]);
+
+      if (hasChanges && fileId) {
+        const learningAgent = getLearningAgent();
+        await learningAgent.recordFeedback({
+          type: 'correction',
+          entity: {
+            type: 'deal',
+            extracted: beforeSnapshot,
+            corrected: afterSnapshot,
+          },
+          fileId,
+          fileName,
+          userId: req.header('x-user-id') || req.header('x-operator-id') || 'anonymous',
+          timestamp: new Date(),
+          metadata: { dealId: id },
+        });
+      } else if (hasChanges) {
+        logger.debug('Skipped deal feedback recording (no source file)', { dealId: id });
+      }
+    } catch (error: any) {
+      logger.warn('Failed to record deal correction feedback', { dealId: id, error: error.message });
+    }
+
     const response: ApiResponse<DealRegistration> = {
       success: true,
       data: result.rows[0],
@@ -278,6 +359,15 @@ router.delete('/:id', dealValidations.delete, async (req: Request, res: Response
   try {
     const { id } = req.params;
 
+    const existingResult = await query('SELECT * FROM deal_registrations WHERE id = $1', [id]);
+
+    if (existingResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Deal not found',
+      });
+    }
+
     const result = await query('DELETE FROM deal_registrations WHERE id = $1 RETURNING id', [id]);
 
     if (result.rows.length === 0) {
@@ -285,6 +375,31 @@ router.delete('/:id', dealValidations.delete, async (req: Request, res: Response
         success: false,
         error: 'Deal not found',
       });
+    }
+
+    try {
+      const dealSnapshot = buildDealFeedbackSnapshot(existingResult.rows[0]);
+      const { fileId, fileName } = getDealSourceInfo(existingResult.rows[0]);
+
+      if (fileId) {
+        const learningAgent = getLearningAgent();
+        await learningAgent.recordFeedback({
+          type: 'rejection',
+          entity: {
+            type: 'deal',
+            extracted: dealSnapshot,
+          },
+          fileId,
+          fileName,
+          userId: req.header('x-user-id') || req.header('x-operator-id') || 'anonymous',
+          timestamp: new Date(),
+          metadata: { dealId: id },
+        });
+      } else {
+        logger.debug('Skipped deal rejection feedback recording (no source file)', { dealId: id });
+      }
+    } catch (error: any) {
+      logger.warn('Failed to record deal rejection feedback', { dealId: id, error: error.message });
     }
 
     res.json({

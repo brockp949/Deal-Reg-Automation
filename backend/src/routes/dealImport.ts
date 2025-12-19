@@ -487,7 +487,7 @@ router.post('/spreadsheet/import', upload.single('file'), async (req: Request, r
 
         // Atomically insert or update a deal. This requires a unique index on (vendor_id, LOWER(deal_name)).
         await query(
-          `INSERT INTO deal_registregistrations (
+          `INSERT INTO deal_registrations (
             vendor_id, deal_name, deal_stage, notes, deal_value, currency, status, metadata
           ) VALUES ($1, $2, $3, $4, $5, COALESCE($6, 'USD'), 'imported', $7)
           ON CONFLICT (vendor_id, LOWER(deal_name)) DO UPDATE SET

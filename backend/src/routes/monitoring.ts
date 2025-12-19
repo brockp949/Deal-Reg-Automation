@@ -183,16 +183,16 @@ async function getUploadMetrics(timeRangeHours: number) {
   const query = `
     SELECT
       COUNT(*) as total,
-      COUNT(CASE WHEN status = 'completed' THEN 1 END) as successful,
-      COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed,
-      COUNT(CASE WHEN metadata->>'isChunkedUpload' = 'true' THEN 1 END) as chunked_uploads,
-      COUNT(CASE WHEN status = 'completed' AND metadata->>'isChunkedUpload' = 'true' THEN 1 END) as chunked_successful,
+      COUNT(CASE WHEN processing_status = 'completed' THEN 1 END) as successful,
+      COUNT(CASE WHEN processing_status = 'failed' THEN 1 END) as failed,
+      COUNT(CASE WHEN upload_metadata->>'isChunkedUpload' = 'true' THEN 1 END) as chunked_uploads,
+      COUNT(CASE WHEN processing_status = 'completed' AND upload_metadata->>'isChunkedUpload' = 'true' THEN 1 END) as chunked_successful,
       AVG(CASE
-        WHEN status = 'completed' AND metadata->>'uploadTimeMs' IS NOT NULL
-        THEN (metadata->>'uploadTimeMs')::numeric
+        WHEN processing_status = 'completed' AND upload_metadata->>'uploadTimeMs' IS NOT NULL
+        THEN (upload_metadata->>'uploadTimeMs')::numeric
       END) as avg_upload_time_ms
-    FROM uploaded_files
-    WHERE created_at >= NOW() - INTERVAL '${timeRangeHours} hours'
+    FROM source_files
+    WHERE upload_date >= NOW() - INTERVAL '${timeRangeHours} hours'
   `;
 
   const result = await pool.query(query);
@@ -229,11 +229,11 @@ async function getProcessingMetrics(timeRangeHours: number) {
       COUNT(*) as total_files,
       COUNT(CASE WHEN metadata->>'usedParallelProcessing' = 'true' THEN 1 END) as parallel_processed,
       AVG(CASE
-        WHEN status = 'completed' AND metadata->>'processingTimeMs' IS NOT NULL
+        WHEN processing_status = 'completed' AND metadata->>'processingTimeMs' IS NOT NULL
         THEN (metadata->>'processingTimeMs')::numeric
       END) as avg_processing_time_ms,
       AVG(CASE
-        WHEN status = 'completed' AND metadata->>'usedParallelProcessing' = 'true' AND metadata->>'speedup' IS NOT NULL
+        WHEN processing_status = 'completed' AND metadata->>'usedParallelProcessing' = 'true' AND metadata->>'speedup' IS NOT NULL
         THEN (metadata->>'speedup')::numeric
       END) as avg_speedup,
       SUM(CASE
@@ -242,12 +242,12 @@ async function getProcessingMetrics(timeRangeHours: number) {
         ELSE 0
       END) as total_records,
       AVG(CASE
-        WHEN status = 'completed' AND metadata->>'recordsProcessed' IS NOT NULL AND metadata->>'processingTimeMs' IS NOT NULL
+        WHEN processing_status = 'completed' AND metadata->>'recordsProcessed' IS NOT NULL AND metadata->>'processingTimeMs' IS NOT NULL
         THEN (metadata->>'recordsProcessed')::numeric / ((metadata->>'processingTimeMs')::numeric / 1000.0)
       END) as avg_records_per_second
-    FROM uploaded_files
-    WHERE created_at >= NOW() - INTERVAL '${timeRangeHours} hours'
-      AND status = 'completed'
+    FROM source_files
+    WHERE COALESCE(processing_completed_at, upload_date) >= NOW() - INTERVAL '${timeRangeHours} hours'
+      AND processing_status = 'completed'
   `;
 
   const result = await pool.query(query);
@@ -280,12 +280,13 @@ async function getRecentUploads(limit: number) {
       id,
       filename,
       file_size as size,
-      status,
+      processing_status,
       error_message,
-      created_at,
-      metadata
-    FROM uploaded_files
-    ORDER BY created_at DESC
+      upload_date,
+      metadata,
+      upload_metadata
+    FROM source_files
+    ORDER BY upload_date DESC
     LIMIT $1
   `;
 
@@ -293,10 +294,11 @@ async function getRecentUploads(limit: number) {
 
   return result.rows.map((row: any) => {
     const metadata = row.metadata || {};
-    const uploadTimeMs = parseFloat(metadata.uploadTimeMs) || 0;
+    const uploadMetadata = row.upload_metadata || {};
+    const uploadTimeMs = parseFloat(uploadMetadata.uploadTimeMs) || 0;
     const processingTimeMs = parseFloat(metadata.processingTimeMs) || 0;
     const recordsProcessed = parseInt(metadata.recordsProcessed) || 0;
-    const isChunkedUpload = metadata.isChunkedUpload === true || metadata.isChunkedUpload === 'true';
+    const isChunkedUpload = uploadMetadata.isChunkedUpload === true || uploadMetadata.isChunkedUpload === 'true';
 
     return {
       fileName: row.filename,
@@ -304,9 +306,9 @@ async function getRecentUploads(limit: number) {
       uploadTime: formatDuration(uploadTimeMs),
       processingTime: formatDuration(processingTimeMs),
       recordsProcessed,
-      status: row.status,
+      status: row.processing_status,
       isChunked: isChunkedUpload,
-      timestamp: formatTimestamp(row.created_at),
+      timestamp: formatTimestamp(row.upload_date),
       error: row.error_message || undefined,
     };
   });

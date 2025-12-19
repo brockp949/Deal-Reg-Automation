@@ -45,7 +45,8 @@ export class ClaudeClientService {
   constructor() {
     if (!config.anthropicApiKey) {
       logger.warn('Anthropic API key not configured - Claude features will be disabled');
-      throw new Error('Anthropic API key not configured');
+      this.client = null as any;
+      return;
     }
 
     this.client = new Anthropic({
@@ -74,6 +75,10 @@ export class ClaudeClientService {
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
+        if (!this.client) {
+          throw new Error('Claude client not initialized (API key missing)');
+        }
+
         logger.debug('Sending request to Claude', {
           model,
           messageCount: messages.length,
@@ -171,6 +176,10 @@ export class ClaudeClientService {
     const temperature = options.temperature !== undefined ? options.temperature : config.aiTemperature;
 
     try {
+      if (!this.client) {
+        throw new Error('Claude client not initialized (API key missing)');
+      }
+
       logger.debug('Sending structured request to Claude', {
         model,
         toolName: tool.name,

@@ -1043,6 +1043,7 @@ export async function parseEnhancedTranscript(
   options: {
     buyingSignalThreshold?: number;
     confidenceThreshold?: number;
+    allowLowSignal?: boolean;
   } = {}
 ): Promise<{
   deal: EnhancedDealData | null;
@@ -1050,7 +1051,7 @@ export async function parseEnhancedTranscript(
   isRegisterable: boolean;
   buyingSignalScore: number;
 }> {
-  const { buyingSignalThreshold = 0.5, confidenceThreshold = 0.6 } = options;
+  const { buyingSignalThreshold = 0.5, confidenceThreshold = 0.6, allowLowSignal = false } = options;
 
   logger.info('Starting enhanced transcript parsing', { filePath });
 
@@ -1075,7 +1076,7 @@ export async function parseEnhancedTranscript(
   const buyingSignalScore = await BuyingSignalDetector.calculateBuyingSignalScore(turns);
   const isRegisterable = BuyingSignalDetector.isRegisterableDeal(buyingSignalScore, buyingSignalThreshold);
 
-  if (!isRegisterable) {
+  if (!isRegisterable && !allowLowSignal) {
     logger.info('Transcript does not contain sufficient buying signals', { buyingSignalScore });
     return {
       deal: null,
@@ -1083,6 +1084,13 @@ export async function parseEnhancedTranscript(
       isRegisterable: false,
       buyingSignalScore,
     };
+  }
+
+  if (!isRegisterable) {
+    logger.info('Transcript below buying signal threshold; continuing extraction due to allowLowSignal', {
+      buyingSignalScore,
+      buyingSignalThreshold,
+    });
   }
 
   // STAGE 3: Named Entity Recognition (AI-enhanced)

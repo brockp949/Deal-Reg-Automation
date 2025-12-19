@@ -24,6 +24,7 @@ import {
   SourceType as ProvenanceSourceType,
   ExtractionMethod as ProvenanceExtractionMethod,
 } from './provenanceTracker';
+import { getLearningAgent } from '../agents/ContinuousLearningAgent';
 
 interface ProcessingResult {
   vendorsCreated: number;
@@ -537,6 +538,24 @@ export class FileProcessorV2 {
     vendorId: string,
     parserOutput: StandardizedParserOutput
   ): Promise<void> {
+    let resolvedDeal = dealData;
+    let appliedInsights: string[] = [];
+
+    try {
+      const learningAgent = getLearningAgent();
+      const learningResult = await learningAgent.applyLearnings('deal', dealData, {
+        vendorName: dealData.vendor_name,
+        fileName: parserOutput.metadata.fileName,
+      });
+      resolvedDeal = { ...dealData, ...learningResult.correctedData };
+      appliedInsights = learningResult.appliedInsights;
+    } catch (error: any) {
+      logger.warn('Failed to apply deal learnings', {
+        dealName: dealData.deal_name,
+        error: error.message,
+      });
+    }
+
     const metadata = {
       source_file_id: this.fileId,
       parser: {
@@ -545,13 +564,14 @@ export class FileProcessorV2 {
         fileType: parserOutput.metadata.fileType,
         sourceTags: parserOutput.metadata.sourceTags || [],
       },
-      source_tags: dealData.source_tags || [],
-      rfq_signals: dealData.rfq_signals,
-      stage_hints: dealData.stage_hints,
-      deal_name_features: dealData.deal_name_features,
-      deal_name_candidates: dealData.deal_name_candidates,
+      source_tags: resolvedDeal.source_tags || [],
+      rfq_signals: resolvedDeal.rfq_signals,
+      stage_hints: resolvedDeal.stage_hints,
+      deal_name_features: resolvedDeal.deal_name_features,
+      deal_name_candidates: resolvedDeal.deal_name_candidates,
       parser_errors: parserOutput.errors || [],
       parser_warnings: parserOutput.warnings || [],
+      applied_learning_insights: appliedInsights.length > 0 ? appliedInsights : undefined,
     };
 
     const result = await client.query(
@@ -563,16 +583,16 @@ export class FileProcessorV2 {
       RETURNING id`,
       [
         vendorId,
-        dealData.deal_name || 'Untitled Deal',
-        dealData.deal_value || 0,
-        dealData.currency || 'USD',
-        dealData.customer_name || null,
-        dealData.registration_date ? new Date(dealData.registration_date) : new Date(),
-        dealData.expected_close_date ? new Date(dealData.expected_close_date) : null,
-        dealData.status || 'registered',
-        dealData.deal_stage || null,
-        dealData.probability ?? null,
-        dealData.notes || null,
+        resolvedDeal.deal_name || 'Untitled Deal',
+        resolvedDeal.deal_value || 0,
+        resolvedDeal.currency || 'USD',
+        resolvedDeal.customer_name || null,
+        resolvedDeal.registration_date ? new Date(resolvedDeal.registration_date) : new Date(),
+        resolvedDeal.expected_close_date ? new Date(resolvedDeal.expected_close_date) : null,
+        resolvedDeal.status || 'registered',
+        resolvedDeal.deal_stage || null,
+        resolvedDeal.probability ?? null,
+        resolvedDeal.notes || null,
         JSON.stringify(metadata),
         [this.fileId],
       ]
@@ -583,18 +603,18 @@ export class FileProcessorV2 {
     if (dealId) {
       trackDealProvenance(
         dealId,
-        dealData,
+        resolvedDeal,
         {
           sourceFileId: this.fileId,
           sourceType: this.mapSourceType(parserOutput.metadata.fileType),
           sourceLocation: parserOutput.metadata.fileName,
-          extractionMethod: this.mapExtractionMethod(dealData, parserOutput),
-          confidence: dealData.confidence_score,
+          extractionMethod: this.mapExtractionMethod(resolvedDeal, parserOutput),
+          confidence: resolvedDeal.confidence_score,
           extractionContext: {
             parser: parserOutput.metadata.parsingMethod,
             sourceTags: parserOutput.metadata.sourceTags || [],
-            rfq: dealData.rfq_signals,
-            stage_hints: dealData.stage_hints,
+            rfq: resolvedDeal.rfq_signals,
+            stage_hints: resolvedDeal.stage_hints,
           },
         }
       ).catch((err) =>

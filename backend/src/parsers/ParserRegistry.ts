@@ -342,11 +342,18 @@ class MboxParserStrategy implements ParserStrategy {
 
     const result = await parseStreamingMboxFile(file.filePath, {
       confidenceThreshold: options.confidenceThreshold || 0.15,
-      onProgress: options.onProgress ?
-        (processed, total) => options.onProgress!(
-          total ? Math.round((processed / total) * 100) : 0,
-          `Processed ${processed} emails`
-        ) : undefined,
+      onProgress: options.onProgress
+        ? (processed, total) => {
+            const hasTotal = typeof total === 'number' && total > 0;
+            const progress = hasTotal
+              ? Math.round((processed / total) * 100)
+              : Math.min(95, Math.max(1, Math.round(processed / 100)));
+            const message = hasTotal
+              ? `Processed ${processed} of ${total} emails`
+              : `Processed ${processed} emails`;
+            options.onProgress!(progress, message);
+          }
+        : undefined,
     });
 
     // Extract unique vendors from deals
@@ -449,11 +456,13 @@ class TranscriptParserStrategy implements ParserStrategy {
     }
 
     // Use enhanced NLP parser
+    const buyingSignalThreshold = 0.35;
     const result = await parseEnhancedTranscript(
       file.filePath,
       {
-        buyingSignalThreshold: 0.5,
+        buyingSignalThreshold,
         confidenceThreshold: options.confidenceThreshold || 0.6,
+        allowLowSignal: true,
       }
     );
 
@@ -461,7 +470,10 @@ class TranscriptParserStrategy implements ParserStrategy {
     const deals: UnifiedParseResult['deals'] = [];
     const contacts: UnifiedParseResult['contacts'] = [];
 
-    if (result.deal && result.isRegisterable) {
+    const hasDeal = !!result.deal;
+    const lowSignal = hasDeal && !result.isRegisterable;
+
+    if (hasDeal && result.deal) {
       // Extract vendor
       if (result.deal.partner_company_name) {
         vendors.push({
@@ -484,6 +496,9 @@ class TranscriptParserStrategy implements ParserStrategy {
         metadata: {
           confidence_score: result.deal.confidence_score,
           buying_signal_score: result.buyingSignalScore,
+          buying_signal_threshold: buyingSignalThreshold,
+          registerable: result.isRegisterable,
+          low_signal: lowSignal,
           extraction_method: 'transcript_nlp',
           turn_count: result.turns.length,
         },
@@ -513,7 +528,7 @@ class TranscriptParserStrategy implements ParserStrategy {
     }
 
     return {
-      success: result.isRegisterable,
+      success: hasDeal,
       parserUsed: this.name,
       detectedIntent: 'transcript',
       vendors,
@@ -521,12 +536,12 @@ class TranscriptParserStrategy implements ParserStrategy {
       contacts,
       statistics: {
         totalRows: 1,
-        successCount: result.isRegisterable ? 1 : 0,
-        errorCount: result.isRegisterable ? 0 : 1,
+        successCount: hasDeal ? 1 : 0,
+        errorCount: hasDeal ? 0 : 1,
         duplicates: 0,
       },
-      errors: result.isRegisterable ? [] : ['Transcript does not contain registerable deal information'],
-      warnings: result.buyingSignalScore < 0.5 ? ['Low buying signal score'] : [],
+      errors: hasDeal ? [] : ['Transcript does not contain deal information'],
+      warnings: lowSignal ? [`Low buying signal score (${result.buyingSignalScore.toFixed(2)})`] : [],
     };
   }
 }

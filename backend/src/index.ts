@@ -5,6 +5,8 @@ import pool from './db';
 import ensureMigrations from './db/ensureMigrations';
 import { startSyncScheduler, stopSyncScheduler } from './services/syncScheduler';
 import { closeSyncQueue } from './queues/syncProcessingQueue';
+import './queues/unifiedProcessingQueue'; // Register unified processing queue processor
+import { closeUnifiedQueue } from './queues/unifiedProcessingQueue';
 
 function registerDiagnostics() {
   process.on('unhandledRejection', (reason: any) => {
@@ -47,10 +49,11 @@ async function start() {
     logger.info(`${signal} received, shutting down gracefully`);
     server.close(() => logger.info('HTTP server closed'));
 
-    // Stop sync scheduler and close queue
+    // Stop sync scheduler and close queues
     stopSyncScheduler();
     await closeSyncQueue();
-    logger.info('Sync services stopped');
+    await closeUnifiedQueue();
+    logger.info('All services stopped');
 
     await pool.end();
     process.exit(0);

@@ -62,7 +62,7 @@ interface MonitoringMetrics {
 }
 
 export default function Monitoring() {
-  const [timeRange, _setTimeRange] = useState('24h');
+  const [timeRange] = useState('24h');
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['monitoring-metrics', timeRange],
@@ -300,19 +300,17 @@ export default function Monitoring() {
       {/* System Health */}
       <Card className="p-6">
         <div className="flex items-center gap-2 mb-4">
-          <Activity className={`w-5 h-5 ${
-            Object.values(metrics.health).every(h => h.status === 'healthy')
-              ? 'text-green-600'
-              : 'text-amber-600'
-          }`} />
+          <Activity className={`w-5 h-5 ${Object.values(metrics.health).every(h => h.status === 'healthy')
+            ? 'text-green-600'
+            : 'text-amber-600'
+            }`} />
           <h2 className="text-xl font-semibold">System Health</h2>
           <Badge
             variant="outline"
-            className={`ml-auto ${
-              Object.values(metrics.health).every(h => h.status === 'healthy')
-                ? 'bg-green-50 text-green-700 border-green-200'
-                : 'bg-amber-50 text-amber-700 border-amber-200'
-            }`}
+            className={`ml-auto ${Object.values(metrics.health).every(h => h.status === 'healthy')
+              ? 'bg-green-50 text-green-700 border-green-200'
+              : 'bg-amber-50 text-amber-700 border-amber-200'
+              }`}
           >
             {Object.values(metrics.health).every(h => h.status === 'healthy')
               ? 'All Systems Operational'

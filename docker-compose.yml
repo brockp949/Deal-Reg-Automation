@@ -49,6 +49,7 @@ services:
       JWT_SECRET: your-super-secret-jwt-key-change-in-production
       UPLOAD_DIR: /app/uploads
       MAX_FILE_SIZE: 5368709120
+      LOG_LEVEL: debug
     volumes:
       - ./backend:/app
       - /app/node_modules

@@ -16,6 +16,31 @@ import {
 import { getEntityExtractor } from '../skills/SemanticEntityExtractor';
 import { isSkillEnabled } from '../config/claude';
 
+const MIN_BODY_LENGTH = 20;
+
+function getMessageBody(message: ParsedEmailMessage): string {
+  const cleaned = message.cleaned_body?.trim() || '';
+  if (cleaned.length >= MIN_BODY_LENGTH) {
+    return cleaned;
+  }
+
+  const bodyText = message.body_text?.trim();
+  if (bodyText) {
+    return bodyText;
+  }
+
+  return cleaned || message.subject || '';
+}
+
+function getKeywordScanText(message: ParsedEmailMessage): string {
+  const body = getMessageBody(message);
+  const subject = message.subject?.trim();
+  if (subject && body) {
+    return `${subject}\n${body}`;
+  }
+  return subject || body || '';
+}
+
 // ============================================================================
 // LAYER 2: PATTERN-BASED EXTRACTION WITH REGEX
 // ============================================================================
@@ -213,7 +238,7 @@ export function extractProjectNames(text: string): string[] {
  * ENHANCED with advanced extraction intelligence
  */
 export function applyLayer2Extraction(message: ParsedEmailMessage): Partial<ExtractedDeal> {
-  const text = message.cleaned_body;
+  const text = getMessageBody(message);
   const extracted: Partial<ExtractedDeal> = {};
 
   // ENHANCED: Extract financial data with context
@@ -345,7 +370,7 @@ export async function applySemanticExtraction(message: ParsedEmailMessage): Prom
     logger.info('Using SemanticEntityExtractor skill for email entity extraction');
     const extractor = getEntityExtractor();
 
-    const text = message.cleaned_body + '\n\nSubject: ' + message.subject;
+    const text = `${getMessageBody(message)}\n\nSubject: ${message.subject}`;
 
     // Request comprehensive entity extraction
     const result = await extractor.extract({
@@ -621,7 +646,7 @@ export function extractNextSteps(text: string): string[] | undefined {
  * Apply Layer 3 contextual extraction
  */
 export function applyLayer3Extraction(message: ParsedEmailMessage): Partial<ExtractedDeal> {
-  const text = message.cleaned_body;
+  const text = getMessageBody(message);
   const extracted: Partial<ExtractedDeal> = {};
 
   extracted.deal_type = identifyDealType(text);
@@ -751,7 +776,7 @@ export async function processThread(thread: EmailThread): Promise<ExtractedDeal[
 
   // Scan all messages for keywords first
   for (const message of thread.messages) {
-    const keywords = scanForKeywords(message.cleaned_body);
+    const keywords = scanForKeywords(getKeywordScanText(message));
     message.tier1_matches = keywords.tier1;
     message.tier2_matches = keywords.tier2;
     message.tier3_matches = keywords.tier3;

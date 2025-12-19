@@ -173,10 +173,10 @@ export async function findRelatedEntities(
 
     if (sourceFileIds.length > 0) {
       const filesResult = await query(
-        `SELECT id, file_name as "fileName", file_type as "fileType",
-                uploaded_at as "uploadedAt", processed_at as "processedAt"
-         FROM uploaded_files
-         WHERE id = ANY($1::text[])`,
+        `SELECT id, filename as "fileName", file_type as "fileType",
+                upload_date as "uploadedAt", processing_completed_at as "processedAt"
+         FROM source_files
+         WHERE id::text = ANY($1::text[])`,
         [sourceFileIds]
       );
       sourceFiles.push(...filesResult.rows);
@@ -322,19 +322,19 @@ export async function buildDealCorrelationMap(dealId: string): Promise<Correlati
 
     if (sourceFileIds.length > 0) {
       const filesResult = await query(
-        `SELECT uf.id, uf.file_name, uf.uploaded_at,
+        `SELECT sf.id, sf.filename, sf.upload_date,
                 ee.ai_confidence_score
-         FROM uploaded_files uf
-         LEFT JOIN extracted_entities ee ON ee.source_file_id = uf.id AND ee.entity_id = $1
-         WHERE uf.id = ANY($2::text[])`,
+         FROM source_files sf
+         LEFT JOIN extracted_entities ee ON ee.source_file_id = sf.id AND ee.entity_id = $1
+         WHERE sf.id::text = ANY($2::text[])`,
         [dealId, sourceFileIds]
       );
 
       sources.push(
         ...filesResult.rows.map(row => ({
           fileId: row.id,
-          fileName: row.file_name,
-          extractedAt: row.uploaded_at,
+          fileName: row.filename,
+          extractedAt: row.upload_date,
           confidence: row.ai_confidence_score || 0.5
         }))
       );
@@ -451,9 +451,9 @@ export async function getDataLineage(
 
     // Get field provenance
     let provenanceQuery = `
-      SELECT fp.*, uf.file_name as "sourceFileName"
+      SELECT fp.*, sf.filename as "sourceFileName"
       FROM field_provenance fp
-      LEFT JOIN uploaded_files uf ON fp.source_file_id = uf.id
+      LEFT JOIN source_files sf ON fp.source_file_id = sf.id
       WHERE fp.entity_type = $1 AND fp.entity_id = $2
     `;
     const params: any[] = [entityType, entityId];

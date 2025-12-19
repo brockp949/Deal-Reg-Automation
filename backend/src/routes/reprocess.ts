@@ -1,9 +1,43 @@
 import { Router, Request, Response } from 'express';
 import { requireRole } from '../api/middleware/apiKeyAuth';
 import { addFileProcessingJob } from '../queues/fileProcessingQueue';
+import { performDetailedReprocessing } from '../services/detailedReprocessor';
+import { createJob, startJob, updateJobProgress, completeJob, failJob } from '../services/jobTracker';
 import logger from '../utils/logger';
 
 const router = Router();
+
+/**
+ * POST /api/reprocess/detailed
+ * Trigger detailed reprocessing of all eligible files.
+ */
+router.post('/detailed', requireRole(['write', 'admin']), async (req: Request, res: Response) => {
+  try {
+    const jobId = createJob('reprocess', { mode: 'detailed' });
+
+    res.status(202).json({
+      success: true,
+      message: 'Detailed reprocessing started',
+      data: { jobId },
+    });
+
+    setImmediate(async () => {
+      try {
+        startJob(jobId, 'Detailed reprocessing running');
+        const result = await performDetailedReprocessing({
+          onProgress: (progress, message) => updateJobProgress(jobId, progress, message),
+        });
+        completeJob(jobId, result);
+      } catch (error: any) {
+        logger.error('Detailed reprocessing failed', { error: error.message });
+        failJob(jobId, error.message);
+      }
+    });
+  } catch (error: any) {
+    logger.error('Failed to start detailed reprocessing', { error: error.message });
+    res.status(500).json({ success: false, error: 'Failed to start detailed reprocessing' });
+  }
+});
 
 /**
  * POST /api/reprocess/:fileId

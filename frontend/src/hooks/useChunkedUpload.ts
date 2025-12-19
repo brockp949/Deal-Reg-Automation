@@ -32,12 +32,12 @@ export interface ChunkedUploadOptions {
   retryDelay?: number; // Default: 1000ms
   onProgress?: (progress: ChunkedUploadProgress) => void;
   onChunkComplete?: (chunkIndex: number, totalChunks: number) => void;
-  onComplete?: (uploadId: string, jobId: string) => void;
+  onComplete?: (uploadId: string, fileId: string, jobId?: string) => void;
   onError?: (error: Error) => void;
 }
 
 interface UseChunkedUploadReturn {
-  uploadFile: (file: File, intent?: string) => Promise<{ uploadId: string; jobId: string } | null>;
+  uploadFile: (file: File, intent?: string) => Promise<{ uploadId: string; fileId: string; jobId?: string } | null>;
   progress: ChunkedUploadProgress | null;
   isUploading: boolean;
   error: string | null;
@@ -57,7 +57,7 @@ const DEFAULT_RETRY_DELAY = 1000; // 1 second
  * ```tsx
  * const { uploadFile, progress, isUploading, cancelUpload } = useChunkedUpload({
  *   onProgress: (p) => console.log(`${p.progress}% complete`),
- *   onComplete: (uploadId, jobId) => console.log('Upload complete!'),
+ *   onComplete: (uploadId, fileId, jobId) => console.log('Upload complete!', fileId, jobId),
  * });
  *
  * const handleFileSelect = async (file: File) => {
@@ -105,19 +105,26 @@ export function useChunkedUpload(options: ChunkedUploadOptions = {}): UseChunked
     async (file: File, intent?: string): Promise<string> => {
       const chunks = createChunks(file);
 
-      const response = await api.post<{ uploadId: string }>(
-        '/files/upload/chunked/init',
-        {
-          fileName: file.name,
-          fileSize: file.size,
-          fileType: file.type,
-          totalChunks: chunks.length,
-          chunkSize,
-          intent,
-        }
-      );
+      const response = await api.post<any>('/files/upload/chunked/init', {
+        fileName: file.name,
+        fileSize: file.size,
+        fileType: file.type,
+        totalChunks: chunks.length,
+        chunkSize,
+        intent,
+      });
+      const payload = response.data;
+      if (payload?.success === false) {
+        throw new Error(payload.error || 'Failed to initialize upload');
+      }
 
-      return response.data.uploadId;
+      const data = payload?.data || payload;
+      const uploadId = data?.uploadId;
+      if (!uploadId) {
+        throw new Error('Upload initialization failed: missing uploadId');
+      }
+
+      return uploadId;
     },
     [createChunks, chunkSize]
   );
@@ -234,20 +241,28 @@ export function useChunkedUpload(options: ChunkedUploadOptions = {}): UseChunked
   /**
    * Complete upload
    */
-  const completeUpload = useCallback(async (uploadId: string): Promise<string> => {
-    const response = await api.post<{ jobId: string }>(
-      '/files/upload/chunked/complete',
-      { uploadId }
-    );
+  const completeUpload = useCallback(async (uploadId: string): Promise<{ fileId: string; jobId?: string }> => {
+    const response = await api.post<any>('/files/upload/chunked/complete', { uploadId });
+    const payload = response.data;
 
-    return response.data.jobId;
+    if (payload?.success === false) {
+      throw new Error(payload.error || 'Failed to complete upload');
+    }
+
+    const data = payload?.data || payload;
+    const fileId = data?.fileId || data?.id;
+    if (!fileId) {
+      throw new Error('Upload completed but file ID was missing');
+    }
+
+    return { fileId, jobId: data?.jobId };
   }, []);
 
   /**
    * Upload file in chunks
    */
   const uploadFile = useCallback(
-    async (file: File, intent?: string): Promise<{ uploadId: string; jobId: string } | null> => {
+    async (file: File, intent?: string): Promise<{ uploadId: string; fileId: string; jobId?: string } | null> => {
       setIsUploading(true);
       setError(null);
       setProgress(null);
@@ -265,16 +280,16 @@ export function useChunkedUpload(options: ChunkedUploadOptions = {}): UseChunked
         await uploadChunks(uploadId, chunks);
 
         // Complete upload
-        const jobId = await completeUpload(uploadId);
+        const { fileId, jobId } = await completeUpload(uploadId);
 
         // Notify complete
         if (options.onComplete) {
-          options.onComplete(uploadId, jobId);
+          options.onComplete(uploadId, fileId, jobId);
         }
 
         setIsUploading(false);
 
-        return { uploadId, jobId };
+        return { uploadId, fileId, jobId };
       } catch (err: any) {
         if (err.name === 'AbortError') {
           console.log('Upload cancelled');
@@ -319,20 +334,23 @@ export function useChunkedUpload(options: ChunkedUploadOptions = {}): UseChunked
 
       try {
         // Get upload status
-        const statusResponse = await api.get<{
-          uploadedChunks: number;
-          totalChunks: number;
-          missingChunks: number[];
-        }>(`/files/upload/chunked/status/${uploadId}`);
+        const statusResponse = await api.get<any>(`/files/upload/chunked/status/${uploadId}`);
+        const statusPayload = statusResponse.data;
+        if (statusPayload?.success === false) {
+          throw new Error(statusPayload.error || 'Failed to check upload status');
+        }
 
-        const { missingChunks } = statusResponse.data;
+        const statusData = statusPayload?.data || statusPayload;
+        const missingChunks = Array.isArray(statusData?.missingChunks)
+          ? statusData.missingChunks
+          : [];
 
         if (missingChunks.length === 0) {
           // All chunks uploaded, complete the upload
-          const jobId = await completeUpload(uploadId);
+          const { fileId, jobId } = await completeUpload(uploadId);
 
           if (options.onComplete) {
-            options.onComplete(uploadId, jobId);
+            options.onComplete(uploadId, fileId, jobId);
           }
 
           setIsUploading(false);
@@ -346,10 +364,10 @@ export function useChunkedUpload(options: ChunkedUploadOptions = {}): UseChunked
         await uploadChunks(uploadId, missingChunkBlobs);
 
         // Complete upload
-        const jobId = await completeUpload(uploadId);
+        const { fileId, jobId } = await completeUpload(uploadId);
 
         if (options.onComplete) {
-          options.onComplete(uploadId, jobId);
+          options.onComplete(uploadId, fileId, jobId);
         }
 
         setIsUploading(false);

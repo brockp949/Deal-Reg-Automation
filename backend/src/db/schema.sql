@@ -82,7 +82,10 @@ CREATE TABLE IF NOT EXISTS source_files (
   quarantine_reason TEXT,
   uploaded_by VARCHAR(255),
   upload_metadata JSONB DEFAULT '{}'::jsonb,
-  duplicate_of_id UUID REFERENCES source_files(id)
+  duplicate_of_id UUID REFERENCES source_files(id),
+  upload_intent VARCHAR(50),
+  detected_intent VARCHAR(50),
+  parser_used VARCHAR(100)
 );
 
 -- Ensure columns exist for legacy databases

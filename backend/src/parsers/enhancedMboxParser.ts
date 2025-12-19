@@ -386,6 +386,22 @@ export function preprocessEmail(text: string, isHtml: boolean = false): string {
     processingTimeMs: cleaningResult.processing_time_ms,
   });
 
+  if (!cleaningResult.has_minimum_content) {
+    const bodyOnly = cleaningPipeline.cleanBodyOnly(cleaned);
+    const fallback =
+      bodyOnly.trim().length > cleaningResult.cleaned_body.trim().length
+        ? bodyOnly
+        : cleaningResult.cleaned_body;
+    const safeFallback = fallback.trim().length > 0 ? fallback : cleaned;
+
+    logger.debug('Email cleaning fallback used', {
+      cleanedLength: cleaningResult.cleaned_length,
+      fallbackLength: safeFallback.length,
+    });
+
+    return safeFallback;
+  }
+
   return cleaningResult.cleaned_body;
 }
 
@@ -515,11 +531,20 @@ export function correlateThreads(messages: ParsedEmailMessage[]): EmailThread[] 
  */
 export function isRelevantEmail(message: ParsedEmailMessage, vendorDomains: string[] = []): boolean {
   const subjectLower = message.subject.toLowerCase();
-  const bodyLower = message.cleaned_body.toLowerCase();
+  const cleanedBody = message.cleaned_body.trim();
+  let bodyLower = cleanedBody.toLowerCase();
+
+  if (cleanedBody.length < 20 && message.body_text) {
+    bodyLower = message.body_text.toLowerCase();
+  } else if (cleanedBody.length < 20 && message.body_html) {
+    bodyLower = stripHtml(message.body_html).toLowerCase();
+  }
+
+  const combinedLower = `${subjectLower} ${bodyLower}`.trim();
 
   // Check Tier 1 keywords in subject (high priority)
   for (const keyword of TIER1_KEYWORDS) {
-    if (subjectLower.includes(keyword)) {
+    if (combinedLower.includes(keyword)) {
       return true;
     }
   }
@@ -530,16 +555,9 @@ export function isRelevantEmail(message: ParsedEmailMessage, vendorDomains: stri
     if (fromDomain && vendorDomains.some(d => fromDomain.includes(d))) {
       // Check if body has any tier keywords
       const allKeywords = [...TIER1_KEYWORDS, ...TIER2_KEYWORDS, ...TIER3_KEYWORDS];
-      if (allKeywords.some(kw => bodyLower.includes(kw))) {
+      if (allKeywords.some(kw => combinedLower.includes(kw))) {
         return true;
       }
-    }
-  }
-
-  // Check Tier 1 keywords in body
-  for (const keyword of TIER1_KEYWORDS) {
-    if (bodyLower.includes(keyword)) {
-      return true;
     }
   }
 

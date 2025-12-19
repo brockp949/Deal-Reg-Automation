@@ -102,14 +102,17 @@ export class StandardizedTranscriptParser extends BaseParser {
       let extractedData: any;
       let transcriptText: string = '';
       let opportunityAnalysis: ReturnType<typeof analyzeOpportunitySignals> | undefined;
+      let lowSignal = false;
+      const buyingSignalThreshold = options?.buyingSignalThreshold ?? 0.35;
 
       try {
         // Use enhanced parsing if requested (default)
         if (options?.useEnhancedParsing !== false) {
           // parseEnhancedTranscript expects filePath and reads the file itself
           const enhancedResult = await parseEnhancedTranscript(filePathToProcess, {
-            buyingSignalThreshold: options?.buyingSignalThreshold || 0.5,
+            buyingSignalThreshold,
             confidenceThreshold: options?.confidenceThreshold || 0.6,
+            allowLowSignal: true,
           });
 
           // Read the transcript text for line count
@@ -117,16 +120,40 @@ export class StandardizedTranscriptParser extends BaseParser {
           output.statistics.linesProcessed = transcriptText.split('\n').length;
 
           // Convert enhanced transcript result to standard format
-          if (!enhancedResult.deal || !enhancedResult.isRegisterable) {
-            logger.warn('Transcript not registerable', { buyingSignalScore: enhancedResult.buyingSignalScore });
+          if (!enhancedResult.deal) {
+            logger.warn('Transcript did not yield a deal', { buyingSignalScore: enhancedResult.buyingSignalScore });
             extractedData = { vendors: [], deals: [], contacts: [] };
           } else {
+            lowSignal = !enhancedResult.isRegisterable;
+            if (lowSignal) {
+              this.addWarning(
+                output,
+                `Low buying signal score (${enhancedResult.buyingSignalScore.toFixed(2)})`,
+                undefined,
+                'Review transcript-derived deal details before approval.'
+              );
+            }
+
             // Convert the enhanced deal data to our format
             const deal = enhancedResult.deal;
+            const vendors = deal.partner_company_name ? [{ name: deal.partner_company_name }] : [];
+            const contacts = [];
+
+            if (deal.partner_contact_name && deal.partner_email && deal.partner_company_name) {
+              contacts.push({
+                name: deal.partner_contact_name,
+                email: deal.partner_email,
+                phone: deal.partner_phone,
+                role: deal.partner_role || 'Partner',
+                vendor_name: deal.partner_company_name,
+                is_primary: true,
+              });
+            }
+
             extractedData = {
-              vendors: [],
+              vendors,
               deals: [deal],
-              contacts: [],
+              contacts,
             };
           }
         } else {
@@ -190,6 +217,11 @@ export class StandardizedTranscriptParser extends BaseParser {
       }
       const aggregateTags = new Set(baseTags);
       const sharedSignalTags = new Set(baseTags);
+
+      if (lowSignal) {
+        sharedSignalTags.add('signal:low');
+        aggregateTags.add('signal:low');
+      }
 
       if (opportunityAnalysis) {
         opportunityAnalysis.opportunityTags.forEach((tag) => {
@@ -345,21 +377,21 @@ export class StandardizedTranscriptParser extends BaseParser {
    */
   private normalizeDeal(d: any): NormalizedDeal {
     return {
-      deal_name: d.deal_name || 'Untitled Deal',
-      vendor_name: d.vendor_name || 'Unknown Vendor',
-      deal_value: d.deal_value || 0,
+      deal_name: d.deal_name || d.deal_description?.substring(0, 100) || 'Untitled Deal',
+      vendor_name: d.vendor_name || d.partner_company_name || 'Unknown Vendor',
+      deal_value: d.deal_value ?? d.estimated_deal_value ?? 0,
       currency: d.currency || 'USD',
-      customer_name: d.customer_name,
+      customer_name: d.customer_name || d.prospect_company_name || d.end_user_company_name,
       registration_date: d.registration_date,
       expected_close_date: d.expected_close_date,
       status: d.status || 'registered',
-      notes: d.notes,
-      project_name: d.project_name,
+      notes: d.notes || d.deal_description,
+      project_name: d.project_name || d.deal_name,
       objections: d.objections,
       competitor_insights: d.competitor_insights,
       identified_competitors: d.identified_competitors,
-      confidence_score: d.confidence_score || 0.6,
-      extraction_method: 'regex',
+      confidence_score: d.confidence_score ?? d.confidence ?? 0.6,
+      extraction_method: d.extraction_method || 'transcript_nlp',
       source_location: 'Transcript',
     };
   }

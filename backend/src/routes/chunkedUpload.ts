@@ -20,9 +20,35 @@ import crypto from 'crypto';
 import Redis from 'ioredis';
 import logger from '../utils/logger';
 import { config } from '../config';
-import { unifiedProcessingQueue } from '../queues/unifiedProcessingQueue';
+import { query } from '../db';
+import { getFileType, generateUniqueFilename } from '../utils/fileHelpers';
+import { computeFileChecksum, performVirusScan, recordFileSecurityEvent } from '../services/fileSecurity';
+import { addUnifiedJob } from '../queues/unifiedProcessingQueue';
+import type { FileIntent } from '../parsers/ParserRegistry';
 
 const router = Router();
+
+function resolveOperatorId(req: Request): string {
+  return (
+    (req.header('x-operator-id') as string) ||
+    (req.header('x-user-id') as string) ||
+    (req.header('x-requested-by') as string) ||
+    'anonymous'
+  );
+}
+
+async function findDuplicateByChecksum(checksum: string) {
+  const existing = await query(
+    `SELECT * FROM source_files
+     WHERE checksum_sha256 = $1
+       AND scan_status = 'passed'
+       AND duplicate_of_id IS NULL
+     ORDER BY upload_date ASC
+     LIMIT 1`,
+    [checksum]
+  );
+  return existing.rows[0] ?? null;
+}
 
 // Configure multer for chunk uploads (in-memory, then saved)
 const upload = multer({
@@ -39,6 +65,7 @@ const CHUNKS_DIR = path.join(config.uploadPath || './uploads', 'chunks');
 interface UploadMetadata {
   uploadId: string;
   fileName: string;
+  storageFileName?: string;
   fileSize: number;
   totalChunks: number;
   chunkSize: number;
@@ -202,6 +229,7 @@ router.post('/init', async (req: Request, res: Response) => {
     const metadata: UploadMetadata = {
       uploadId,
       fileName,
+      storageFileName: generateUniqueFilename(fileName),
       fileSize,
       totalChunks,
       chunkSize,
@@ -403,7 +431,8 @@ router.post('/complete', async (req: Request, res: Response) => {
 
     // Assemble chunks into final file
     const uploadChunksDir = path.join(CHUNKS_DIR, uploadId);
-    const finalFilePath = path.join(config.uploadPath || './uploads', metadata.fileName);
+    const storageFileName = metadata.storageFileName || metadata.fileName;
+    const finalFilePath = path.join(config.upload.directory, storageFileName);
 
     const writeStream = require('fs').createWriteStream(finalFilePath);
 
@@ -438,30 +467,194 @@ router.post('/complete', async (req: Request, res: Response) => {
       });
     }
 
-    // Queue file for processing
-    const job = await unifiedProcessingQueue.add({
-      filePath: finalFilePath,
-      fileName: metadata.fileName,
-      intent: metadata.intent,
+    const operatorId = resolveOperatorId(req);
+    const fileType = getFileType(metadata.fileName);
+    const uploadIntent = (metadata.intent || 'auto') as FileIntent;
+    const uploadMetadata = {
+      ip: req.ip,
+      userAgent: req.get('user-agent'),
       source: 'chunked_upload',
+      uploadIntent,
+      requestId: req.get('x-request-id'),
+      originalFilename: metadata.fileName,
+      uploadId,
+      isChunkedUpload: true,
+      totalChunks: metadata.totalChunks,
+      chunkSize: metadata.chunkSize,
+      fileType: metadata.fileType,
+      storageFileName,
+    };
+
+    const { checksum, verifiedAt } = await computeFileChecksum(finalFilePath);
+    const duplicateFile = await findDuplicateByChecksum(checksum);
+    if (duplicateFile) {
+      await fs.unlink(finalFilePath).catch((err) =>
+        logger.warn('Failed to delete duplicate chunked upload file', {
+          filename: storageFileName,
+          error: err.message,
+        })
+      );
+
+      await recordFileSecurityEvent({
+        fileId: duplicateFile.id,
+        eventType: 'duplicate_detected',
+        actor: operatorId,
+        details: {
+          attemptedFilename: metadata.fileName,
+          duplicateOf: duplicateFile.id,
+          checksum,
+          uploadMetadata,
+        },
+      });
+
+      const needsReprocessing = ['pending', 'failed'].includes(duplicateFile.processing_status);
+      let jobId: string | undefined;
+      if (needsReprocessing) {
+        const job = await addUnifiedJob({
+          fileId: duplicateFile.id,
+          intent: uploadIntent,
+        });
+        jobId = job.id?.toString();
+      }
+
+      await deleteUploadMetadata(uploadId);
+
+      return res.status(200).json({
+        success: true,
+        duplicate: true,
+        duplicateOf: duplicateFile.id,
+        message: needsReprocessing
+          ? `Duplicate detected. Re-queuing ${duplicateFile.filename} for processing.`
+          : `Duplicate upload detected. Reusing ${duplicateFile.filename}`,
+        data: {
+          uploadId,
+          fileName: metadata.fileName,
+          fileId: duplicateFile.id,
+          jobId,
+        },
+      });
+    }
+
+    const scanResult = await performVirusScan(finalFilePath);
+    const processingStatus = scanResult.status === 'passed' ? 'pending' : 'blocked';
+    const quarantineInfo =
+      scanResult.status === 'passed'
+        ? { at: null, reason: null }
+        : { at: new Date(), reason: scanResult.message || 'File failed automated scan' };
+
+    const result = await query(
+      `INSERT INTO source_files (
+        filename,
+        file_type,
+        file_size,
+        storage_path,
+        processing_status,
+        checksum_sha256,
+        checksum_verified_at,
+        scan_status,
+        scan_engine,
+        scan_details,
+        scan_completed_at,
+        quarantined_at,
+        quarantine_reason,
+        uploaded_by,
+        upload_metadata,
+        upload_intent
+      )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14, $15::jsonb, $16)
+       RETURNING *`,
+      [
+        metadata.fileName,
+        fileType,
+        metadata.fileSize,
+        finalFilePath,
+        processingStatus,
+        checksum,
+        verifiedAt,
+        scanResult.status,
+        scanResult.engine,
+        JSON.stringify({
+          signatureVersion: scanResult.signatureVersion,
+          message: scanResult.message,
+          findings: scanResult.findings,
+        }),
+        scanResult.completedAt,
+        quarantineInfo.at,
+        quarantineInfo.reason,
+        operatorId,
+        JSON.stringify(uploadMetadata),
+        uploadMetadata.uploadIntent || 'auto',
+      ]
+    );
+
+    const sourceFile = result.rows[0];
+
+    await recordFileSecurityEvent({
+      fileId: sourceFile.id,
+      eventType: 'upload_received',
+      actor: operatorId,
+      details: uploadMetadata,
     });
-    const jobId = job.id;
+    await recordFileSecurityEvent({
+      fileId: sourceFile.id,
+      eventType: 'checksum_recorded',
+      actor: operatorId,
+      details: { checksum },
+    });
+    await recordFileSecurityEvent({
+      fileId: sourceFile.id,
+      eventType:
+        scanResult.status === 'passed'
+          ? 'scan_passed'
+          : scanResult.status === 'failed'
+            ? 'scan_failed'
+            : 'scan_error',
+      actor: operatorId,
+      details: {
+        engine: scanResult.engine,
+        signatureVersion: scanResult.signatureVersion,
+        findings: scanResult.findings,
+        message: scanResult.message,
+      },
+    });
+
+    if (quarantineInfo.at) {
+      await recordFileSecurityEvent({
+        fileId: sourceFile.id,
+        eventType: 'quarantined',
+        actor: operatorId,
+        details: { reason: quarantineInfo.reason },
+      });
+    }
+
+    let jobId: string | undefined;
+    if (scanResult.status === 'passed') {
+      const job = await addUnifiedJob({
+        fileId: sourceFile.id,
+        intent: uploadIntent,
+      });
+      jobId = job.id?.toString();
+    }
 
     // Cleanup metadata from Redis
     await deleteUploadMetadata(uploadId);
 
     logger.info('Chunked upload completed and queued', {
       uploadId,
-      fileName: metadata.fileName,
+      fileId: sourceFile.id,
       jobId,
     });
 
     return res.status(200).json({
       success: true,
-      message: 'Upload completed and queued for processing',
+      message:
+        scanResult.status === 'passed'
+          ? 'Upload completed and queued for processing'
+          : 'Upload completed but quarantined pending review',
       data: {
         uploadId,
         fileName: metadata.fileName,
+        fileId: sourceFile.id,
         jobId,
       },
     });

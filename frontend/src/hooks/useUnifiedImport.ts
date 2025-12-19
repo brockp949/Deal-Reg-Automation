@@ -105,23 +105,38 @@ export function useUnifiedImport() {
         );
       }
     },
-    onComplete: (_uploadId, jobId) => {
-      const fileId = currentChunkedFileIdRef.current;
-      if (fileId) {
+    onComplete: (_uploadId, fileId, _jobId) => {
+      const localId = currentChunkedFileIdRef.current;
+      if (!localId) {
+        return;
+      }
+
+      if (!fileId) {
         setFiles((prev) =>
           prev.map((f) =>
-            f.id === fileId
-              ? { ...f, status: 'processing', uploadProgress: 100, fileId: jobId }
+            f.id === localId
+              ? { ...f, status: 'failed', error: 'Upload completed without a file ID' }
               : f
           )
         );
-
-        // Subscribe to processing progress
-        const file = files.find((f) => f.id === fileId);
-        if (file) {
-          subscribeToProgress({ ...file, fileId: jobId });
-        }
+        currentChunkedFileIdRef.current = null;
+        return;
       }
+
+      setFiles((prev) =>
+        prev.map((f) =>
+          f.id === localId
+            ? { ...f, status: 'processing', uploadProgress: 100, fileId }
+            : f
+        )
+      );
+
+      // Subscribe to processing progress
+      const file = files.find((f) => f.id === localId);
+      if (file) {
+        subscribeToProgress({ ...file, fileId });
+      }
+
       currentChunkedFileIdRef.current = null;
     },
     onError: (error) => {
@@ -192,20 +207,31 @@ export function useUnifiedImport() {
 
     const es = progressAPI.subscribe(importFile.fileId);
 
-    es.onmessage = (event) => {
+    const handleProgressData = (raw: string) => {
       try {
-        const data = JSON.parse(event.data);
+        const data = JSON.parse(raw);
+        const stage = data.stage || data.status;
+        const nextStatus =
+          stage === 'completed'
+            ? 'completed'
+            : stage === 'failed'
+              ? 'failed'
+              : 'processing';
         setFiles((prev) =>
           prev.map((f) => {
             if (f.id === importFile.id) {
+              const nextProgress =
+                typeof data.progress === 'number'
+                  ? data.progress
+                  : nextStatus === 'completed'
+                    ? 100
+                    : f.processingProgress;
               return {
                 ...f,
-                processingProgress: data.progress || f.processingProgress,
-                status: data.stage === 'completed' ? 'completed' :
-                        data.stage === 'failed' ? 'failed' :
-                        'processing',
-                result: data.result,
-                error: data.stage === 'failed' ? data.message : undefined,
+                processingProgress: nextProgress,
+                status: nextStatus,
+                result: data.result || f.result,
+                error: nextStatus === 'failed' ? data.message || data.error : undefined,
               };
             }
             return f;
@@ -213,11 +239,11 @@ export function useUnifiedImport() {
         );
 
         // Close connection when done
-        if (data.stage === 'completed' || data.stage === 'failed') {
+        if (nextStatus === 'completed' || nextStatus === 'failed') {
           es.close();
           eventSourcesRef.current.delete(importFile.id);
 
-          if (data.stage === 'completed') {
+          if (nextStatus === 'completed') {
             toast.success(`Processed ${importFile.file.name}`);
           } else {
             toast.error(`Failed to process ${importFile.file.name}`);
@@ -231,6 +257,20 @@ export function useUnifiedImport() {
       } catch (e) {
         console.error('Error parsing SSE data:', e);
       }
+    };
+
+    es.addEventListener('progress', (event) => {
+      handleProgressData((event as MessageEvent).data);
+    });
+    es.addEventListener('status', (event) => {
+      handleProgressData((event as MessageEvent).data);
+    });
+    es.addEventListener('complete', (event) => {
+      handleProgressData((event as MessageEvent).data);
+    });
+
+    es.onmessage = (event) => {
+      handleProgressData(event.data);
     };
 
     es.onerror = () => {
@@ -287,7 +327,40 @@ export function useUnifiedImport() {
         );
 
         if (response.data.success) {
-          const fileId = response.data.data?.id;
+          // The API returns full SourceFile data, not just FileUploadResponse
+          const fileData = response.data.data as any;
+          const fileId = fileData?.id;
+          const processingStatus = fileData?.processing_status;
+          const metadata = fileData?.metadata as { vendorsCreated?: number; dealsCreated?: number; contactsCreated?: number; errors?: string[]; warnings?: string[]; progress?: number } | undefined;
+
+          // Check if file is already completed (e.g., duplicate file)
+          if (processingStatus === 'completed') {
+            console.log('File already completed:', fileId, metadata);
+            setFiles((prev) =>
+              prev.map((f) =>
+                f.id === importFile.id
+                  ? {
+                      ...f,
+                      status: 'completed',
+                      uploadProgress: 100,
+                      processingProgress: 100,
+                      fileId,
+                      result: {
+                        vendorsCreated: metadata?.vendorsCreated || 0,
+                        dealsCreated: metadata?.dealsCreated || 0,
+                        contactsCreated: metadata?.contactsCreated || 0,
+                        errors: metadata?.errors || [],
+                        warnings: metadata?.warnings || [],
+                      },
+                    }
+                  : f
+              )
+            );
+            toast.success(`${importFile.file.name} already processed`);
+            return true;
+          }
+
+          // File needs processing
           setFiles((prev) =>
             prev.map((f) =>
               f.id === importFile.id

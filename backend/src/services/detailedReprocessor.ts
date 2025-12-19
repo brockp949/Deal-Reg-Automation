@@ -15,17 +15,22 @@
 
 import { query } from '../db';
 import { readFileSync, existsSync } from 'fs';
-import { join } from 'path';
 import logger from '../utils/logger';
 import { parseStreamingMboxFile } from '../parsers/streamingMboxParser';
 import {
   extractValueWithContext,
   extractCompaniesWithContext,
-  extractProducts,
-  detectDealStage,
-  extractTimeline,
-  calculateEnhancedConfidence,
 } from '../parsers/enhancedExtraction';
+import { parsePDFTranscript } from '../parsers/pdfParser';
+import { parseDocxTranscript } from '../parsers/docxParser';
+import {
+  TranscriptPreprocessor,
+  TranscriptNER,
+  IntentClassifier,
+  BuyingSignalDetector,
+  RelationshipExtractor,
+  DataSynthesizer,
+} from '../parsers/enhancedTranscriptParser';
 import { normalizeCompanyName, generateDealNameWithFeatures } from '../utils/fileHelpers';
 import { ensureVendorApproved, VendorDetectionContext } from './vendorApprovalService';
 import { VendorApprovalPendingError, VendorApprovalDeniedError } from '../errors/vendorApprovalErrors';
@@ -49,10 +54,16 @@ interface VendorMention {
   source: string;
 }
 
+interface DetailedReprocessingOptions {
+  onProgress?: (progress: number, message: string) => void;
+}
+
 /**
  * Main detailed reprocessing function
  */
-export async function performDetailedReprocessing(): Promise<ReprocessingResult> {
+export async function performDetailedReprocessing(
+  options: DetailedReprocessingOptions = {}
+): Promise<ReprocessingResult> {
   const startTime = Date.now();
   const result: ReprocessingResult = {
     filesProcessed: 0,
@@ -67,34 +78,47 @@ export async function performDetailedReprocessing(): Promise<ReprocessingResult>
 
   try {
     logger.info('Starting detailed reprocessing of all files...');
+    const { onProgress } = options;
 
     // Get all processed MBOX and transcript files
     const filesResult = await query(
-      `SELECT id, filename, file_path, file_type, status
+      `SELECT id, filename, storage_path, file_type, processing_status
        FROM source_files
-       WHERE file_type IN ('mbox', 'txt', 'pdf')
-       AND status = 'processed'
-       ORDER BY created_at ASC`
+       WHERE file_type = ANY($1)
+       AND processing_status = 'completed'
+       ORDER BY upload_date ASC`,
+      [['mbox', 'txt', 'pdf', 'docx', 'transcript']]
     );
 
     const files = filesResult.rows;
     logger.info(`Found ${files.length} files to reprocess`);
+    if (onProgress) {
+      onProgress(0, `Found ${files.length} files to reprocess`);
+    }
 
     // Process each file with detailed analysis
-    for (const file of files) {
+    for (const [index, file] of files.entries()) {
       try {
         logger.info(`Detailed processing: ${file.filename}`);
 
         if (file.file_type === 'mbox') {
           await reprocessMboxFile(file, result);
-        } else if (file.file_type === 'txt' || file.file_type === 'pdf') {
+        } else if (file.file_type === 'txt' || file.file_type === 'pdf' || file.file_type === 'docx' || file.file_type === 'transcript') {
           await reprocessTranscriptFile(file, result);
         }
 
         result.filesProcessed++;
+        if (onProgress) {
+          const progress = Math.round(((index + 1) / files.length) * 100);
+          onProgress(progress, `Processed ${file.filename}`);
+        }
       } catch (error: any) {
         logger.error(`Error reprocessing file ${file.filename}`, { error: error.message });
         result.errors.push(`${file.filename}: ${error.message}`);
+        if (onProgress) {
+          const progress = Math.round(((index + 1) / files.length) * 100);
+          onProgress(progress, `Failed ${file.filename}`);
+        }
       }
     }
 
@@ -120,12 +144,13 @@ export async function performDetailedReprocessing(): Promise<ReprocessingResult>
  * Reprocess MBOX file with detailed analysis
  */
 async function reprocessMboxFile(file: any, result: ReprocessingResult): Promise<void> {
-  if (!existsSync(file.file_path)) {
-    throw new Error(`File not found: ${file.file_path}`);
+  const filePath = file.storage_path as string | undefined;
+  if (!filePath || !existsSync(filePath)) {
+    throw new Error(`File not found: ${filePath || 'missing path'}`);
   }
 
   // Parse with lower confidence threshold for more deals
-  const mboxData = await parseStreamingMboxFile(file.file_path, {
+  const mboxData = await parseStreamingMboxFile(filePath, {
     confidenceThreshold: 0.2, // Lower threshold for detailed pass
   });
 
@@ -145,11 +170,12 @@ async function reprocessMboxFile(file: any, result: ReprocessingResult): Promise
  * Reprocess transcript file with detailed analysis
  */
 async function reprocessTranscriptFile(file: any, result: ReprocessingResult): Promise<void> {
-  if (!existsSync(file.file_path)) {
-    throw new Error(`File not found: ${file.file_path}`);
+  const filePath = file.storage_path as string | undefined;
+  if (!filePath || !existsSync(filePath)) {
+    throw new Error(`File not found: ${filePath || 'missing path'}`);
   }
 
-  const content = readFileSync(file.file_path, 'utf-8');
+  const content = await loadTranscriptContent(filePath, file.file_type);
 
   // Multi-pass analysis
   const deals = await extractDealsFromTranscript(content, {
@@ -160,10 +186,11 @@ async function reprocessTranscriptFile(file: any, result: ReprocessingResult): P
   logger.info(`Detailed transcript analysis found ${deals.length} potential deals`);
 
   for (const deal of deals) {
-    const vendors = await extractVendorsFromDeal(deal, file.id);
+    const normalizedDeal = normalizeTranscriptDeal(deal);
+    const vendors = await extractVendorsFromDeal(normalizedDeal, file.id);
     result.vendorsFound += vendors.length;
 
-    await createOrUpdateDealWithVendors(deal, vendors, result);
+    await createOrUpdateDealWithVendors(normalizedDeal, vendors, result);
   }
 }
 
@@ -556,9 +583,100 @@ async function enrichDealsWithMissingData(result: ReprocessingResult): Promise<v
  * Extract deals from transcript content with multi-pass analysis
  */
 async function extractDealsFromTranscript(content: string, options: any): Promise<any[]> {
-  // Placeholder - would integrate with enhanced transcript parser
-  // This would do multiple passes with different strategies
-  return [];
+  const analysis = await analyzeTranscriptText(content, {
+    buyingSignalThreshold: options?.buyingSignalThreshold ?? 0.2,
+    confidenceThreshold: options?.confidenceThreshold ?? 0.2,
+  });
+
+  if (!analysis.deal || !analysis.isRegisterable) {
+    return [];
+  }
+
+  return [analysis.deal];
+}
+
+async function loadTranscriptContent(filePath: string, fileType: string): Promise<string> {
+  if (fileType === 'pdf') {
+    return await parsePDFTranscript(filePath);
+  }
+
+  if (fileType === 'docx') {
+    return await parseDocxTranscript(filePath);
+  }
+
+  return readFileSync(filePath, 'utf-8');
+}
+
+async function analyzeTranscriptText(
+  content: string,
+  options: { buyingSignalThreshold?: number; confidenceThreshold?: number } = {}
+): Promise<{ deal: any | null; isRegisterable: boolean; buyingSignalScore: number }> {
+  const { buyingSignalThreshold = 0.3, confidenceThreshold = 0.2 } = options;
+
+  const turns = TranscriptPreprocessor.parseSpeakerTurns(content);
+  if (turns.length === 0) {
+    return {
+      deal: null,
+      isRegisterable: false,
+      buyingSignalScore: 0,
+    };
+  }
+
+  const buyingSignalScore = await BuyingSignalDetector.calculateBuyingSignalScore(turns);
+  const isRegisterable = BuyingSignalDetector.isRegisterableDeal(buyingSignalScore, buyingSignalThreshold);
+  if (!isRegisterable) {
+    return {
+      deal: null,
+      isRegisterable: false,
+      buyingSignalScore,
+    };
+  }
+
+  const fullText = turns.map(t => t.utterance).join(' ');
+  const entities = await TranscriptNER.extractEntitiesSemantic(fullText);
+
+  for (const turn of turns) {
+    const { intent, confidence } = IntentClassifier.classifyIntent(turn.utterance);
+    turn.intent = intent;
+    turn.confidence = confidence;
+  }
+
+  const relationships = RelationshipExtractor.extractRelationships(fullText, entities);
+  const deal = DataSynthesizer.synthesizeDealData(turns, entities, relationships, buyingSignalScore);
+
+  if (deal.confidence_score < confidenceThreshold) {
+    logger.warn('Transcript confidence below threshold during reprocessing', {
+      confidence: deal.confidence_score,
+      threshold: confidenceThreshold,
+    });
+  }
+
+  return {
+    deal,
+    isRegisterable: true,
+    buyingSignalScore,
+  };
+}
+
+function normalizeTranscriptDeal(deal: any) {
+  const customerName = deal.prospect_company_name || deal.end_user_company_name || '';
+  const dealName = deal.deal_name || deal.deal_description || 'Transcript Deal';
+
+  return {
+    deal_name: dealName,
+    project_name: deal.deal_name || deal.product_line || dealName,
+    deal_value: deal.estimated_deal_value,
+    currency: deal.currency || 'USD',
+    customer_name: customerName,
+    end_user_name: deal.end_user_company_name || customerName,
+    expected_close_date: deal.expected_close_date,
+    deal_stage: deal.deal_stage,
+    product_name: deal.product_line,
+    product_service_requirements: deal.product_service_requirements,
+    pre_sales_efforts: deal.substantiated_presales_efforts || deal.deal_description,
+    notes: deal.deal_description,
+    confidence_score: deal.confidence_score,
+  };
 }
 
 export default {

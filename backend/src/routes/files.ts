@@ -232,14 +232,39 @@ router.post('/upload', requireRole(['write', 'admin']), uploadLimiter, upload.si
       logger.info('Duplicate upload detected; reusing existing file', {
         duplicateOf: duplicateFile.id,
         attemptedFilename: req.file.originalname,
+        processingStatus: duplicateFile.processing_status,
       });
+
+      // Re-queue for processing if the file hasn't been processed yet
+      const needsReprocessing = ['pending', 'failed'].includes(duplicateFile.processing_status);
+      if (needsReprocessing) {
+        logger.info('Duplicate file needs processing, re-queueing', {
+          fileId: duplicateFile.id,
+          processingStatus: duplicateFile.processing_status,
+        });
+
+        const { addUnifiedJob } = await import('../queues/unifiedProcessingQueue');
+        const job = await addUnifiedJob({
+          fileId: duplicateFile.id,
+          intent: uploadMetadata.uploadIntent || 'auto',
+          vendorId: uploadMetadata.vendorId,
+          vendorName: uploadMetadata.vendorName,
+        });
+        logger.info('Duplicate file queued for unified processing', {
+          fileId: duplicateFile.id,
+          jobId: job.id,
+          intent: uploadMetadata.uploadIntent,
+        });
+      }
 
       return res.status(200).json({
         success: true,
         data: duplicateFile,
         duplicate: true,
         duplicateOf: duplicateFile.id,
-        message: `Duplicate upload detected. Reusing ${duplicateFile.filename}`,
+        message: needsReprocessing
+          ? `Duplicate detected. Re-queuing ${duplicateFile.filename} for processing.`
+          : `Duplicate upload detected. Reusing ${duplicateFile.filename}`,
       });
     }
 

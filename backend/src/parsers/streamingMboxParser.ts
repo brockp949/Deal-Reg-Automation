@@ -90,11 +90,16 @@ export async function parseStreamingMboxFile(
           emailBlocks.push(currentEmailLines.join('\n'));
         }
 
-        logger.info(`Found ${emailBlocks.length} email blocks in MBOX file`);
+        const totalBlocks = emailBlocks.length;
+        logger.info(`Found ${totalBlocks} email blocks in MBOX file`);
 
         // Process emails in batches to avoid memory issues
         const batchSize = 50;
-        for (let i = 0; i < emailBlocks.length; i += batchSize) {
+        if (onProgress) {
+          onProgress(0, totalBlocks);
+        }
+
+        for (let i = 0; i < totalBlocks; i += batchSize) {
           const batch = emailBlocks.slice(i, i + batchSize);
 
           for (const [index, block] of batch.entries()) {
@@ -102,7 +107,7 @@ export async function parseStreamingMboxFile(
           }
 
           if (onProgress) {
-            onProgress(Math.min(i + batchSize, emailBlocks.length));
+            onProgress(Math.min(i + batchSize, totalBlocks), totalBlocks);
           }
         }
 
@@ -126,8 +131,14 @@ export async function parseStreamingMboxFile(
         const extractedDeals: ExtractedDeal[] = [];
 
         for (const thread of threads) {
-          const threadDeals = processThread(thread);
-          extractedDeals.push(...threadDeals);
+          const threadDeals = await processThread(thread);
+          if (Array.isArray(threadDeals)) {
+            extractedDeals.push(...threadDeals);
+          } else if (threadDeals) {
+            logger.warn('Unexpected thread deals payload', {
+              type: typeof threadDeals,
+            });
+          }
         }
 
         logger.info('Deal extraction completed', {

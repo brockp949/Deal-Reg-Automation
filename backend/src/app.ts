@@ -58,6 +58,11 @@ import validationRoutes from './routes/validation';
 
 const app = express();
 
+const isChunkedUploadRequest = (req: Request): boolean => {
+  const path = req.originalUrl || req.url || '';
+  return path.includes(`${config.apiPrefix}/files/upload/chunked`) || path.includes('/files/upload/chunked');
+};
+
 // Security and parsing middleware
 app.use(helmet({
   contentSecurityPolicy: {
@@ -81,8 +86,14 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(apiKeyAuth);
 app.use(apiKeyUsageLogger);
-app.use(apiLimiter);
-app.use(mutationLimiter);
+app.use((req, res, next) => {
+  if (isChunkedUploadRequest(req)) return next();
+  return apiLimiter(req, res, next);
+});
+app.use((req, res, next) => {
+  if (isChunkedUploadRequest(req)) return next();
+  return mutationLimiter(req, res, next);
+});
 app.use(methodRoleGuard);
 app.use(requestMetrics);
 app.use(morgan('combined', {
@@ -147,7 +158,10 @@ app.use(`${config.apiPrefix}/vendors/:vendorId/deals`, uploadLimiter, dealImport
 app.use(`${config.apiPrefix}/vendors/:vendorId/deals`, vendorSpreadsheetExportRoutes); // Vendor spreadsheet export
 app.use(`${config.apiPrefix}/vendors/:vendorId/agreements`, uploadLimiter, agreementRoutes); // Vendor agreements
 app.use(`${config.apiPrefix}/deals`, dealRoutes);
-app.use(`${config.apiPrefix}/files`, uploadLimiter, fileRoutes);
+app.use(`${config.apiPrefix}/files`, (req, res, next) => {
+  if (isChunkedUploadRequest(req)) return next();
+  return uploadLimiter(req, res, next);
+}, fileRoutes);
 app.use(`${config.apiPrefix}/configs`, configRoutes);
 app.use(`${config.apiPrefix}/contacts`, contactRoutes);
 app.use(`${config.apiPrefix}/export`, exportRoutes);
@@ -181,7 +195,7 @@ app.use(`${config.apiPrefix}/sync/drive`, driveSyncRoutes);
 app.use(`${config.apiPrefix}/sync/stats`, syncStatsRoutes);
 app.use(`${config.apiPrefix}/progress`, progressRoutes);
 app.use(`${config.apiPrefix}/feedback`, feedbackRoutes);
-app.use(`${config.apiPrefix}/files/upload/chunked`, uploadLimiter, chunkedUploadRoutes);
+app.use(`${config.apiPrefix}/files/upload/chunked`, chunkedUploadRoutes);
 app.use(`${config.apiPrefix}/validation`, uploadLimiter, validationRoutes);
 
 // 404 handler
