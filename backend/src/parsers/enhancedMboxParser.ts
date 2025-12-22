@@ -542,6 +542,13 @@ export function isRelevantEmail(message: ParsedEmailMessage, vendorDomains: stri
 
   const combinedLower = `${subjectLower} ${bodyLower}`.trim();
 
+  // Check Tier 2 keywords (medium priority) - moved up to avoid context issues
+  for (const keyword of TIER2_KEYWORDS) {
+    if (combinedLower.includes(keyword)) {
+      return true;
+    }
+  }
+
   // Check Tier 1 keywords in subject (high priority)
   for (const keyword of TIER1_KEYWORDS) {
     if (combinedLower.includes(keyword)) {

@@ -1,20 +1,37 @@
 import { useState } from 'react';
-// import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { api } from '@/lib/api';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { FileUp, LayoutTemplate } from 'lucide-react';
 import UnifiedImportWizard from '@/components/upload/UnifiedImportWizard';
-import { DealReviewSplitView } from '@/components/DealReviewSplitView'; // To be created
+import { DealReviewSplitView } from '@/components/DealReviewSplitView';
 
 export default function DealStudio() {
     const [activeTab, setActiveTab] = useState('upload');
-    // const [files, setFiles] = useState<File[]>([]); // Unused
-    const [processedDeals] = useState<any[]>([]);
+    const [processedDeals, setProcessedDeals] = useState<any[]>([]);
 
-    // const handleUploadComplete = (deals: any[]) => {
-    //     setProcessedDeals(deals);
-    //     setActiveTab('review');
-    // };
+    const handleUploadComplete = async (fileId: string) => {
+        try {
+            const response = await api.get('/deals', {
+                params: { source_file_id: fileId }
+            });
+            if (response.data.success) {
+                const deals = response.data.data;
+                setProcessedDeals(deals);
+
+                if (deals.length > 0) {
+                    toast.success(`Loaded ${deals.length} deals for review`);
+                    setActiveTab('review');
+                } else {
+                    toast.info('No deals found in the uploaded file');
+                }
+            }
+        } catch (error) {
+            console.error('Failed to fetch deals', error);
+            toast.error('Failed to load extracted deals');
+        }
+    };
 
     return (
         <div className="container py-8 space-y-6">
@@ -46,7 +63,7 @@ export default function DealStudio() {
                 </TabsList>
 
                 <TabsContent value="upload" className="space-y-4">
-                    <UnifiedImportWizard />
+                    <UnifiedImportWizard onUploadComplete={handleUploadComplete} />
                 </TabsContent>
 
                 <TabsContent value="review" className="space-y-4">

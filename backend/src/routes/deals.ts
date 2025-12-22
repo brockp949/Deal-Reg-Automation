@@ -73,6 +73,7 @@ router.get('/', dealValidations.getAll, async (req: Request, res: Response) => {
       sort_by = 'created_at',
       sort_order = 'desc',
       search,
+      source_file_id,
     } = req.query;
 
     const pageNum = parseInt(page as string, 10);
@@ -102,6 +103,11 @@ router.get('/', dealValidations.getAll, async (req: Request, res: Response) => {
     if (max_value) {
       conditions.push(`deal_value <= $${paramCount++}`);
       params.push(parseFloat(max_value as string));
+    }
+
+    if (source_file_id) {
+      conditions.push(`$${paramCount++} = ANY(source_file_ids)`);
+      params.push(source_file_id);
     }
 
     if (search) {
