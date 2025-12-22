@@ -267,6 +267,10 @@ export class SemanticEntityExtractor {
 Document Context:
 - Type: ${context.documentType || 'unknown'}
 - Language: ${context.language || 'auto-detect'}
+${context.additionalInfo?.fileName ? `- File Name: ${context.additionalInfo.fileName}` : ''}
+${context.additionalInfo?.subject ? `- Subject: ${context.additionalInfo.subject}` : ''}
+${context.additionalInfo?.sender ? `- Sender: ${context.additionalInfo.sender}` : ''}
+${context.additionalInfo?.recipients ? `- Recipients: ${context.additionalInfo.recipients}` : ''}
 ${context.additionalInfo ? `- Additional Info: ${JSON.stringify(context.additionalInfo)}` : ''}
 `
       : '';

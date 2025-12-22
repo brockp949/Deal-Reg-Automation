@@ -106,6 +106,67 @@ export class StandardizedTranscriptParser extends BaseParser {
       const buyingSignalThreshold = options?.buyingSignalThreshold ?? 0.35;
 
       try {
+        // Read transcript text first to get lines (and potentially for metadata if needed)
+        // We'll read it again inside parseEnhancedTranscript but that's okay for now
+
+        // Load source metadata first to pass to enhanced parser
+        let metadataForContext: Record<string, any> = {};
+        const sourceMetadata = await loadSourceMetadata(filePath);
+
+        if (sourceMetadata) {
+          output.metadata.sourceMetadata = sourceMetadata;
+          if (sourceMetadata.queryName) metadataForContext.fileName = sourceMetadata.queryName;
+          metadataForContext.subject = sourceMetadata.queryName; // often the query name is the closest thing to a subject
+
+          // Extract other useful metadata
+          if (sourceMetadata.connector === 'drive') {
+            if (sourceMetadata.file.owners?.length) {
+              metadataForContext.sender = sourceMetadata.file.owners.map(o => o.displayName || o.emailAddress).join(', ');
+            }
+            metadataForContext.fileName = sourceMetadata.file.name;
+          } else if (sourceMetadata.connector === 'gmail') {
+            metadataForContext.subject = sourceMetadata.message.headers['Subject'];
+            metadataForContext.sender = sourceMetadata.message.headers['From'];
+            metadataForContext.recipients = sourceMetadata.message.headers['To'];
+          } else if (sourceMetadata.connector === 'teams_transcript') {
+            metadataForContext.subject = sourceMetadata.transcript.subject;
+            metadataForContext.participants = sourceMetadata.transcript.participants?.map((p: any) => p.name).join(', ');
+            metadataForContext.startTime = sourceMetadata.transcript.startTime;
+          } else if (sourceMetadata.connector === 'zoom_transcript') {
+            metadataForContext.subject = sourceMetadata.transcript.topic;
+            metadataForContext.startTime = sourceMetadata.transcript.startTime;
+          }
+
+          const metadataTags: string[] = [];
+          metadataTags.push('source:transcript');
+          if (sourceMetadata.queryName) {
+            metadataTags.push(`query:${sourceMetadata.queryName}`);
+          }
+          if (sourceMetadata.connector === 'drive') {
+            metadataTags.push(`doc:${sourceMetadata.file.id}`);
+            metadataTags.push(`doc-name:${sourceMetadata.file.name}`);
+            if (sourceMetadata.file.createdTime) {
+              metadataTags.push(`doc-created:${sourceMetadata.file.createdTime}`);
+            }
+            if (sourceMetadata.file.modifiedTime) {
+              metadataTags.push(`doc-modified:${sourceMetadata.file.modifiedTime}`);
+            }
+            sourceMetadata.file.owners?.forEach((owner) => {
+              const ownerLabel = owner.displayName || owner.emailAddress;
+              if (ownerLabel) {
+                metadataTags.push(`doc-owner:${ownerLabel}`);
+              }
+            });
+          }
+          output.metadata.sourceTags = Array.from(
+            new Set(
+              metadataTags.filter((tag) => Boolean(tag && tag.trim())).map((tag) => tag.trim())
+            )
+          );
+        } else {
+          metadataForContext.fileName = fileName;
+        }
+
         // Use enhanced parsing if requested (default)
         if (options?.useEnhancedParsing !== false) {
           // parseEnhancedTranscript expects filePath and reads the file itself
@@ -113,6 +174,7 @@ export class StandardizedTranscriptParser extends BaseParser {
             buyingSignalThreshold,
             confidenceThreshold: options?.confidenceThreshold || 0.6,
             allowLowSignal: true,
+            metadata: metadataForContext
           });
 
           // Read the transcript text for line count
@@ -177,38 +239,6 @@ export class StandardizedTranscriptParser extends BaseParser {
             logger.warn('Failed to clean up temp file', { tempFilePath, error: err.message });
           }
         }
-      }
-
-      // Load source metadata if available
-      const sourceMetadata = await loadSourceMetadata(filePath);
-      if (sourceMetadata) {
-        output.metadata.sourceMetadata = sourceMetadata;
-        const metadataTags: string[] = [];
-        metadataTags.push('source:transcript');
-        if (sourceMetadata.queryName) {
-          metadataTags.push(`query:${sourceMetadata.queryName}`);
-        }
-        if (sourceMetadata.connector === 'drive') {
-          metadataTags.push(`doc:${sourceMetadata.file.id}`);
-          metadataTags.push(`doc-name:${sourceMetadata.file.name}`);
-          if (sourceMetadata.file.createdTime) {
-            metadataTags.push(`doc-created:${sourceMetadata.file.createdTime}`);
-          }
-          if (sourceMetadata.file.modifiedTime) {
-            metadataTags.push(`doc-modified:${sourceMetadata.file.modifiedTime}`);
-          }
-          sourceMetadata.file.owners?.forEach((owner) => {
-            const ownerLabel = owner.displayName || owner.emailAddress;
-            if (ownerLabel) {
-              metadataTags.push(`doc-owner:${ownerLabel}`);
-            }
-          });
-        }
-        output.metadata.sourceTags = Array.from(
-          new Set(
-            metadataTags.filter((tag) => Boolean(tag && tag.trim())).map((tag) => tag.trim())
-          )
-        );
       }
 
       const baseTags = new Set(output.metadata.sourceTags ?? []);

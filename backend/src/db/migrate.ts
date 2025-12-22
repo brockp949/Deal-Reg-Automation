@@ -70,7 +70,7 @@ async function runMigrations() {
     console.log('✓ All migrations completed successfully');
     process.exit(0);
   } catch (error) {
-    console.error('✗ Migration failed:', error.message, error.stack, JSON.stringify(error, null, 2));
+    console.error('✗ Migration failed:', (error as any).message, (error as any).stack, JSON.stringify(error, null, 2));
     logger.error('Migration execution failed', { error });
     process.exit(1);
   }

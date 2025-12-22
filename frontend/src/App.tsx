@@ -5,6 +5,7 @@ import Vendors from './pages/Vendors';
 import VendorDetail from './pages/VendorDetail';
 import VendorApproval from './pages/VendorApproval';
 import FileUpload from './pages/FileUpload';
+import DealStudio from './pages/DealStudio';
 import Monitoring from './pages/Monitoring';
 import Errors from './pages/Errors';
 import SyncSettingsPage from './pages/SyncSettingsPage';
@@ -23,6 +24,7 @@ function App() {
           <Route path="/vendor-approval" element={<VendorApproval />} />
           <Route path="/upload" element={<FileUpload />} />
           <Route path="/monitoring" element={<Monitoring />} />
+          <Route path="/deal-studio" element={<DealStudio />} />
           <Route path="/settings/sync" element={<SyncSettingsPage />} />
           <Route path="/errors" element={<Errors />} />
         </Routes>

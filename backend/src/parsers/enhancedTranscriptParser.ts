@@ -354,7 +354,7 @@ export class TranscriptNER {
   /**
    * Extract entities using semantic AI extraction
    */
-  static async extractEntitiesSemantic(text: string): Promise<ExtractedEntity[]> {
+  static async extractEntitiesSemantic(text: string, context?: any): Promise<ExtractedEntity[]> {
     const entities: ExtractedEntity[] = [];
 
     // Check if skill is enabled
@@ -386,6 +386,7 @@ export class TranscriptNER {
           language: 'auto-detect',
           additionalInfo: {
             type: 'meeting_transcript',
+            ...(context || {}),
           },
         },
       });
@@ -1044,6 +1045,7 @@ export async function parseEnhancedTranscript(
     buyingSignalThreshold?: number;
     confidenceThreshold?: number;
     allowLowSignal?: boolean;
+    metadata?: Record<string, any>;
   } = {}
 ): Promise<{
   deal: EnhancedDealData | null;
@@ -1051,7 +1053,7 @@ export async function parseEnhancedTranscript(
   isRegisterable: boolean;
   buyingSignalScore: number;
 }> {
-  const { buyingSignalThreshold = 0.5, confidenceThreshold = 0.6, allowLowSignal = false } = options;
+  const { buyingSignalThreshold = 0.5, confidenceThreshold = 0.6, allowLowSignal = false, metadata } = options;
 
   logger.info('Starting enhanced transcript parsing', { filePath });
 
@@ -1095,7 +1097,7 @@ export async function parseEnhancedTranscript(
 
   // STAGE 3: Named Entity Recognition (AI-enhanced)
   const fullText = turns.map(t => t.utterance).join(' ');
-  const entities = await TranscriptNER.extractEntitiesSemantic(fullText);
+  const entities = await TranscriptNER.extractEntitiesSemantic(fullText, metadata);
 
   // STAGE 4: Intent Classification
   for (const turn of turns) {

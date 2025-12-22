@@ -52,6 +52,65 @@ Analyze the text below and extract:
 - **0.3-0.5**: Low confidence, significant ambiguity
 - **0.0-0.3**: Very uncertain, possibly incorrect
 
+## Examples
+
+### Example 1: Clear Email Thread
+**Text**:
+"Hi, this is John Doe from Acme Corp (john@acme.com). We'd like to move forward with the Cloud Migration project for $250k. Please send the contract."
+
+**Extraction**:
+```json
+{
+  "deals": [{
+    "dealName": "Cloud Migration",
+    "customerName": "Acme Corp",
+    "dealValue": 250000,
+    "currency": "USD",
+    "status": "proposal",
+    "confidence": 0.95,
+    "sourceLocation": "email body",
+    "reasoning": "Explicit statement of intent and value"
+  }],
+  "contacts": [{
+    "name": "John Doe",
+    "email": "john@acme.com",
+    "company": "Acme Corp",
+    "confidence": 1.0,
+    "sourceLocation": "email intro",
+    "reasoning": "Self-identified in email"
+  }]
+}
+```
+
+### Example 2: Forwarded Thread / Ambiguous
+**Text**:
+"FYI - see below. 
+> From: Sarah (sarah@tech.io)
+> We are budget constrained. Maybe $50k max for the pilot?"
+
+**Extraction**:
+```json
+{
+  "deals": [{
+    "dealName": "Pilot",
+    "dealValue": 50000,
+    "currency": "USD",
+    "status": "negotiation",
+    "confidence": 0.7,
+    "sourceLocation": "quoted text",
+    "reasoning": "Budget constraint mentioned in forwarded thread"
+  }],
+  "contacts": [{
+    "name": "Sarah",
+    "email": "sarah@tech.io",
+    "company": "Tech.io",
+    "confidence": 0.9,
+    "sourceLocation": "forwarded header",
+    "reasoning": "Extracted from forwarded email header"
+  }]
+}
+```
+
 ## Important Rules
 
 1. **Only extract information that is actually present** - Don't invent or assume
@@ -61,6 +120,7 @@ Analyze the text below and extract:
 5. **Handle ambiguity gracefully** - Lower confidence when uncertain
 6. **Normalize data** - Clean up formatting, standardize values
 7. **Focus on business deals** - Ignore casual mentions or unrelated content
+8. **Context Awareness** - If provided with document metadata (e.g., "Subject: Q4 Deal"), use it to infer deal names or dates if missing in body.
 
 ## Edge Cases
 
@@ -70,7 +130,8 @@ Analyze the text below and extract:
 - **Currency without symbol**: Infer from context or use USD as default
 - **Person vs. Company**: Companies usually have legal suffixes (Inc, LLC, Corp, Ltd)
 - **Email signatures**: Extract contacts but ignore boilerplate/disclaimers
-- **Forwarded/quoted content**: Process all content, mark locations accurately
+- **Forwarded/quoted content**: Process all content, identify the most relevant current deal state
+- **File Metadata**: If header information contains file names or subjects, allow that to influence extraction (e.g., Subject: "Project X" -> dealName: "Project X")
 
 ## Output Format
 
