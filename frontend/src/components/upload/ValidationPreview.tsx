@@ -83,7 +83,7 @@ export function ValidationPreview({
   onCancel,
   onApplyAutoFix,
 }: ValidationPreviewProps) {
-  const { isValid: _isValid, confidence, structure, preview, warnings, errors, suggestions } = validation;
+  const { confidence, structure, preview, warnings, errors, suggestions } = validation;
 
   // Determine overall status
   const hasErrors = errors.length > 0;

@@ -19,54 +19,107 @@ import {
 import { processThread } from './enhancedMboxParserLayers';
 import logger from '../utils/logger';
 
+// MBOX conversion report item
+export interface MboxConversionItem { // Renamed for internal use, maps to ConversionReport
+  id: string;
+  status: 'extracted' | 'skipped' | 'failed';
+  message?: string;
+  details?: any;
+}
+
 export interface EnhancedMboxResult {
   threads: EmailThread[];
   extractedDeals: ExtractedDeal[];
   totalMessages: number;
   relevantMessages: number;
   processingTime: number;
+  conversionReport: MboxConversionItem[]; // Added report
 }
 
-function isMboxDelimiterLine(line: string): boolean {
-  if (!line.startsWith('From ')) {
-    return false;
-  }
-
-  // Avoid false positives on headers like "From:"
-  if (line.startsWith('From:')) {
-    return false;
-  }
-
-  // Heuristic: typical mbox delimiter lines include a time token and a year token.
-  const parts = line.split(' ').filter(Boolean);
-  if (parts.length < 2) {
-    return false;
-  }
-
-  const hasTime = parts.some((part) => /^\d{1,2}:\d{2}(?::\d{2})?$/.test(part));
-  const hasYear = parts.some((part) => /^\d{4}$/.test(part));
-
-  return hasTime && hasYear;
-}
-
-async function* streamMboxBlocks(filePath: string): AsyncGenerator<string> {
+/**
+ * Robust MBOX Stream Splitter
+ * Uses a state machine to correctly identify "From " lines, handling variations
+ * and potential escaping (e.g. ">From ").
+ */
+// Export for testing
+export async function* streamMboxBlocks(filePath: string): AsyncGenerator<string> {
   const stream = createReadStream(filePath, { encoding: 'utf-8' });
   const rl = createInterface({ input: stream, crlfDelay: Infinity });
 
   let currentLines: string[] = [];
+  let inMessage = false;
+  let lineCount = 0;
+
+  // robust delimiter tracking
+  let previousLineWasEmpty = false;
 
   for await (const line of rl) {
-    if (isMboxDelimiterLine(line) && currentLines.length > 0) {
-      yield currentLines.join('\n');
-      currentLines = [];
+    lineCount++;
+    const delimiter = isMboxDelimiterLine(line, previousLineWasEmpty);
+
+    if (delimiter) {
+      if (inMessage && currentLines.length > 0) {
+        yield currentLines.join('\n');
+        currentLines = [];
+      }
+      inMessage = true;
+      // We include the From text in the block so the parser can read it if needed,
+      // though typically simpleParser might expect it or ignore it.
+      // Standard mbox: 'From ' line is start of message.
+      currentLines.push(line);
+    } else {
+      if (inMessage) {
+        currentLines.push(line);
+      }
     }
 
-    currentLines.push(line);
+    previousLineWasEmpty = (line.trim().length === 0);
   }
 
+  // Yield the last message
   if (currentLines.length > 0) {
     yield currentLines.join('\n');
   }
+}
+
+export function isMboxDelimiterLine(line: string, previousLineWasEmpty: boolean): boolean {
+  // 1. Basic check: must start with "From "
+  if (!line.startsWith('From ')) {
+    return false;
+  }
+
+  // 2. "From:" header check (common false positive)
+  if (line.startsWith('From:')) {
+    return false;
+  }
+
+  const parts = line.split(' ');
+
+  // 4. Check for typical date/time patterns ANYWHERE in line (Strong Match)
+  // Pattern: includes year (4 digits) and time (HH:MM)
+  const hasYear = /\d{4}/.test(line);
+  const hasTime = /\d{1,2}:\d{2}/.test(line);
+
+  // If it looks like a standard From line with date, trust it regardless of previous line.
+  // We expect at least "From <address> <date_part>" (length >= 3) for a strong match with date.
+  if (parts.length >= 3 && hasYear && hasTime) {
+    return true;
+  }
+
+  // 5. Fallback: Weak match based on Structure
+  // Standard strict mbox requires the empty line before the delimiter.
+  if (previousLineWasEmpty) {
+    // If previous line was empty, we are more permissive.
+    // We accept "From <address>" (length >= 2) even if date parsing fails.
+    // Valid: "From user@example.com"
+    // Invalid: "From " (trailing space only, length 2 in split if space at end? split(' ') gives ['', ''] for ' ', 'From ' -> ['From', ''])
+    // 'From user'.split(' ') -> ['From', 'user'] (length 2)
+    if (parts.length >= 2 && parts[1].trim() !== '') {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -85,7 +138,9 @@ export async function parseEnhancedMboxFile(
     confidenceThreshold = 0.3,
   } = options;
 
-  logger.info('Starting enhanced MBOX parsing', {
+  const conversionReport: MboxConversionItem[] = [];
+
+  logger.info('Starting enhanced MBOX parsing (Robust Mode)', {
     file: filePath,
     vendorDomains,
     confidenceThreshold,
@@ -103,15 +158,14 @@ export async function parseEnhancedMboxFile(
       }
 
       totalMessages += 1;
-      try {
-        // Remove the "From " line
-        const emailContent = block.replace(/^From .*\r?\n/, '');
+      let messageId = `unknown-${i}`;
 
+      try {
         // Parse email
-        const parsed: ParsedMail = await simpleParser(emailContent);
+        const parsed: ParsedMail = await simpleParser(block);
 
         // Extract metadata
-        const messageId = parsed.messageId || `generated-${i}-${Date.now()}`;
+        messageId = parsed.messageId || `generated-${i}-${Date.now()}`;
         const from = extractEmailAddress(parsed.from);
         const to = extractEmailAddresses(parsed.to);
         const cc = extractEmailAddresses(parsed.cc);
@@ -138,9 +192,8 @@ export async function parseEnhancedMboxFile(
           cc,
           subject,
           date,
-          // Raw bodies are not used by downstream extraction; keep minimal to reduce memory.
-          body_text: '',
-          body_html: undefined,
+          body_text: '', // Optimized: exclude raw text
+          body_html: undefined, // Optimized: exclude raw html
           in_reply_to: inReplyTo,
           references: Array.isArray(references) ? references : [references],
           cleaned_body: cleanedBody,
@@ -151,12 +204,26 @@ export async function parseEnhancedMboxFile(
 
         if (isRelevantEmail(parsedMsg, vendorDomains)) {
           relevantMessages.push(parsedMsg);
+          // Status determined after full processing, but for now it's "candidate"
+        } else {
+          conversionReport.push({
+            id: messageId,
+            status: 'skipped',
+            message: 'Irrelevant sender or domain',
+            details: { from, subject }
+          });
         }
 
       } catch (error: any) {
         logger.warn('Failed to parse individual email', {
           error: error.message,
           blockIndex: i,
+        });
+        conversionReport.push({
+          id: messageId,
+          status: 'failed',
+          message: error.message,
+          details: { blockIndex: i }
         });
       }
 
@@ -169,15 +236,20 @@ export async function parseEnhancedMboxFile(
     });
 
     // PHASE 3: Thread Correlation
-    const threads = correlateThreads(relevantMessages);
-
-    logger.info(`Correlated messages into ${threads.length} threads`);
+    let threads: EmailThread[] = [];
+    try {
+      threads = correlateThreads(relevantMessages);
+      logger.info(`Correlated messages into ${threads.length} threads`);
+    } catch (err: any) {
+      logger.error('Thread correlation failed', err);
+      throw new Error(`Thread correlation failed: ${err.message}`);
+    }
 
     // PHASE 4: Layer 2 & 3 - Extract deals from threads
     const allDeals: ExtractedDeal[] = [];
 
     for (const thread of threads) {
-      logger.info(`Processing thread: "${thread.subject_normalized}" (${thread.messages.length} messages)`);
+      // logger.info(`Processing thread: "${thread.subject_normalized}"`); // Reduced log spam
 
       const deals = await processThread(thread);
 
@@ -186,9 +258,43 @@ export async function parseEnhancedMboxFile(
         deal => deal.confidence_score >= confidenceThreshold
       );
 
-      allDeals.push(...highConfidenceDeals);
+      const discardedDeals = deals.filter(
+        deal => deal.confidence_score < confidenceThreshold
+      );
 
-      logger.info(`Extracted ${highConfidenceDeals.length} high-confidence deals from thread`);
+      // Track conversion report for extracted deals
+      highConfidenceDeals.forEach(deal => {
+        conversionReport.push({
+          id: deal.source_email_id,
+          status: 'extracted',
+          message: 'Deal extracted successfully',
+          details: { dealName: deal.deal_name, confidence: deal.confidence_score }
+        });
+      });
+
+      // Report discarded low-confidence deals
+      discardedDeals.forEach(deal => {
+        conversionReport.push({
+          id: deal.source_email_id,
+          status: 'skipped',
+          message: 'Low confidence score',
+          details: { confidence: deal.confidence_score, threshold: confidenceThreshold }
+        });
+      });
+
+      // Mark messages in thread that didn't yield deals as processed/skipped-context
+      thread.messages.forEach(msg => {
+        const reportExists = conversionReport.find(r => r.id === msg.message_id);
+        if (!reportExists) {
+          conversionReport.push({
+            id: msg.message_id,
+            status: 'skipped',
+            message: 'Contextual message (no standalone deal)'
+          });
+        }
+      });
+
+      allDeals.push(...highConfidenceDeals);
     }
 
     // Sort deals by confidence score (highest first)
@@ -210,6 +316,7 @@ export async function parseEnhancedMboxFile(
       totalMessages,
       relevantMessages: relevantMessages.length,
       processingTime,
+      conversionReport,
     };
 
   } catch (error: any) {

@@ -182,6 +182,10 @@ export class StandardizedTranscriptParser extends BaseParser {
           output.statistics.linesProcessed = transcriptText.split('\n').length;
 
           // Convert enhanced transcript result to standard format
+          if (enhancedResult.conversionReport) {
+            (output as any).conversionReport = enhancedResult.conversionReport;
+          }
+
           if (!enhancedResult.deal) {
             logger.warn('Transcript did not yield a deal', { buyingSignalScore: enhancedResult.buyingSignalScore });
             extractedData = { vendors: [], deals: [], contacts: [] };

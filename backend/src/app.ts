@@ -55,6 +55,7 @@ import feedbackRoutes from './routes/feedback';
 import chunkedUploadRoutes from './routes/chunkedUpload';
 import monitoringRoutes from './routes/monitoring';
 import validationRoutes from './routes/validation';
+import emailThreadsRoutes from './routes/emailThreads';
 
 const app = express();
 
@@ -197,6 +198,7 @@ app.use(`${config.apiPrefix}/progress`, progressRoutes);
 app.use(`${config.apiPrefix}/feedback`, feedbackRoutes);
 app.use(`${config.apiPrefix}/files/upload/chunked`, chunkedUploadRoutes);
 app.use(`${config.apiPrefix}/validation`, uploadLimiter, validationRoutes);
+app.use(`${config.apiPrefix}/email-threads`, emailThreadsRoutes);
 
 // 404 handler
 app.use((req: Request, res: Response) => {

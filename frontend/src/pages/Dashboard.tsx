@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Building2, Briefcase, FileText, TrendingUp, Plus, Upload, ArrowRight, Cloud, Mail, HardDrive, Lightbulb } from 'lucide-react';
+import { Building2, Briefcase, FileText, TrendingUp, Plus, Upload, ArrowRight, Cloud, Mail, HardDrive, Lightbulb, Sparkles } from 'lucide-react';
 import { vendorAPI, dealAPI, fileAPI, syncStatsAPI } from '@/lib/api';
 import { formatCurrency, formatDate, formatFileSize } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -106,6 +106,55 @@ export default function Dashboard() {
 
   const isNewUser = totalVendors === 0 && totalDeals === 0 && totalFiles === 0;
 
+  const kpiCards = [
+    {
+      label: 'Total Vendors',
+      value: totalVendors,
+      subtext: vendors.length > 0 ? `+${vendors.length} recent` : undefined,
+      subtextColor: 'text-green-500',
+      icon: Building2,
+      iconColor: 'text-primary',
+      iconBg: 'bg-primary/10',
+    },
+    {
+      label: 'Total Deals',
+      value: totalDeals,
+      subtext: deals.length > 0 ? `+${deals.length} recent` : undefined,
+      subtextColor: 'text-green-500',
+      icon: Briefcase,
+      iconColor: 'text-green-500',
+      iconBg: 'bg-green-500/10',
+    },
+    {
+      label: 'Files Processed',
+      value: totalFiles,
+      subtext: 'Completed',
+      subtextColor: 'text-muted-foreground',
+      icon: FileText,
+      iconColor: 'text-blue-500',
+      iconBg: 'bg-blue-500/10',
+    },
+    {
+      label: 'Deal Value',
+      value: formatCurrency(totalDealValue),
+      subtext: 'Total pipeline',
+      subtextColor: 'text-muted-foreground',
+      icon: TrendingUp,
+      iconColor: 'text-amber-500',
+      iconBg: 'bg-amber-500/10',
+    },
+    {
+      label: 'Google Sync',
+      value: activeConfigs,
+      subtext: syncStats?.lastSyncAt ? `Last: ${getRelativeTime(syncStats.lastSyncAt)}` : 'No syncs yet',
+      subtextColor: 'text-muted-foreground',
+      icon: Cloud,
+      iconColor: 'text-cyan-500',
+      iconBg: 'bg-cyan-500/10',
+      onClick: () => window.location.href = '/settings/sync',
+    },
+  ];
+
   return (
     <div>
       <div className="mb-6">
@@ -115,156 +164,101 @@ export default function Dashboard() {
         </p>
       </div>
 
-      {/* Getting Started Guide (shown when no data) */}
+      {/* Quick Start Hero (shown when no data) */}
       {isNewUser && (
-        <Card className="mb-8 border-primary/20 bg-gradient-to-r from-primary/5 to-blue-50 dark:to-blue-950">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Upload className="h-6 w-6 text-primary" />
-              Getting Started with Deal Registration Automation
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground mb-6">
-              Follow these steps to import your deal registration data into the system:
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-              <div className="flex flex-col items-start p-4 bg-background rounded-lg border">
-                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center mb-3">
-                  <span className="text-primary font-bold">1</span>
-                </div>
-                <h3 className="font-semibold mb-2">Vendors</h3>
-                <p className="text-sm text-muted-foreground">Upload your vendor list CSV to populate the vendor database</p>
-              </div>
-              <div className="flex flex-col items-start p-4 bg-background rounded-lg border">
-                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center mb-3">
-                  <span className="text-primary font-bold">2</span>
-                </div>
-                <h3 className="font-semibold mb-2">Deals</h3>
-                <p className="text-sm text-muted-foreground">Import deals CSV with vendor associations and customers</p>
-              </div>
-              <div className="flex flex-col items-start p-4 bg-background rounded-lg border">
-                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center mb-3">
-                  <span className="text-primary font-bold">3</span>
-                </div>
-                <h3 className="font-semibold mb-2">MBOX</h3>
-                <p className="text-sm text-muted-foreground">Upload email archives for AI-powered deal extraction</p>
-              </div>
-              <div className="flex flex-col items-start p-4 bg-background rounded-lg border">
-                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center mb-3">
-                  <span className="text-primary font-bold">4</span>
-                </div>
-                <h3 className="font-semibold mb-2">Transcripts</h3>
-                <p className="text-sm text-muted-foreground">Upload meeting transcripts for sales conversation analysis</p>
-              </div>
+        <div className="hero-card mb-8 p-8">
+          <div className="flex items-start gap-4 mb-6">
+            <div className="h-12 w-12 rounded-xl bg-primary/20 flex items-center justify-center border border-primary/30 shadow-lg shadow-primary/10">
+              <Sparkles className="h-6 w-6 text-primary animate-float" />
             </div>
-            <Button asChild size="lg" className="w-full md:w-auto">
+            <div>
+              <h2 className="text-2xl font-bold mb-1">Quick Start Guide</h2>
+              <p className="text-muted-foreground">
+                Get your deal registration system up and running in minutes
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+            {[
+              { step: 1, title: 'Vendors', desc: 'Upload your vendor list CSV to populate the vendor database' },
+              { step: 2, title: 'Deals', desc: 'Import deals CSV with vendor associations and customers' },
+              { step: 3, title: 'MBOX', desc: 'Upload email archives for AI-powered deal extraction' },
+              { step: 4, title: 'Transcripts', desc: 'Upload meeting transcripts for sales conversation analysis' },
+            ].map((item, index) => (
+              <div
+                key={item.step}
+                className={`flex flex-col items-start p-4 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/15 transition-all duration-300 animate-fade-in-up stagger-${index + 1}`}
+              >
+                <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center mb-3 border border-primary/30">
+                  <span className="text-primary font-bold">{item.step}</span>
+                </div>
+                <h3 className="font-semibold mb-2">{item.title}</h3>
+                <p className="text-sm text-muted-foreground">{item.desc}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-4">
+            <Button asChild size="lg" className="group">
               <Link to="/upload">
-                <Upload className="mr-2 h-5 w-5" />
+                <Upload className="mr-2 h-5 w-5 group-hover:scale-110 transition-transform" />
                 Start Upload Wizard
-                <ArrowRight className="ml-2 h-5 w-5" />
+                <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
               </Link>
             </Button>
 
-            {/* Google Sync Alternative Callout */}
-            <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-800 flex items-start gap-3">
-              <Lightbulb className="h-5 w-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <p className="font-medium text-blue-900 dark:text-blue-100">
-                  Alternative: Connect Gmail & Google Drive
-                </p>
-                <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
-                  Import deals automatically from your email and documents.
-                </p>
-              </div>
-              <Button asChild variant="outline" size="sm" className="flex-shrink-0">
-                <Link to="/settings/sync">
-                  Set Up Google Sync
-                  <ArrowRight className="ml-2 h-4 w-4" />
-                </Link>
-              </Button>
+            <Button asChild variant="outline" size="lg" className="group">
+              <Link to="/settings/sync">
+                <Cloud className="mr-2 h-5 w-5" />
+                Connect Google Sync
+              </Link>
+            </Button>
+          </div>
+
+          {/* Google Sync Tip */}
+          <div className="mt-6 p-4 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-start gap-3">
+            <Lightbulb className="h-5 w-5 text-cyan-400 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="font-medium text-cyan-100">
+                Pro tip: Connect Gmail & Google Drive
+              </p>
+              <p className="text-sm text-cyan-300/80 mt-1">
+                Import deals automatically from your email and documents for continuous updates.
+              </p>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
         {vendorsLoading || dealsLoading || filesLoading || syncLoading ? (
           <KPICardSkeleton count={5} />
         ) : (
-          <>
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">Total Vendors</p>
-                    <p className="text-3xl font-bold">{totalVendors}</p>
-                    <p className="text-sm text-green-600 mt-1">
-                      {vendors.length > 0 && `+${vendors.length} recent`}
-                    </p>
+          kpiCards.map((card, index) => {
+            const Icon = card.icon;
+            return (
+              <div
+                key={card.label}
+                className={`kpi-card p-6 ${card.onClick ? 'cursor-pointer' : ''} animate-fade-in-up stagger-${index + 1}`}
+                onClick={card.onClick}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="space-y-1">
+                    <p className="text-sm text-muted-foreground">{card.label}</p>
+                    <p className="text-2xl font-bold tracking-tight">{card.value}</p>
+                    {card.subtext && (
+                      <p className={`text-xs ${card.subtextColor}`}>{card.subtext}</p>
+                    )}
                   </div>
-                  <Building2 className="h-10 w-10 text-primary" />
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">Total Deals</p>
-                    <p className="text-3xl font-bold">{totalDeals}</p>
-                    <p className="text-sm text-green-600 mt-1">
-                      {deals.length > 0 && `+${deals.length} recent`}
-                    </p>
+                  <div className={`h-10 w-10 rounded-lg ${card.iconBg} flex items-center justify-center`}>
+                    <Icon className={`h-5 w-5 ${card.iconColor}`} />
                   </div>
-                  <Briefcase className="h-10 w-10 text-green-500" />
                 </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">Files Processed</p>
-                    <p className="text-3xl font-bold">{totalFiles}</p>
-                    <p className="text-sm text-muted-foreground mt-1">Completed</p>
-                  </div>
-                  <FileText className="h-10 w-10 text-blue-500" />
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">Deal Value</p>
-                    <p className="text-3xl font-bold">{formatCurrency(totalDealValue)}</p>
-                    <p className="text-sm text-muted-foreground mt-1">Total pipeline</p>
-                  </div>
-                  <TrendingUp className="h-10 w-10 text-amber-500" />
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="cursor-pointer hover:bg-accent/50 transition-colors" onClick={() => window.location.href = '/settings/sync'}>
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">Google Sync</p>
-                    <p className="text-3xl font-bold">{activeConfigs}</p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      {syncStats?.lastSyncAt ? `Last: ${getRelativeTime(syncStats.lastSyncAt)}` : 'No syncs yet'}
-                    </p>
-                  </div>
-                  <Cloud className="h-10 w-10 text-blue-500" />
-                </div>
-              </CardContent>
-            </Card>
-          </>
+              </div>
+            );
+          })
         )}
       </div>
 
@@ -281,7 +275,7 @@ export default function Dashboard() {
         {filesLoading ? (
           <ActivityListSkeleton items={5} />
         ) : (
-          <Card>
+          <Card className="glass-card">
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>Recent Files</CardTitle>
@@ -307,7 +301,7 @@ export default function Dashboard() {
                   {files.slice(0, 5).map((file: any) => (
                     <div
                       key={file.id}
-                      className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent/50 transition-colors"
+                      className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/5 hover:bg-white/10 hover:border-white/10 transition-all duration-200"
                     >
                       <div className="flex-1 min-w-0">
                         <p className="font-medium truncate">{file.filename}</p>
@@ -330,7 +324,7 @@ export default function Dashboard() {
         {dealsLoading ? (
           <ActivityListSkeleton items={5} />
         ) : (
-          <Card>
+          <Card className="glass-card">
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>Recent Deals</CardTitle>
@@ -356,7 +350,7 @@ export default function Dashboard() {
                   {deals.slice(0, 5).map((deal: any) => (
                     <div
                       key={deal.id}
-                      className="flex items-start justify-between p-3 border rounded-lg hover:bg-accent/50 transition-colors"
+                      className="flex items-start justify-between p-3 rounded-lg bg-white/5 border border-white/5 hover:bg-white/10 hover:border-white/10 transition-all duration-200"
                     >
                       <div className="flex-1 min-w-0">
                         <p className="font-medium truncate">{deal.deal_name}</p>
@@ -396,7 +390,7 @@ export default function Dashboard() {
         {syncLoading ? (
           <ActivityListSkeleton items={5} />
         ) : (
-          <Card>
+          <Card className="glass-card">
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>Recent Syncs</CardTitle>
@@ -422,7 +416,7 @@ export default function Dashboard() {
                   {recentSyncs.slice(0, 5).map((sync: any) => (
                     <div
                       key={sync.id}
-                      className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent/50 transition-colors"
+                      className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/5 hover:bg-white/10 hover:border-white/10 transition-all duration-200"
                     >
                       <div className="flex items-center gap-3 flex-1 min-w-0">
                         {sync.service_type === 'gmail' ? (
@@ -450,15 +444,15 @@ export default function Dashboard() {
       </div>
 
       {/* Quick Actions */}
-      <Card className="mt-6">
+      <Card className="mt-6 glass-card">
         <CardHeader>
           <CardTitle>Quick Actions</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Button asChild className="h-auto py-6 flex-col">
+            <Button asChild className="h-auto py-6 flex-col group">
               <Link to="/upload">
-                <FileText className="h-8 w-8 mb-2" />
+                <FileText className="h-8 w-8 mb-2 group-hover:scale-110 transition-transform" />
                 <span className="text-lg">Upload Files</span>
                 <span className="text-xs font-normal opacity-80 mt-1">
                   Import emails, transcripts, or CSV
@@ -466,9 +460,9 @@ export default function Dashboard() {
               </Link>
             </Button>
 
-            <Button asChild variant="outline" className="h-auto py-6 flex-col">
+            <Button asChild variant="outline" className="h-auto py-6 flex-col group">
               <Link to="/vendors">
-                <Building2 className="h-8 w-8 mb-2" />
+                <Building2 className="h-8 w-8 mb-2 group-hover:scale-110 transition-transform" />
                 <span className="text-lg">View Vendors</span>
                 <span className="text-xs font-normal opacity-80 mt-1">
                   Manage vendor partnerships
@@ -476,9 +470,9 @@ export default function Dashboard() {
               </Link>
             </Button>
 
-            <Button asChild variant="outline" className="h-auto py-6 flex-col">
+            <Button asChild variant="outline" className="h-auto py-6 flex-col group">
               <Link to="/settings/sync">
-                <Cloud className="h-8 w-8 mb-2" />
+                <Cloud className="h-8 w-8 mb-2 group-hover:scale-110 transition-transform" />
                 <span className="text-lg">Google Sync</span>
                 <span className="text-xs font-normal opacity-80 mt-1">
                   Manage Gmail & Drive imports
@@ -488,7 +482,7 @@ export default function Dashboard() {
 
             <Button
               variant="outline"
-              className="h-auto py-6 flex-col"
+              className="h-auto py-6 flex-col group"
               onClick={async () => {
                 try {
                   const response = await fetch('/api/export/csv', {
@@ -507,7 +501,7 @@ export default function Dashboard() {
                 }
               }}
             >
-              <TrendingUp className="h-8 w-8 mb-2" />
+              <TrendingUp className="h-8 w-8 mb-2 group-hover:scale-110 transition-transform" />
               <span className="text-lg">Generate Report</span>
               <span className="text-xs font-normal opacity-80 mt-1">
                 Export deal registration data

@@ -236,11 +236,13 @@ export default function Deals() {
   }
 
   return (
-    <div className="container py-8 space-y-6">
+    <div className="container p-6 space-y-6 animate-fade-in">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 animate-slide-up">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Deal Registrations</h1>
+          <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-primary via-purple-400 to-blue-600 bg-clip-text text-transparent">
+            Deal Registrations
+          </h1>
           <p className="text-muted-foreground mt-1">
             View and manage all deal registrations in one place
           </p>
@@ -249,7 +251,7 @@ export default function Deals() {
           <Button
             variant="outline"
             size="icon"
-            className="gap-2"
+            className="glass hover:bg-white/10"
             onClick={() => setShowShortcuts(true)}
             aria-label="Show keyboard shortcuts"
             title="Show keyboard shortcuts (?)"
@@ -258,7 +260,7 @@ export default function Deals() {
           </Button>
           <Button
             variant="outline"
-            className="gap-2"
+            className="gap-2 glass hover:bg-white/10"
             onClick={handleDetailedReprocessing}
             disabled={isReprocessing}
             aria-label={isReprocessing ? 'Processing deals' : 'Start deep analysis'}
@@ -270,7 +272,7 @@ export default function Deals() {
             )}
             {isReprocessing ? 'Processing...' : 'Deep Analysis'}
           </Button>
-          <Button variant="outline" className="gap-2" aria-label="Export deals to file">
+          <Button variant="outline" className="gap-2 glass hover:bg-white/10" aria-label="Export deals to file">
             <FileDown className="h-4 w-4" />
             Export Deals
           </Button>
@@ -278,11 +280,11 @@ export default function Deals() {
       </div>
 
       {/* Summary Statistics */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 animate-slide-up" style={{ animationDelay: '0.1s' }}>
+        <Card className="glass-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Deals</CardTitle>
-            <Briefcase className="h-4 w-4 text-muted-foreground" />
+            <Briefcase className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{totalDeals}</div>
@@ -292,10 +294,10 @@ export default function Deals() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="glass-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Value</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
+            <DollarSign className="h-4 w-4 text-green-500" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{formatCurrency(totalValue)}</div>
@@ -305,10 +307,10 @@ export default function Deals() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="glass-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Avg Deal Size</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            <TrendingUp className="h-4 w-4 text-blue-500" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{formatCurrency(avgDealSize)}</div>
@@ -318,10 +320,10 @@ export default function Deals() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="glass-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Active Deals</CardTitle>
-            <Briefcase className="h-4 w-4 text-muted-foreground" />
+            <Briefcase className="h-4 w-4 text-purple-500" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
@@ -335,7 +337,7 @@ export default function Deals() {
       </div>
 
       {/* Filters */}
-      <Card>
+      <Card className="glass-panel">
         <CardHeader>
           <CardTitle>Search & Filter</CardTitle>
           <CardDescription>Find specific deals or filter by status</CardDescription>
@@ -349,14 +351,14 @@ export default function Deals() {
                 placeholder="Search deals, customers, vendors..."
                 value={search}
                 onChange={(e) => handleSearchChange(e.target.value)}
-                className="pl-9"
+                className="pl-9 bg-background/50 border-input/50 focus:bg-background/80 transition-colors"
                 aria-label="Search deals by name, customer, or vendor"
                 title="Press / to focus (Esc to clear)"
               />
             </div>
 
             <Select value={statusFilter} onValueChange={handleStatusChange}>
-              <SelectTrigger aria-label="Filter deals by status">
+              <SelectTrigger aria-label="Filter deals by status" className="bg-background/50 border-input/50">
                 <SelectValue placeholder="Filter by status" />
               </SelectTrigger>
               <SelectContent>
@@ -370,7 +372,7 @@ export default function Deals() {
             </Select>
 
             <Select value={sortBy} onValueChange={handleSortChange}>
-              <SelectTrigger aria-label="Sort deals by">
+              <SelectTrigger aria-label="Sort deals by" className="bg-background/50 border-input/50">
                 <SelectValue placeholder="Sort by" />
               </SelectTrigger>
               <SelectContent>
@@ -388,7 +390,7 @@ export default function Deals() {
 
       {/* Analytics & Deals */}
       <Tabs defaultValue="list" className="space-y-4">
-        <TabsList>
+        <TabsList className="glass p-1">
           <TabsTrigger value="list" className="gap-2">
             <Briefcase className="h-4 w-4" />
             Deals List
@@ -419,146 +421,146 @@ export default function Deals() {
         <TabsContent value="list" className="space-y-4">
           {/* Deals List */}
           {isLoading || isRefetching ? (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          <DealCardSkeleton count={6} />
-        </div>
-      ) : deals.length === 0 ? (
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-center py-8">
-              <Briefcase className="mx-auto h-12 w-12 text-muted-foreground opacity-50" />
-              <h3 className="mt-4 text-lg font-semibold">No deals found</h3>
-              <p className="text-muted-foreground mt-2">
-                {search || statusFilter !== 'all'
-                  ? 'Try adjusting your search or filters'
-                  : 'Upload files to start extracting deal registrations'}
-              </p>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              <DealCardSkeleton count={6} />
             </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {deals.map((deal) => (
-            <Card key={deal.id} className="hover:shadow-lg transition-shadow">
-              <CardHeader>
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <CardTitle className="text-lg truncate">{deal.deal_name}</CardTitle>
-                    <CardDescription className="mt-1">
-                      {deal.customer_name || 'No customer specified'}
-                    </CardDescription>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <DealStatusBadge status={deal.status} />
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8">
-                          <MoreVertical className="h-4 w-4" />
-                          <span className="sr-only">Open menu</span>
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleEditDeal(deal)}>
-                          <Pencil className="mr-2 h-4 w-4" />
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => handleDeleteDeal(deal)}
-                          className="text-destructive focus:text-destructive"
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
+          ) : deals.length === 0 ? (
+            <Card className="glass-panel">
+              <CardContent className="pt-6">
+                <div className="text-center py-8">
+                  <Briefcase className="mx-auto h-12 w-12 text-muted-foreground opacity-50" />
+                  <h3 className="mt-4 text-lg font-semibold">No deals found</h3>
+                  <p className="text-muted-foreground mt-2">
+                    {search || statusFilter !== 'all'
+                      ? 'Try adjusting your search or filters'
+                      : 'Upload files to start extracting deal registrations'}
+                  </p>
                 </div>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Vendor:</span>
-                    <Link
-                      to={`/vendors/${deal.vendor_id}`}
-                      className="font-medium hover:underline"
-                    >
-                      {deal.vendor_name || 'Unknown'}
-                    </Link>
-                  </div>
-
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Deal Value:</span>
-                    <span className="font-semibold">
-                      {formatCurrency(deal.deal_value, deal.currency)}
-                    </span>
-                  </div>
-
-                  {deal.deal_stage && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Stage:</span>
-                      <span className="font-medium">{deal.deal_stage}</span>
-                    </div>
-                  )}
-
-                  {deal.probability !== null && deal.probability !== undefined && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Probability:</span>
-                      <span className="font-medium">{Math.round(deal.probability)}%</span>
-                    </div>
-                  )}
-
-                  {deal.metadata?.buying_signal_score && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Buying Signal:</span>
-                      <span className="font-medium">
-                        {(deal.metadata.buying_signal_score * 100).toFixed(0)}%
-                      </span>
-                    </div>
-                  )}
-
-                  {deal.metadata?.confidence_score && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Confidence:</span>
-                      <span className="font-medium">
-                        {(deal.metadata.confidence_score * 100).toFixed(0)}%
-                      </span>
-                    </div>
-                  )}
-
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Registered:</span>
-                    <span>{formatDate(deal.registration_date || deal.created_at)}</span>
-                  </div>
-
-                  {deal.expected_close_date && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Expected Close:</span>
-                      <span>{formatDate(deal.expected_close_date)}</span>
-                    </div>
-                  )}
-
-                  {deal.metadata?.extraction_method && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Source:</span>
-                      <Badge variant="outline" className="text-xs">
-                        {deal.metadata.extraction_method}
-                      </Badge>
-                    </div>
-                  )}
-                </div>
-
-                {deal.notes && (
-                  <div className="pt-2 border-t">
-                    <p className="text-sm text-muted-foreground line-clamp-2">
-                      {deal.notes}
-                    </p>
-                  </div>
-                )}
               </CardContent>
             </Card>
-          ))}
-        </div>
-      )}
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {deals.map((deal) => (
+                <Card key={deal.id} className="glass-card hover:shadow-lg transition-all border-white/5 hover:border-primary/20">
+                  <CardHeader>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <CardTitle className="text-lg truncate">{deal.deal_name}</CardTitle>
+                        <CardDescription className="mt-1">
+                          {deal.customer_name || 'No customer specified'}
+                        </CardDescription>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <DealStatusBadge status={deal.status} />
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-white/10">
+                              <MoreVertical className="h-4 w-4" />
+                              <span className="sr-only">Open menu</span>
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => handleEditDeal(deal)}>
+                              <Pencil className="mr-2 h-4 w-4" />
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleDeleteDeal(deal)}
+                              className="text-destructive focus:text-destructive"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Vendor:</span>
+                        <Link
+                          to={`/vendors/${deal.vendor_id}`}
+                          className="font-medium hover:underline text-primary"
+                        >
+                          {deal.vendor_name || 'Unknown'}
+                        </Link>
+                      </div>
+
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Deal Value:</span>
+                        <span className="font-semibold">
+                          {formatCurrency(deal.deal_value, deal.currency)}
+                        </span>
+                      </div>
+
+                      {deal.deal_stage && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Stage:</span>
+                          <span className="font-medium">{deal.deal_stage}</span>
+                        </div>
+                      )}
+
+                      {deal.probability !== null && deal.probability !== undefined && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Probability:</span>
+                          <span className="font-medium">{Math.round(deal.probability)}%</span>
+                        </div>
+                      )}
+
+                      {deal.metadata?.buying_signal_score && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Buying Signal:</span>
+                          <span className="font-medium">
+                            {(deal.metadata.buying_signal_score * 100).toFixed(0)}%
+                          </span>
+                        </div>
+                      )}
+
+                      {deal.metadata?.confidence_score && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Confidence:</span>
+                          <span className="font-medium">
+                            {(deal.metadata.confidence_score * 100).toFixed(0)}%
+                          </span>
+                        </div>
+                      )}
+
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Registered:</span>
+                        <span>{formatDate(deal.registration_date || deal.created_at)}</span>
+                      </div>
+
+                      {deal.expected_close_date && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Expected Close:</span>
+                          <span>{formatDate(deal.expected_close_date)}</span>
+                        </div>
+                      )}
+
+                      {deal.metadata?.extraction_method && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Source:</span>
+                          <Badge variant="outline" className="text-xs bg-white/5 border-white/10">
+                            {deal.metadata.extraction_method}
+                          </Badge>
+                        </div>
+                      )}
+                    </div>
+
+                    {deal.notes && (
+                      <div className="pt-2 border-t border-white/5">
+                        <p className="text-sm text-muted-foreground line-clamp-2">
+                          {deal.notes}
+                        </p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
 
           {/* Pagination */}
           {!isLoading && totalDeals > 0 && pagination.totalPages > 1 && (
@@ -569,6 +571,7 @@ export default function Deals() {
                   size="sm"
                   onClick={() => setPage(Math.max(1, page - 1))}
                   disabled={page === 1}
+                  className="glass hover:bg-white/10"
                   aria-label="Previous page"
                 >
                   Previous
@@ -595,6 +598,7 @@ export default function Deals() {
                           onClick={() => setPage(pageNum)}
                           aria-label={`Go to page ${pageNum}`}
                           aria-current={pageNum === page ? "page" : undefined}
+                          className={pageNum === page ? "bg-primary" : "glass hover:bg-white/10"}
                         >
                           {pageNum}
                         </Button>
@@ -607,6 +611,7 @@ export default function Deals() {
                   size="sm"
                   onClick={() => setPage(Math.min(pagination.totalPages, page + 1))}
                   disabled={page === pagination.totalPages}
+                  className="glass hover:bg-white/10"
                   aria-label="Next page"
                 >
                   Next

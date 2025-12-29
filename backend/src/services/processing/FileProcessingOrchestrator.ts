@@ -23,7 +23,9 @@ import {
 
 // Import existing parsers (will be refactored later)
 import { parseMboxFile, extractInfoFromEmails } from '../../parsers/mboxParser';
-import { parseStreamingMboxFile } from '../../parsers/streamingMboxParser';
+// Import enhanced parser
+import { parseEnhancedMboxFile } from '../../parsers/enhancedMboxMain';
+
 import { parseCSVFile, normalizeVTigerData, parseGenericCSV } from '../../parsers/csvParser';
 import { parseTextTranscript, extractInfoFromTranscript } from '../../parsers/transcriptParser';
 import { parseEnhancedTranscript } from '../../parsers/enhancedTranscriptParser';
@@ -188,11 +190,14 @@ export class FileProcessingOrchestrator {
   // ============================================================================
 
   private async processMbox(filePath: string, fileId: string): Promise<ExtractedData> {
-    logger.info('Processing MBOX file', { filePath });
+    logger.info('Processing MBOX file (Enhanced)', { filePath });
 
     try {
-      // Use streaming parser for large files - returns structured result
-      const result = await parseStreamingMboxFile(filePath);
+      // Use enhanced parser with robust splitter
+      const result = await parseEnhancedMboxFile(filePath, {
+        vendorDomains: [], // extracted in process loop if needed, or pass empty to allow all
+        confidenceThreshold: 0.1, // Allow lower confidence, let orchestrator/UI Decide
+      });
 
       // Extract vendor and contact data from deals
       const vendors: VendorData[] = [];
@@ -205,6 +210,7 @@ export class FileProcessingOrchestrator {
         expected_close_date: deal.expected_close_date,
         probability: deal.confidence_score ? Math.round(deal.confidence_score * 100) : undefined,
         notes: deal.pre_sales_efforts,
+        extraction_method: deal.extraction_method,
       }));
 
       // Extract unique vendors from email domains
@@ -225,6 +231,7 @@ export class FileProcessingOrchestrator {
           emailsProcessed: result.totalMessages,
           dealsExtracted: result.extractedDeals.length,
         },
+        conversionReport: result.conversionReport,
       };
     } catch (error) {
       throw new ParsingError(
@@ -325,6 +332,7 @@ export class FileProcessingOrchestrator {
         summary: {
           recordsProcessed: result.metadata.recordCount.total,
         },
+        conversionReport: (result as any).conversionReport,
       };
     } catch (error) {
       throw new ParsingError(
@@ -433,6 +441,16 @@ export class FileProcessingOrchestrator {
       } catch (error) {
         result.errors.push(this.convertToErrorInfo(error));
       }
+    }
+
+    // Update file metadata with conversion report if present
+    if (data.conversionReport) {
+      await query(
+        `UPDATE source_files
+         SET metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{conversionReport}', $1::jsonb)
+         WHERE id = $2`,
+        [JSON.stringify(data.conversionReport), fileId]
+      );
     }
 
     result.summary = data.summary;
@@ -579,6 +597,7 @@ interface ExtractedData {
     recordsProcessed?: number;
     dealsExtracted?: number;
   };
+  conversionReport?: any[];
 }
 
 // ============================================================================

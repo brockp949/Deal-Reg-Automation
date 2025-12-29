@@ -17,13 +17,18 @@ redisClient.on('error', (err) => {
 // Connect the client
 redisClient.connect().catch(logger.error);
 
-// Initialize a Redis store using the connected client
-const store = new RedisStore({
+/**
+ * Factory function to create a unique Redis store for each rate limiter.
+ * This avoids the ERR_ERL_STORE_REUSE error in express-rate-limit v7+
+ */
+const createRedisStore = (prefix: string) => new RedisStore({
   sendCommand: (...args: string[]) => redisClient.sendCommand(args),
+  prefix: `rl:${prefix}:`,
 });
 
 // Use API Key for rate limiting, falling back to IP address
-const getApiKey = (req: Request): string => (req as any).apiKey?.key || req.ip;
+// Note: We disable validation because we primarily use API keys, not IPs
+const getApiKey = (req: Request): string => (req as any).apiKey?.key || req.ip || 'unknown';
 
 const getRequestPath = (req: Request): string => {
   if (req.originalUrl) {
@@ -41,7 +46,7 @@ const isChunkedUploadPath = (req: Request): boolean => {
  * Rate limiter for general API endpoints
  */
 export const apiLimiter = rateLimit({
-  store,
+  store: createRedisStore('api'),
   windowMs: config.rateLimit.api.windowMs,
   max: config.rateLimit.api.max,
   message: {
@@ -52,13 +57,14 @@ export const apiLimiter = rateLimit({
   skip: (req) => isChunkedUploadPath(req) || req.path === '/health' || req.path === '/api/health',
   standardHeaders: true,
   legacyHeaders: false,
+  validate: false, // Disable validation - we use API keys, not IPs
 });
 
 /**
  * Rate limiter for mutation endpoints (POST, PUT, PATCH, DELETE)
  */
 export const mutationLimiter = rateLimit({
-  store,
+  store: createRedisStore('mutation'),
   windowMs: config.rateLimit.mutation.windowMs,
   max: config.rateLimit.mutation.max,
   message: {
@@ -69,13 +75,14 @@ export const mutationLimiter = rateLimit({
   skip: (req) => isChunkedUploadPath(req) || !['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method),
   standardHeaders: true,
   legacyHeaders: false,
+  validate: false,
 });
 
 /**
  * Rate limiter for file upload endpoints
  */
 export const uploadLimiter = rateLimit({
-  store,
+  store: createRedisStore('upload'),
   windowMs: config.rateLimit.upload.windowMs,
   max: config.rateLimit.upload.max,
   message: {
@@ -86,13 +93,14 @@ export const uploadLimiter = rateLimit({
   skip: (req) => isChunkedUploadPath(req),
   standardHeaders: true,
   legacyHeaders: false,
+  validate: false,
 });
 
 /**
  * Rate limiter for batch file upload endpoints
  */
 export const batchUploadLimiter = rateLimit({
-  store,
+  store: createRedisStore('batch-upload'),
   windowMs: config.rateLimit.batchUpload.windowMs,
   max: config.rateLimit.batchUpload.max,
   message: {
@@ -102,6 +110,7 @@ export const batchUploadLimiter = rateLimit({
   keyGenerator: getApiKey,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: false,
 });
 
 /**
@@ -111,9 +120,10 @@ export function createRateLimiter(options: {
   windowMs: number;
   max: number;
   message?: string;
+  prefix?: string;
 }) {
   return rateLimit({
-    store,
+    store: createRedisStore(options.prefix || 'custom'),
     windowMs: options.windowMs,
     max: options.max,
     message: {
@@ -123,5 +133,7 @@ export function createRateLimiter(options: {
     keyGenerator: getApiKey,
     standardHeaders: true,
     legacyHeaders: false,
+    validate: false,
   });
 }
+

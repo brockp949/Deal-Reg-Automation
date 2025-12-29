@@ -33,7 +33,7 @@ interface GoogleAccountConnectProps {
 }
 
 export function GoogleAccountConnect({
-  onAccountConnected: _onAccountConnected,
+  onAccountConnected,
   onAccountDisconnected,
 }: GoogleAccountConnectProps) {
   const [accounts, setAccounts] = useState<GoogleAccount[]>([]);
@@ -43,10 +43,35 @@ export function GoogleAccountConnect({
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState<string | null>(null);
 
-  // Load accounts and auth status
+  // Load accounts and auth status on mount
   useEffect(() => {
-    loadData();
-  }, []);
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const [statusRes, accountsRes] = await Promise.all([
+          googleAuthAPI.getStatus(),
+          googleAuthAPI.getAccounts(),
+        ]);
+
+        if (statusRes.data.success && accountsRes.data.success) {
+          setAuthStatus(statusRes.data.data);
+          const newAccounts = accountsRes.data.data.accounts || [];
+          setAccounts(newAccounts);
+          newAccounts.forEach((account: GoogleAccount) => {
+            onAccountConnected?.(account);
+          });
+        }
+      } catch (err: any) {
+        setError(err.response?.data?.error || 'Failed to load Google account status');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [onAccountConnected]);
 
   const loadData = async () => {
     try {

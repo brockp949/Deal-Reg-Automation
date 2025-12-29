@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,18 +7,28 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
-import { FileText, Check, X, AlertTriangle, Eye, ChevronRight, ChevronLeft } from 'lucide-react';
+import { FileText, Check, X, AlertTriangle, Eye, ChevronRight, ChevronLeft, Save, Loader2, Mail } from 'lucide-react';
+import { EmailThreadViewer, type EmailThread } from './EmailThreadViewer';
 
-interface Deal {
+export interface Deal {
+    id?: string;
     deal_name?: string;
     customer_name?: string;
     vendor_name?: string;
     deal_value?: number;
     expected_close_date?: string;
     description?: string;
+    notes?: string;
     confidence_score: number;
     source_file?: string;
     raw_text?: string;
+    email_threads?: EmailThread[];
+    metadata?: {
+        source_file_id?: string;
+        parser?: {
+            fileType?: string;
+        };
+    };
     [key: string]: any;
 }
 
@@ -26,19 +36,62 @@ interface DealReviewSplitViewProps {
     deals?: Deal[];
     onApprove?: (deal: Deal) => void;
     onReject?: (deal: Deal) => void;
+    onUpdate?: (deal: Deal) => void;
 }
 
-export function DealReviewSplitView({ deals = [], onApprove, onReject }: DealReviewSplitViewProps) {
+export function DealReviewSplitView({ deals = [], onApprove, onReject, onUpdate }: DealReviewSplitViewProps) {
     const [selectedDealIndex, setSelectedDealIndex] = useState(0);
     const [showDocument, setShowDocument] = useState(true);
+    const [editedDeal, setEditedDeal] = useState<Deal | null>(null);
+    const [isSaving, setIsSaving] = useState(false);
+    const [hasChanges, setHasChanges] = useState(false);
 
     const selectedDeal = deals[selectedDealIndex];
 
-    // Handlers
-    const handleApprove = () => onApprove?.(selectedDeal);
-    const handleReject = () => onReject?.(selectedDeal);
+    // Reset edited deal when selection changes
+    useEffect(() => {
+        if (selectedDeal) {
+            setEditedDeal({ ...selectedDeal });
+            setHasChanges(false);
+        }
+    }, [selectedDealIndex, selectedDeal]);
 
-    if (!selectedDeal) {
+    // Handlers
+    const handleApprove = async () => {
+        if (editedDeal) {
+            // If there are changes, save first
+            if (hasChanges && onUpdate) {
+                setIsSaving(true);
+                await onUpdate(editedDeal);
+                setIsSaving(false);
+            }
+            onApprove?.(editedDeal);
+        }
+    };
+
+    const handleReject = () => {
+        if (editedDeal) {
+            onReject?.(editedDeal);
+        }
+    };
+
+    const handleSave = async () => {
+        if (editedDeal && onUpdate) {
+            setIsSaving(true);
+            await onUpdate(editedDeal);
+            setIsSaving(false);
+            setHasChanges(false);
+        }
+    };
+
+    const handleFieldChange = (field: string, value: string | number) => {
+        if (editedDeal) {
+            setEditedDeal({ ...editedDeal, [field]: value });
+            setHasChanges(true);
+        }
+    };
+
+    if (!selectedDeal || !editedDeal) {
         return (
             <div className="flex items-center justify-center h-[600px] border-2 border-dashed rounded-lg">
                 <div className="text-center text-muted-foreground">
@@ -59,7 +112,7 @@ export function DealReviewSplitView({ deals = [], onApprove, onReject }: DealRev
                     <div className="space-y-2">
                         {deals.map((deal, index) => (
                             <div
-                                key={index}
+                                key={deal.id || index}
                                 onClick={() => setSelectedDealIndex(index)}
                                 className={`p-3 rounded-lg border cursor-pointer transition-colors ${index === selectedDealIndex
                                     ? 'bg-primary/10 border-primary'
@@ -95,10 +148,19 @@ export function DealReviewSplitView({ deals = [], onApprove, onReject }: DealRev
                             </Button>
                         </CardHeader>
                         <CardContent className="flex-1 p-0 overflow-hidden bg-muted/10 relative">
-                            {/* Placeholder for actual document rendering */}
-                            <div className="absolute inset-0 p-8 overflow-auto font-mono text-sm whitespace-pre-wrap">
-                                {selectedDeal.raw_text || "Document content not available for preview."}
-                            </div>
+                            {/* Show EmailThreadViewer for email sources, fallback to raw text */}
+                            {selectedDeal.email_threads && selectedDeal.email_threads.length > 0 ? (
+                                <EmailThreadViewer threads={selectedDeal.email_threads} className="h-full" />
+                            ) : selectedDeal.metadata?.parser?.fileType === 'mbox' ? (
+                                <div className="flex items-center justify-center h-full text-muted-foreground">
+                                    <Mail className="h-8 w-8 mr-2 opacity-50" />
+                                    <span>Email thread data not available</span>
+                                </div>
+                            ) : (
+                                <div className="absolute inset-0 p-8 overflow-auto font-mono text-sm whitespace-pre-wrap">
+                                    {selectedDeal.raw_text || "Document content not available for preview."}
+                                </div>
+                            )}
                         </CardContent>
                     </Card>
                 )}
@@ -108,6 +170,11 @@ export function DealReviewSplitView({ deals = [], onApprove, onReject }: DealRev
                     <CardHeader className="py-3 px-4 border-b flex flex-row items-center justify-between">
                         <CardTitle className="text-sm font-medium">Extracted Data</CardTitle>
                         <div className="flex items-center gap-2">
+                            {hasChanges && (
+                                <Badge variant="outline" className="text-amber-600 border-amber-300">
+                                    Unsaved Changes
+                                </Badge>
+                            )}
                             <Button variant="outline" size="sm" onClick={() => setShowDocument(!showDocument)}>
                                 {showDocument ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
                                 {showDocument ? 'Expand Form' : 'Show Doc'}
@@ -130,17 +197,27 @@ export function DealReviewSplitView({ deals = [], onApprove, onReject }: DealRev
                         <div className="space-y-4">
                             <div className="grid gap-2">
                                 <Label>Deal Name</Label>
-                                <Input defaultValue={dealValue(selectedDeal, 'deal_name')} />
+                                <Input
+                                    value={editedDeal.deal_name || ''}
+                                    onChange={(e) => handleFieldChange('deal_name', e.target.value)}
+                                />
                             </div>
 
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="grid gap-2">
                                     <Label>Customer</Label>
-                                    <Input defaultValue={dealValue(selectedDeal, 'customer_name')} />
+                                    <Input
+                                        value={editedDeal.customer_name || ''}
+                                        onChange={(e) => handleFieldChange('customer_name', e.target.value)}
+                                    />
                                 </div>
                                 <div className="grid gap-2">
                                     <Label>Vendor</Label>
-                                    <Input defaultValue={dealValue(selectedDeal, 'vendor_name')} />
+                                    <Input
+                                        value={editedDeal.vendor_name || ''}
+                                        disabled
+                                        className="bg-muted"
+                                    />
                                 </div>
                             </div>
 
@@ -149,12 +226,21 @@ export function DealReviewSplitView({ deals = [], onApprove, onReject }: DealRev
                                     <Label>Value</Label>
                                     <div className="relative">
                                         <span className="absolute left-3 top-2.5 text-muted-foreground">$</span>
-                                        <Input className="pl-6" defaultValue={dealValue(selectedDeal, 'deal_value')} />
+                                        <Input
+                                            className="pl-6"
+                                            type="number"
+                                            value={editedDeal.deal_value || ''}
+                                            onChange={(e) => handleFieldChange('deal_value', parseFloat(e.target.value) || 0)}
+                                        />
                                     </div>
                                 </div>
                                 <div className="grid gap-2">
                                     <Label>Close Date</Label>
-                                    <Input type="date" defaultValue={dealValue(selectedDeal, 'expected_close_date')} />
+                                    <Input
+                                        type="date"
+                                        value={editedDeal.expected_close_date?.split('T')[0] || ''}
+                                        onChange={(e) => handleFieldChange('expected_close_date', e.target.value)}
+                                    />
                                 </div>
                             </div>
 
@@ -162,7 +248,11 @@ export function DealReviewSplitView({ deals = [], onApprove, onReject }: DealRev
 
                             <div className="grid gap-2">
                                 <Label>Description / Notes</Label>
-                                <Textarea className="min-h-[100px]" defaultValue={dealValue(selectedDeal, 'description')} />
+                                <Textarea
+                                    className="min-h-[100px]"
+                                    value={editedDeal.notes || editedDeal.description || ''}
+                                    onChange={(e) => handleFieldChange('notes', e.target.value)}
+                                />
                             </div>
                         </div>
                     </CardContent>
@@ -172,10 +262,26 @@ export function DealReviewSplitView({ deals = [], onApprove, onReject }: DealRev
                             <X className="mr-2 h-4 w-4" />
                             Reject
                         </Button>
-                        <Button className="bg-green-600 hover:bg-green-700 text-white" onClick={handleApprove}>
-                            <Check className="mr-2 h-4 w-4" />
-                            Approve & Register
-                        </Button>
+                        <div className="flex gap-2">
+                            {hasChanges && (
+                                <Button variant="outline" onClick={handleSave} disabled={isSaving}>
+                                    {isSaving ? (
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    ) : (
+                                        <Save className="mr-2 h-4 w-4" />
+                                    )}
+                                    Save Changes
+                                </Button>
+                            )}
+                            <Button className="bg-green-600 hover:bg-green-700 text-white" onClick={handleApprove} disabled={isSaving}>
+                                {isSaving ? (
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                ) : (
+                                    <Check className="mr-2 h-4 w-4" />
+                                )}
+                                Approve & Register
+                            </Button>
+                        </div>
                     </div>
                 </Card>
 
@@ -184,7 +290,3 @@ export function DealReviewSplitView({ deals = [], onApprove, onReject }: DealRev
     );
 }
 
-// Helper to safely get value
-function dealValue(deal: Deal, key: string) {
-    return deal?.[key] || '';
-}

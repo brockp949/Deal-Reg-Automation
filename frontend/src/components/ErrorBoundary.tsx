@@ -57,26 +57,26 @@ export class ErrorBoundary extends Component<Props, State> {
       }
 
       return (
-        <div className="container py-8">
-          <Card className="border-destructive">
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <AlertCircle className="h-5 w-5 text-destructive" />
-                <CardTitle className="text-destructive">Something went wrong</CardTitle>
+        <div className="flex items-center justify-center min-h-screen p-6 bg-background">
+          <Card className="max-w-lg w-full glass-card border-destructive/30">
+            <CardHeader className="text-center">
+              <div className="h-16 w-16 mx-auto rounded-full bg-destructive/10 flex items-center justify-center mb-4">
+                <AlertCircle className="h-8 w-8 text-destructive" />
               </div>
-              <CardDescription>
+              <CardTitle className="text-2xl">Something went wrong</CardTitle>
+              <CardDescription className="text-base">
                 An unexpected error occurred. Please try refreshing the page or contact support if the problem persists.
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               {this.state.error && (
-                <div className="mb-4 rounded-md bg-muted p-4">
-                  <p className="text-sm font-mono text-muted-foreground">
+                <div className="rounded-lg bg-destructive/5 border border-destructive/20 p-4">
+                  <p className="text-sm font-mono text-muted-foreground break-all">
                     {this.state.error.toString()}
                   </p>
                 </div>
               )}
-              <div className="flex gap-2">
+              <div className="flex gap-3 justify-center">
                 <Button onClick={this.handleReset} className="gap-2">
                   <RefreshCw className="h-4 w-4" />
                   Try Again
@@ -84,6 +84,7 @@ export class ErrorBoundary extends Component<Props, State> {
                 <Button
                   variant="outline"
                   onClick={() => window.location.href = '/'}
+                  className="gap-2"
                 >
                   Go to Dashboard
                 </Button>

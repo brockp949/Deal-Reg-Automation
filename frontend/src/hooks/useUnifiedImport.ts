@@ -105,7 +105,7 @@ export function useUnifiedImport() {
         );
       }
     },
-    onComplete: (_uploadId, fileId, _jobId) => {
+    onComplete: (_uploadId, fileId) => {
       const localId = currentChunkedFileIdRef.current;
       if (!localId) {
         return;
@@ -158,9 +158,10 @@ export function useUnifiedImport() {
 
   // Cleanup event sources on unmount
   useEffect(() => {
+    const eventSources = eventSourcesRef.current;
     return () => {
-      eventSourcesRef.current.forEach((es) => es.close());
-      eventSourcesRef.current.clear();
+      eventSources.forEach((es) => es.close());
+      eventSources.clear();
     };
   }, []);
 

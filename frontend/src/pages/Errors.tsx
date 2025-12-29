@@ -98,7 +98,7 @@ export default function Errors() {
     };
 
     return (
-        <div className="container py-8 space-y-6">
+        <div className="space-y-6 animate-fade-in">
             {/* Header */}
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                 <div>
@@ -107,7 +107,7 @@ export default function Errors() {
                         Monitor and resolve system errors
                     </p>
                 </div>
-                <Button variant="outline" onClick={() => refetch()} className="gap-2">
+                <Button variant="outline" onClick={() => refetch()} className="glass hover:bg-white/10 gap-2">
                     <RefreshCw className="h-4 w-4" />
                     Refresh
                 </Button>
@@ -115,38 +115,44 @@ export default function Errors() {
 
             {/* Stats */}
             <div className="grid gap-4 md:grid-cols-3">
-                <Card>
-                    <CardHeader className="pb-2">
+                <Card className="glass-card">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Total Errors</CardTitle>
+                        <AlertCircle className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold">{errors.length}</div>
+                        <p className="text-xs text-muted-foreground mt-1">All tracked errors</p>
                     </CardContent>
                 </Card>
-                <Card>
-                    <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium text-red-600">Unresolved</CardTitle>
+                <Card className="glass-card">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Unresolved</CardTitle>
+                        <XCircle className="h-4 w-4 text-red-500" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-red-600">
+                        <div className="text-2xl font-bold text-red-500">
                             {errors.filter(e => !e.isResolved).length}
                         </div>
+                        <p className="text-xs text-muted-foreground mt-1">Needs attention</p>
                     </CardContent>
                 </Card>
-                <Card>
-                    <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium text-green-600">Resolved</CardTitle>
+                <Card className="glass-card">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Resolved</CardTitle>
+                        <CheckCircle className="h-4 w-4 text-green-500" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-green-600">
+                        <div className="text-2xl font-bold text-green-500">
                             {errors.filter(e => e.isResolved).length}
                         </div>
+                        <p className="text-xs text-muted-foreground mt-1">Successfully handled</p>
                     </CardContent>
                 </Card>
             </div>
 
             {/* Filters */}
-            <Card>
+            <Card className="glass-panel">
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                         <Filter className="h-5 w-5" />
@@ -185,7 +191,7 @@ export default function Errors() {
             </Card>
 
             {/* Error List */}
-            <Card>
+            <Card className="glass-panel">
                 <CardHeader>
                     <CardTitle>Errors ({errors.length})</CardTitle>
                     <CardDescription>Click resolve to mark an error as handled</CardDescription>
@@ -203,7 +209,7 @@ export default function Errors() {
                             {errors.map((error) => (
                                 <div
                                     key={error.id}
-                                    className={`p-4 border rounded-lg ${error.isResolved ? 'bg-muted/50 opacity-60' : 'hover:bg-accent/50'
+                                    className={`p-4 rounded-lg border border-white/10 transition-colors ${error.isResolved ? 'bg-white/5 opacity-60' : 'hover:bg-white/5'
                                         }`}
                                 >
                                     <div className="flex items-start justify-between gap-4">

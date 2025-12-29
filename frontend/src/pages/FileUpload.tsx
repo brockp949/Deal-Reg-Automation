@@ -9,39 +9,39 @@ export default function FileUpload() {
   const [activeTab, setActiveTab] = useState('upload');
 
   return (
-    <div>
-      {activeTab === 'sync' && (
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold mb-2">Google Sync</h1>
-            <p className="text-muted-foreground">
-              Sync deal data from Gmail and Google Drive
-            </p>
-          </div>
-          <ClearDataDialog />
+    <div className="space-y-6 animate-fade-in">
+      {/* Page Header */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">
+            {activeTab === 'upload' ? 'Import Files' : 'Google Sync'}
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            {activeTab === 'upload'
+              ? 'Upload vendor lists, deal spreadsheets, email archives, or meeting transcripts'
+              : 'Sync deal data from Gmail and Google Drive'}
+          </p>
         </div>
-      )}
+        <ClearDataDialog />
+      </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <div className="flex items-center justify-between mb-6">
-          <TabsList className="grid w-full max-w-md grid-cols-2">
-            <TabsTrigger value="upload" className="flex items-center gap-2">
-              <Upload className="h-4 w-4" />
-              File Import
-            </TabsTrigger>
-            <TabsTrigger value="sync" className="flex items-center gap-2">
-              <Cloud className="h-4 w-4" />
-              Google Sync
-            </TabsTrigger>
-          </TabsList>
-          {activeTab === 'upload' && <ClearDataDialog />}
-        </div>
+        <TabsList className="grid w-full max-w-md grid-cols-2 glass">
+          <TabsTrigger value="upload" className="flex items-center gap-2">
+            <Upload className="h-4 w-4" />
+            File Import
+          </TabsTrigger>
+          <TabsTrigger value="sync" className="flex items-center gap-2">
+            <Cloud className="h-4 w-4" />
+            Google Sync
+          </TabsTrigger>
+        </TabsList>
 
-        <TabsContent value="upload" className="mt-0">
+        <TabsContent value="upload" className="mt-6">
           <UnifiedImportWizard />
         </TabsContent>
 
-        <TabsContent value="sync" className="mt-0">
+        <TabsContent value="sync" className="mt-6">
           <SyncOverviewPanel />
         </TabsContent>
       </Tabs>

@@ -24,6 +24,7 @@ import {
   Sparkles,
   RotateCcw,
   Trash2,
+  Eye,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -44,7 +45,9 @@ import {
   type ImportFile,
 } from '@/hooks/useUnifiedImport';
 import type { FileIntent } from '@/lib/api';
+import { validationAPI } from '@/lib/api';
 import { ChunkedUploadProgress } from './ChunkedUploadProgress';
+import { ValidationPreview, type ValidationResult } from './ValidationPreview';
 
 // Icon mapping for intents
 const intentIcons: Record<FileIntent, React.ReactNode> = {
@@ -116,11 +119,12 @@ export default function UnifiedImportWizard({ onUploadComplete }: UnifiedImportW
     clearAll,
     retryFile,
     chunkedUploadProgress,
-    isChunkedUploading: _isChunkedUploading,
     cancelChunkedUpload,
   } = useUnifiedImport();
 
   const [showCompleted, setShowCompleted] = useState(true);
+  const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
+  const [isValidating, setIsValidating] = useState(false);
 
   const onDrop = useCallback(
     (acceptedFiles: File[], rejectedFiles: any[]) => {
@@ -175,6 +179,36 @@ export default function UnifiedImportWizard({ onUploadComplete }: UnifiedImportW
   const hasActiveProcessing = summary.uploading > 0 || summary.processing > 0;
   const allCompleted =
     files.length > 0 && summary.completed === files.length;
+  const showValidationPreview = validationResult !== null;
+
+  // Validate a single file before upload
+  const handleValidateFile = async (importFile: ImportFile) => {
+    setIsValidating(true);
+    try {
+      const response = await validationAPI.preview(importFile.file, importFile.intent);
+      if (response.data.success) {
+        setValidationResult(response.data.data);
+        toast.success('Validation complete - review the preview');
+      } else {
+        toast.error('Validation failed');
+      }
+    } catch (error: any) {
+      toast.error(`Validation failed: ${error.message}`);
+    } finally {
+      setIsValidating(false);
+    }
+  };
+
+  // Handle proceeding from validation preview
+  const handleProceedFromValidation = () => {
+    setValidationResult(null);
+    uploadAll();
+  };
+
+  // Handle canceling validation preview
+  const handleCancelValidation = () => {
+    setValidationResult(null);
+  };
 
   return (
     <div className="space-y-6">
@@ -266,28 +300,66 @@ export default function UnifiedImportWizard({ onUploadComplete }: UnifiedImportW
                 ))}
               </div>
 
-              {/* Upload Button */}
+              {/* Action Buttons */}
               {hasPendingFiles && (
-                <Button
-                  onClick={uploadAll}
-                  disabled={isUploading}
-                  className="w-full mt-4"
-                  size="lg"
-                >
-                  {isUploading ? (
-                    <>
-                      <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                      Uploading...
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="mr-2 h-5 w-5" />
-                      Import {summary.pending} File{summary.pending > 1 ? 's' : ''}
-                    </>
-                  )}
-                </Button>
+                <div className="flex gap-2 mt-4">
+                  {/* Validate & Preview Button */}
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      const firstPendingFile = files.find(f => f.status === 'pending');
+                      if (firstPendingFile) handleValidateFile(firstPendingFile);
+                    }}
+                    disabled={isUploading || isValidating}
+                    className="flex-1"
+                    size="lg"
+                  >
+                    {isValidating ? (
+                      <>
+                        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                        Validating...
+                      </>
+                    ) : (
+                      <>
+                        <Eye className="mr-2 h-5 w-5" />
+                        Validate & Preview
+                      </>
+                    )}
+                  </Button>
+                  {/* Direct Upload Button */}
+                  <Button
+                    onClick={uploadAll}
+                    disabled={isUploading || isValidating}
+                    className="flex-1"
+                    size="lg"
+                  >
+                    {isUploading ? (
+                      <>
+                        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                        Uploading...
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="mr-2 h-5 w-5" />
+                        Import {summary.pending} File{summary.pending > 1 ? 's' : ''}
+                      </>
+                    )}
+                  </Button>
+                </div>
               )}
             </Card>
+          )}
+
+          {/* Validation Preview */}
+          {showValidationPreview && validationResult && (
+            <ValidationPreview
+              validation={validationResult}
+              onProceed={handleProceedFromValidation}
+              onCancel={handleCancelValidation}
+              onApplyAutoFix={(fixType) => {
+                toast.info(`Auto-fix "${fixType}" not yet implemented`);
+              }}
+            />
           )}
 
           {/* Completion Summary */}

@@ -434,14 +434,16 @@ export const googleAuthAPI = {
     api.get('/google-auth/status'),
   startAuthorization: (service: 'gmail' | 'drive'): Promise<AxiosResponse<ApiResponse<{ authUrl: string; state: string }>>> =>
     api.get(`/google-auth/authorize/${service}`),
-  getAccounts: (): Promise<AxiosResponse<ApiResponse<{ accounts: Array<{
-    id: string;
-    account_email: string;
-    service_type: 'gmail' | 'drive';
-    scopes: string[];
-    created_at: string;
-    updated_at: string;
-  }> }>>> =>
+  getAccounts: (): Promise<AxiosResponse<ApiResponse<{
+    accounts: Array<{
+      id: string;
+      account_email: string;
+      service_type: 'gmail' | 'drive';
+      scopes: string[];
+      created_at: string;
+      updated_at: string;
+    }>
+  }>>> =>
     api.get('/google-auth/accounts'),
   disconnectAccount: (id: string): Promise<AxiosResponse<ApiResponse<void>>> =>
     api.delete(`/google-auth/accounts/${id}`),
@@ -451,11 +453,13 @@ export const googleAuthAPI = {
 
 // Gmail Sync API
 export const gmailSyncAPI = {
-  getLabels: (tokenId: string): Promise<AxiosResponse<ApiResponse<{ accountEmail: string; labels: Array<{
-    id: string;
-    name: string;
-    type: 'system' | 'user';
-  }> }>>> =>
+  getLabels: (tokenId: string): Promise<AxiosResponse<ApiResponse<{
+    accountEmail: string; labels: Array<{
+      id: string;
+      name: string;
+      type: 'system' | 'user';
+    }>
+  }>>> =>
     api.get('/sync/gmail/labels', { params: { tokenId } }),
   getConfigs: (): Promise<AxiosResponse<ApiResponse<any[]>>> =>
     api.get('/sync/gmail/configs'),
@@ -493,12 +497,14 @@ export const gmailSyncAPI = {
     dateFrom?: string;
     dateTo?: string;
     maxResults?: number;
-  }): Promise<AxiosResponse<ApiResponse<{ count: number; sample: Array<{
-    id: string;
-    subject: string;
-    from: string;
-    date: string;
-  }> }>>> =>
+  }): Promise<AxiosResponse<ApiResponse<{
+    count: number; sample: Array<{
+      id: string;
+      subject: string;
+      from: string;
+      date: string;
+    }>
+  }>>> =>
     api.post('/sync/gmail/preview', data),
   getJobStatus: (jobId: string): Promise<AxiosResponse<ApiResponse<any>>> =>
     api.get(`/sync/gmail/job/${jobId}`),
@@ -506,13 +512,15 @@ export const gmailSyncAPI = {
 
 // Drive Sync API
 export const driveSyncAPI = {
-  getRootFolders: (tokenId: string): Promise<AxiosResponse<ApiResponse<{ accountEmail: string; folders: Array<{
-    id: string;
-    name: string;
-    mimeType: string;
-    modifiedTime?: string;
-    createdTime?: string;
-  }> }>>> =>
+  getRootFolders: (tokenId: string): Promise<AxiosResponse<ApiResponse<{
+    accountEmail: string; folders: Array<{
+      id: string;
+      name: string;
+      mimeType: string;
+      modifiedTime?: string;
+      createdTime?: string;
+    }>
+  }>>> =>
     api.get('/sync/drive/folders', { params: { tokenId } }),
   getFolderChildren: (folderId: string, tokenId: string, pageToken?: string): Promise<AxiosResponse<ApiResponse<{
     items: any[];
@@ -560,12 +568,14 @@ export const driveSyncAPI = {
     folderUrl?: string;
     includeSubfolders?: boolean;
     maxResults?: number;
-  }): Promise<AxiosResponse<ApiResponse<{ count: number; sample: Array<{
-    id: string;
-    name: string;
-    mimeType: string;
-    modifiedTime?: string;
-  }> }>>> =>
+  }): Promise<AxiosResponse<ApiResponse<{
+    count: number; sample: Array<{
+      id: string;
+      name: string;
+      mimeType: string;
+      modifiedTime?: string;
+    }>
+  }>>> =>
     api.post('/sync/drive/preview', data),
   getJobStatus: (jobId: string): Promise<AxiosResponse<ApiResponse<any>>> =>
     api.get(`/sync/drive/job/${jobId}`),
@@ -601,4 +611,97 @@ export const syncStatsAPI = {
     runningSyncs: number;
   }>>> =>
     api.get('/sync/stats/summary'),
+};
+
+// Email Threads API
+export const emailThreadsAPI = {
+  getByFileId: (fileId: string): Promise<AxiosResponse<ApiResponse<{
+    fileId: string;
+    fileName: string;
+    threadCount: number;
+    totalMessages: number;
+    relevantMessages: number;
+    threads: Array<{
+      thread_id: string;
+      subject_normalized: string;
+      first_message_date: string;
+      last_message_date: string;
+      participant_emails: string[];
+      messages: Array<{
+        message_id: string;
+        from: string;
+        to?: string[];
+        cc?: string[];
+        subject: string;
+        date: string;
+        cleaned_body: string;
+        tier1_matches?: string[];
+        tier2_matches?: string[];
+        tier3_matches?: string[];
+      }>;
+    }>;
+  }>>> =>
+    api.get(`/email-threads/by-file/${fileId}`),
+};
+
+// Validation API
+export const validationAPI = {
+  preview: (
+    file: File,
+    intent: FileIntent = 'auto',
+    onUploadProgress?: (progressEvent: AxiosProgressEvent) => void
+  ): Promise<AxiosResponse<ApiResponse<{
+    isValid: boolean;
+    confidence: number;
+    detectedIntent: string;
+    fileInfo: {
+      name: string;
+      size: number;
+      type: string;
+    };
+    structure: {
+      columns: Array<{
+        name: string;
+        mappedTo?: string;
+        sampleValues: any[];
+        dataType: string;
+        nullCount: number;
+        confidence: number;
+      }>;
+      rowCount: number;
+      hasHeaders: boolean;
+    };
+    preview: {
+      estimatedRecords: number;
+      sampleRecords: Array<{ type: string; data: any }>;
+    };
+    warnings: Array<{
+      severity: 'high' | 'medium' | 'low';
+      message: string;
+      column?: string;
+      suggestedFix?: string;
+    }>;
+    errors: Array<{
+      message: string;
+      column?: string;
+      row?: number;
+    }>;
+    suggestions: {
+      autoFixes: Array<{
+        type: string;
+        description: string;
+        affectedColumns: string[];
+      }>;
+      manualActions: string[];
+    };
+    estimatedProcessingTime: string;
+  }>>> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('intent', intent);
+    return api.post('/validation/preview', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress,
+    });
+  },
 };

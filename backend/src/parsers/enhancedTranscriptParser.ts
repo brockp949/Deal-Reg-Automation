@@ -291,9 +291,33 @@ export class TranscriptPreprocessor {
       const trimmed = line.trim();
       if (!trimmed) continue;
 
-      // Check for timestamp + speaker label: [00:12:34] Name: text
-      const timestampSpeakerMatch = trimmed.match(/^\[?(\d{1,2}:\d{2}(?::\d{2})?)\]?\s*([^:]+):\s*(.*)$/);
-      if (timestampSpeakerMatch) {
+      // 1. Check for timestamp + speaker label: [HH:MM:SS] Name: text or (HH:MM) Name: text
+      const timestampSpeakerMatch = trimmed.match(/^[[(\]?(\d{1,2}:\d{2}(?::\d{2})?)\])?\s*([^:]+):\s*(.*)$/);
+
+      // 2. Fallback: Check for speaker label only: Name: text or Name (Role): text
+      const speakerOnlyMatch = trimmed.match(/^([^:]{2,50}):\s*(.*)$/);
+
+      let matchedSpeaker: string | null = null;
+      let matchedUtterance: string | null = null;
+      let matchedTimestamp: string | undefined = undefined;
+
+      if (timestampSpeakerMatch && timestampSpeakerMatch[1]) {
+        matchedTimestamp = timestampSpeakerMatch[1];
+        matchedSpeaker = timestampSpeakerMatch[2].trim();
+        matchedUtterance = timestampSpeakerMatch[3].trim();
+      } else if (speakerOnlyMatch) {
+        const potentialSpeaker = speakerOnlyMatch[1].trim();
+        // Heuristic: A speaker label typically doesn't have many words (max 4) 
+        // unless it's a very long role description. 
+        // Also ensure it doesn't look like a common non-speaker sentence start.
+        const wordCount = potentialSpeaker.split(/\s+/).length;
+        if (wordCount <= 4 || potentialSpeaker.includes('(')) {
+          matchedSpeaker = potentialSpeaker;
+          matchedUtterance = speakerOnlyMatch[2].trim();
+        }
+      }
+
+      if (matchedSpeaker) {
         // Save previous turn
         if (currentUtterance) {
           turns.push({
@@ -303,33 +327,20 @@ export class TranscriptPreprocessor {
           });
         }
 
-        // Start new turn with timestamp
-        currentTimestamp = timestampSpeakerMatch[1];
-        currentSpeaker = timestampSpeakerMatch[2].trim();
-        currentUtterance = timestampSpeakerMatch[3].trim();
-        continue;
-      }
-
-      // Check for speaker label only: Name: text
-      const speakerMatch = trimmed.match(/^([^:]+):\s*(.*)$/);
-      if (speakerMatch && !speakerMatch[1].includes(' ')) {
-        // Likely a speaker (no spaces in name = probably a label)
-        if (currentUtterance) {
-          turns.push({
-            speaker: currentSpeaker,
-            utterance: this.removeDisfluencies(this.cleanASRErrors(currentUtterance)),
-            timestamp: currentTimestamp,
-          });
-        }
-
-        currentSpeaker = speakerMatch[1].trim();
-        currentUtterance = speakerMatch[2].trim();
-        currentTimestamp = undefined;
+        // Start new turn
+        currentSpeaker = matchedSpeaker;
+        currentUtterance = matchedUtterance || '';
+        currentTimestamp = matchedTimestamp || undefined;
         continue;
       }
 
       // Continuation of current speaker's utterance
-      currentUtterance += ' ' + trimmed;
+      if (currentUtterance) {
+        currentUtterance += ' ' + trimmed;
+      } else {
+        // Handle case where transcript starts without a clear speaker label
+        currentUtterance = trimmed;
+      }
     }
 
     // Add final turn
@@ -895,9 +906,27 @@ export class DataSynthesizer {
     };
 
     // Data completeness score (how many fields are filled)
-    const totalFields = 25; // Approximate compulsory + important fields
+    const totalFields = 15; // Realistic important fields for transcripts
     const filledFields = Object.keys(dealData).filter(k => dealData[k as keyof typeof dealData] !== undefined).length;
-    const completenessScore = Math.min(filledFields / totalFields, 1.0);
+    let completenessScore = Math.min(filledFields / totalFields, 1.0);
+
+    // Apply specific penalties for missing critical data
+    let penalty = 0;
+
+    // 1. Missing Customer Name (High Penalty)
+    if (!dealData.prospect_company_name && !dealData.end_user_company_name) {
+      penalty += 0.25;
+    }
+
+    // 2. Missing Deal Value
+    if (!dealData.estimated_deal_value) {
+      penalty += 0.15;
+    }
+
+    // 3. Very Low Buying Signal
+    if (buyingSignalScore < 0.2) {
+      penalty += 0.20;
+    }
 
     // Corroboration score (do multiple signals point to same data)
     let corroborationScore = 0.7; // Default moderate corroboration
@@ -905,10 +934,13 @@ export class DataSynthesizer {
     // Entity confidence (average of all extracted entity confidences)
     let entityConfidenceScore = 0.75; // Default good confidence
 
-    const finalScore = (buyingSignalScore * weights.buying_signals) +
+    let finalScore = (buyingSignalScore * weights.buying_signals) +
       (completenessScore * weights.data_completeness) +
       (corroborationScore * weights.corroboration) +
       (entityConfidenceScore * weights.entity_confidence);
+
+    // Apply accumulated penalties
+    finalScore = Math.max(0, finalScore - penalty);
 
     return Math.min(finalScore, 1.0);
   }
@@ -1052,6 +1084,7 @@ export async function parseEnhancedTranscript(
   turns: SpeakerTurn[];
   isRegisterable: boolean;
   buyingSignalScore: number;
+  conversionReport: any[];
 }> {
   const { buyingSignalThreshold = 0.5, confidenceThreshold = 0.6, allowLowSignal = false, metadata } = options;
 
@@ -1071,6 +1104,7 @@ export async function parseEnhancedTranscript(
       turns: [],
       isRegisterable: false,
       buyingSignalScore: 0,
+      conversionReport: [],
     };
   }
 
@@ -1085,6 +1119,7 @@ export async function parseEnhancedTranscript(
       turns,
       isRegisterable: false,
       buyingSignalScore,
+      conversionReport: [],
     };
   }
 
@@ -1112,6 +1147,23 @@ export async function parseEnhancedTranscript(
   // STAGE 6: Data Synthesis
   const deal = DataSynthesizer.synthesizeDealData(turns, entities, relationships, buyingSignalScore);
 
+  // STAGE 7: Conversion Report
+  const conversionReport: any[] = turns.map((turn, index) => {
+    const hasIntent = turn.intent && turn.intent !== IntentType.OFF_TOPIC;
+    return {
+      id: `turn-${index}`,
+      turnIndex: index,
+      speaker: turn.speaker,
+      status: hasIntent ? 'processed' : 'skipped',
+      message: hasIntent ? `Extracted intent: ${turn.intent}` : 'No significant buying signal in this turn',
+      details: {
+        intent: turn.intent,
+        confidence: turn.confidence,
+        entityCount: turn.entities?.length || 0,
+      }
+    };
+  });
+
   // Final confidence check
   if (deal.confidence_score < confidenceThreshold) {
     logger.warn('Deal confidence below threshold', {
@@ -1133,6 +1185,7 @@ export async function parseEnhancedTranscript(
     turns,
     isRegisterable,
     buyingSignalScore,
+    conversionReport,
   };
 }
 
