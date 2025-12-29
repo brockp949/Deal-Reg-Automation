@@ -84,7 +84,7 @@ export default function VendorDetail() {
         <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
           <div>
             <div className="flex items-center gap-3 mb-2">
-              <h1 className="text-4xl font-bold bg-gradient-to-r from-primary via-purple-400 to-blue-600 bg-clip-text text-transparent">{vendor.name}</h1>
+              <h1 className="text-4xl font-bold bg-gradient-to-r from-primary via-amber-500 to-primary bg-clip-text text-transparent">{vendor.name}</h1>
               <Badge variant={vendor.status === 'active' ? 'success' : 'secondary'} className="glass border-white/10">
                 {vendor.status}
               </Badge>

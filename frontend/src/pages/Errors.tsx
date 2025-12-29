@@ -84,11 +84,11 @@ export default function Errors() {
 
     const getCategoryBadge = (category: string) => {
         const colors: Record<string, string> = {
-            parsing: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
+            parsing: 'bg-slate-100 text-slate-800 dark:bg-slate-900 dark:text-slate-200',
             extraction: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
             validation: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
             processing: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
-            integration: 'bg-pink-100 text-pink-800 dark:bg-pink-900 dark:text-pink-200',
+            integration: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200',
         };
         return (
             <Badge className={colors[category] || 'bg-gray-100 text-gray-800'}>
@@ -107,7 +107,7 @@ export default function Errors() {
                         Monitor and resolve system errors
                     </p>
                 </div>
-                <Button variant="outline" onClick={() => refetch()} className="glass hover:bg-white/10 gap-2">
+                <Button variant="outline" onClick={() => refetch()} className="glass hover:bg-muted/50 gap-2">
                     <RefreshCw className="h-4 w-4" />
                     Refresh
                 </Button>
@@ -209,7 +209,7 @@ export default function Errors() {
                             {errors.map((error) => (
                                 <div
                                     key={error.id}
-                                    className={`p-4 rounded-lg border border-white/10 transition-colors ${error.isResolved ? 'bg-white/5 opacity-60' : 'hover:bg-white/5'
+                                    className={`p-4 rounded-lg border border-border transition-colors ${error.isResolved ? 'bg-muted/50 opacity-60' : 'hover:bg-muted/30'
                                         }`}
                                 >
                                     <div className="flex items-start justify-between gap-4">

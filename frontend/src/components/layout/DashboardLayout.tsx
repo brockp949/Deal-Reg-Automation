@@ -15,13 +15,13 @@ export default function DashboardLayout() {
                 className="fixed inset-0 pointer-events-none z-0"
                 aria-hidden="true"
             >
-                {/* Primary glow - top center */}
-                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[600px] bg-primary/10 rounded-full blur-[120px] opacity-50" />
+                {/* Primary gold glow - top center */}
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[600px] bg-primary/8 rounded-full blur-[120px] opacity-50" />
 
-                {/* Secondary glow - top right */}
-                <div className="absolute top-0 right-0 w-[500px] h-[400px] bg-cyan-500/8 rounded-full blur-[100px] opacity-40" />
+                {/* Secondary navy glow - top right */}
+                <div className="absolute top-0 right-0 w-[500px] h-[400px] bg-blue-900/20 rounded-full blur-[100px] opacity-40" />
 
-                {/* Tertiary glow - bottom left */}
+                {/* Tertiary gold glow - bottom left */}
                 <div className="absolute bottom-0 left-0 w-[400px] h-[300px] bg-primary/5 rounded-full blur-[80px] opacity-30" />
             </div>
 
@@ -31,13 +31,13 @@ export default function DashboardLayout() {
             />
 
             <div className="md:pl-64 flex flex-col min-h-screen transition-all duration-300 relative z-10">
-                <header className="h-16 border-b border-white/5 sticky top-0 z-40 px-6 flex items-center justify-between glass">
+                <header className="h-16 border-b border-border sticky top-0 z-40 px-6 flex items-center justify-between glass">
                     <div className="flex items-center gap-4 md:hidden">
                         <Button
                             variant="ghost"
                             size="icon"
                             onClick={() => setIsMobileMenuOpen(true)}
-                            className="hover:bg-white/10"
+                            className="hover:bg-muted/50"
                         >
                             <Menu className="h-5 w-5" />
                         </Button>
@@ -59,7 +59,7 @@ export default function DashboardLayout() {
                 </main>
 
                 {/* Footer */}
-                <footer className="border-t border-white/5 py-4 px-6 text-center text-sm text-muted-foreground/60">
+                <footer className="border-t border-border py-4 px-6 text-center text-sm text-muted-foreground/60">
                     <p>DealFlow - Deal Registration Automation</p>
                 </footer>
             </div>

@@ -116,7 +116,7 @@ export default function DealStudio() {
         <div className="h-[calc(100vh-8rem)] flex flex-col space-y-6">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 animate-slide-up">
                 <div>
-                    <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-primary via-purple-400 to-blue-600 bg-clip-text text-transparent">
+                    <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-primary via-amber-500 to-primary bg-clip-text text-transparent">
                         Deal Studio
                     </h1>
                     <p className="text-muted-foreground mt-1 text-sm md:text-base">

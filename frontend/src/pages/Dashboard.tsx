@@ -149,8 +149,8 @@ export default function Dashboard() {
       subtext: syncStats?.lastSyncAt ? `Last: ${getRelativeTime(syncStats.lastSyncAt)}` : 'No syncs yet',
       subtextColor: 'text-muted-foreground',
       icon: Cloud,
-      iconColor: 'text-cyan-500',
-      iconBg: 'bg-cyan-500/10',
+      iconColor: 'text-blue-400',
+      iconBg: 'bg-blue-400/10',
       onClick: () => window.location.href = '/settings/sync',
     },
   ];
@@ -188,7 +188,7 @@ export default function Dashboard() {
             ].map((item, index) => (
               <div
                 key={item.step}
-                className={`flex flex-col items-start p-4 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/15 transition-all duration-300 animate-fade-in-up stagger-${index + 1}`}
+                className={`flex flex-col items-start p-4 rounded-xl bg-muted/30 border border-border hover:bg-muted/50 hover:border-border/80 transition-all duration-300 animate-fade-in-up stagger-${index + 1}`}
               >
                 <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center mb-3 border border-primary/30">
                   <span className="text-primary font-bold">{item.step}</span>
@@ -217,13 +217,13 @@ export default function Dashboard() {
           </div>
 
           {/* Google Sync Tip */}
-          <div className="mt-6 p-4 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-start gap-3">
-            <Lightbulb className="h-5 w-5 text-cyan-400 flex-shrink-0 mt-0.5" />
+          <div className="mt-6 p-4 rounded-xl bg-primary/10 border border-primary/20 flex items-start gap-3">
+            <Lightbulb className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="font-medium text-cyan-100">
+              <p className="font-medium text-foreground">
                 Pro tip: Connect Gmail & Google Drive
               </p>
-              <p className="text-sm text-cyan-300/80 mt-1">
+              <p className="text-sm text-muted-foreground mt-1">
                 Import deals automatically from your email and documents for continuous updates.
               </p>
             </div>
@@ -301,7 +301,7 @@ export default function Dashboard() {
                   {files.slice(0, 5).map((file: any) => (
                     <div
                       key={file.id}
-                      className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/5 hover:bg-white/10 hover:border-white/10 transition-all duration-200"
+                      className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-border hover:bg-muted/50 hover:border-border/80 transition-all duration-200"
                     >
                       <div className="flex-1 min-w-0">
                         <p className="font-medium truncate">{file.filename}</p>
@@ -350,7 +350,7 @@ export default function Dashboard() {
                   {deals.slice(0, 5).map((deal: any) => (
                     <div
                       key={deal.id}
-                      className="flex items-start justify-between p-3 rounded-lg bg-white/5 border border-white/5 hover:bg-white/10 hover:border-white/10 transition-all duration-200"
+                      className="flex items-start justify-between p-3 rounded-lg bg-muted/30 border border-border hover:bg-muted/50 hover:border-border/80 transition-all duration-200"
                     >
                       <div className="flex-1 min-w-0">
                         <p className="font-medium truncate">{deal.deal_name}</p>
@@ -416,7 +416,7 @@ export default function Dashboard() {
                   {recentSyncs.slice(0, 5).map((sync: any) => (
                     <div
                       key={sync.id}
-                      className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/5 hover:bg-white/10 hover:border-white/10 transition-all duration-200"
+                      className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-border hover:bg-muted/50 hover:border-border/80 transition-all duration-200"
                     >
                       <div className="flex items-center gap-3 flex-1 min-w-0">
                         {sync.service_type === 'gmail' ? (

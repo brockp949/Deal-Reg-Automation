@@ -240,7 +240,7 @@ export default function Deals() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 animate-slide-up">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-primary via-purple-400 to-blue-600 bg-clip-text text-transparent">
+          <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-primary via-amber-500 to-primary bg-clip-text text-transparent">
             Deal Registrations
           </h1>
           <p className="text-muted-foreground mt-1">
@@ -251,7 +251,7 @@ export default function Deals() {
           <Button
             variant="outline"
             size="icon"
-            className="glass hover:bg-white/10"
+            className="glass hover:bg-muted/50"
             onClick={() => setShowShortcuts(true)}
             aria-label="Show keyboard shortcuts"
             title="Show keyboard shortcuts (?)"
@@ -260,7 +260,7 @@ export default function Deals() {
           </Button>
           <Button
             variant="outline"
-            className="gap-2 glass hover:bg-white/10"
+            className="gap-2 glass hover:bg-muted/50"
             onClick={handleDetailedReprocessing}
             disabled={isReprocessing}
             aria-label={isReprocessing ? 'Processing deals' : 'Start deep analysis'}
@@ -272,7 +272,7 @@ export default function Deals() {
             )}
             {isReprocessing ? 'Processing...' : 'Deep Analysis'}
           </Button>
-          <Button variant="outline" className="gap-2 glass hover:bg-white/10" aria-label="Export deals to file">
+          <Button variant="outline" className="gap-2 glass hover:bg-muted/50" aria-label="Export deals to file">
             <FileDown className="h-4 w-4" />
             Export Deals
           </Button>
@@ -323,7 +323,7 @@ export default function Deals() {
         <Card className="glass-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Active Deals</CardTitle>
-            <Briefcase className="h-4 w-4 text-purple-500" />
+            <Briefcase className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
@@ -441,7 +441,7 @@ export default function Deals() {
           ) : (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {deals.map((deal) => (
-                <Card key={deal.id} className="glass-card hover:shadow-lg transition-all border-white/5 hover:border-primary/20">
+                <Card key={deal.id} className="glass-card hover:shadow-lg transition-all hover:border-primary/20">
                   <CardHeader>
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
@@ -454,7 +454,7 @@ export default function Deals() {
                         <DealStatusBadge status={deal.status} />
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-white/10">
+                            <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-muted/50">
                               <MoreVertical className="h-4 w-4" />
                               <span className="sr-only">Open menu</span>
                             </Button>
@@ -542,7 +542,7 @@ export default function Deals() {
                       {deal.metadata?.extraction_method && (
                         <div className="flex justify-between text-sm">
                           <span className="text-muted-foreground">Source:</span>
-                          <Badge variant="outline" className="text-xs bg-white/5 border-white/10">
+                          <Badge variant="outline" className="text-xs bg-muted/30 border-border">
                             {deal.metadata.extraction_method}
                           </Badge>
                         </div>
@@ -550,7 +550,7 @@ export default function Deals() {
                     </div>
 
                     {deal.notes && (
-                      <div className="pt-2 border-t border-white/5">
+                      <div className="pt-2 border-t border-border">
                         <p className="text-sm text-muted-foreground line-clamp-2">
                           {deal.notes}
                         </p>
@@ -571,7 +571,7 @@ export default function Deals() {
                   size="sm"
                   onClick={() => setPage(Math.max(1, page - 1))}
                   disabled={page === 1}
-                  className="glass hover:bg-white/10"
+                  className="glass hover:bg-muted/50"
                   aria-label="Previous page"
                 >
                   Previous
@@ -598,7 +598,7 @@ export default function Deals() {
                           onClick={() => setPage(pageNum)}
                           aria-label={`Go to page ${pageNum}`}
                           aria-current={pageNum === page ? "page" : undefined}
-                          className={pageNum === page ? "bg-primary" : "glass hover:bg-white/10"}
+                          className={pageNum === page ? "bg-primary" : "glass hover:bg-muted/50"}
                         >
                           {pageNum}
                         </Button>
@@ -611,7 +611,7 @@ export default function Deals() {
                   size="sm"
                   onClick={() => setPage(Math.min(pagination.totalPages, page + 1))}
                   disabled={page === pagination.totalPages}
-                  className="glass hover:bg-white/10"
+                  className="glass hover:bg-muted/50"
                   aria-label="Next page"
                 >
                   Next

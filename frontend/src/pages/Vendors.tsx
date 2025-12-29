@@ -291,8 +291,8 @@ export default function Vendors() {
                   </div>
                 </Card>
                 <Card className="glass-card p-4 flex flex-row items-center gap-4">
-                  <div className="p-3 bg-purple-500/10 rounded-xl">
-                    <DollarSign className="h-5 w-5 text-purple-500" />
+                  <div className="p-3 bg-primary/10 rounded-xl">
+                    <DollarSign className="h-5 w-5 text-primary" />
                   </div>
                   <div>
                     <div className="text-2xl font-bold">{formatCurrency(avgDealSize)}</div>

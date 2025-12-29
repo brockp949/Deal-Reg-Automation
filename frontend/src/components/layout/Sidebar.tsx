@@ -71,7 +71,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
             {/* Sidebar */}
             <aside
                 className={cn(
-                    "flex flex-col w-64 min-h-screen border-r border-white/10 bg-background/80 backdrop-blur-xl fixed left-0 top-0 z-50 transition-transform duration-300 md:translate-x-0",
+                    "flex flex-col w-64 min-h-screen border-r border-border bg-background/80 backdrop-blur-xl fixed left-0 top-0 z-50 transition-transform duration-300 md:translate-x-0",
                     isOpen ? "translate-x-0" : "-translate-x-full"
                 )}
             >
@@ -86,7 +86,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                         {/* Mobile Close Button */}
                         <button
                             onClick={onClose}
-                            className="md:hidden p-1 hover:bg-white/10 rounded-md"
+                            className="md:hidden p-1 hover:bg-muted/50 rounded-md"
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
                         </button>
@@ -112,8 +112,8 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                                                 className={cn(
                                                     "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 group relative",
                                                     isActive
-                                                        ? "bg-primary/10 text-primary shadow-[0_0_20px_rgba(124,58,237,0.15)]"
-                                                        : "text-muted-foreground hover:text-foreground hover:bg-white/5"
+                                                        ? "bg-primary/10 text-primary shadow-[0_0_20px_hsl(var(--primary)/0.15)]"
+                                                        : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
                                                 )}
                                             >
                                                 {isActive && (
@@ -133,12 +133,12 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                     </div>
                 </div>
 
-                <div className="mt-auto p-6 border-t border-white/5">
+                <div className="mt-auto p-6 border-t border-border">
                     <Link
                         to="/settings/sync"
                         onClick={() => onClose?.()}
                         className={cn(
-                            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 text-muted-foreground hover:text-foreground hover:bg-white/5 relative",
+                            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 text-muted-foreground hover:text-foreground hover:bg-muted/30 relative",
                             location.pathname === '/settings/sync' && "bg-primary/10 text-primary"
                         )}
                     >

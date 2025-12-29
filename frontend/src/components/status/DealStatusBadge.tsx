@@ -40,7 +40,7 @@ const statusConfig: Record<
   'closed-won': {
     label: 'Closed Won',
     variant: 'success',
-    colorClass: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
+    colorClass: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200',
   },
   'closed-lost': {
     label: 'Closed Lost',
