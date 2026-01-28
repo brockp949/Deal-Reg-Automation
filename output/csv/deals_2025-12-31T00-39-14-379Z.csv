@@ -1,0 +1,7 @@
+"Deal Name","Customer Name","Deal Value","Currency","Status","Owner","Expected Close","Probability","Decision Maker","Confidence","Source File","Start Line","End Line"
+"Acme Corporation","Acme Corporation","$150,000","USD","Qualified
+Expected","","2025-03-30","","","100%","manual_2024-12-16_test-deals_rerun.txt",5,16
+"Beta Technologies Inc","Beta Tech","$75,000","USD","Discovery
+Expected","","2025-06-30","","","100%","manual_2024-12-16_test-deals_rerun.txt",17,28
+"Gamma Solutions LLC","Gamma Solutions","$250,000","USD","Negotiation
+Close","","2025-01-31","","","100%","manual_2024-12-16_test-deals_rerun.txt",29,29

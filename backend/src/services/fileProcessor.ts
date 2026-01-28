@@ -6,7 +6,7 @@ import { parseStreamingMboxFile } from '../parsers/streamingMboxParser';
 import { parseCSVFile, normalizeVTigerData, parseGenericCSV } from '../parsers/csvParser';
 import { parseTextTranscript, extractInfoFromTranscript } from '../parsers/transcriptParser';
 import { parseEnhancedTranscript } from '../parsers/enhancedTranscriptParser';
-import { inferVendorName, emailLocalPartToName } from '../parsers/enhancedTranscriptMapping';
+import { inferVendorName, emailLocalPartToName, PERSONAL_EMAIL_DOMAINS } from '../parsers/enhancedTranscriptMapping';
 import { parsePDFTranscript } from '../parsers/pdfParser';
 import { parseDocxTranscript } from '../parsers/docxParser';
 import { domainToCompanyName, generateDealNameWithFeatures, normalizeCompanyName } from '../utils/fileHelpers';
@@ -29,6 +29,27 @@ interface ProcessingResult {
   dealsCreated: number;
   contactsCreated: number;
   errors: string[];
+}
+
+function safeHostnameFromUrl(value?: string | null): string | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  try {
+    return new URL(trimmed).hostname.toLowerCase();
+  } catch {
+    // Fall back to adding scheme for bare domains.
+  }
+  try {
+    return new URL(`https://${trimmed}`).hostname.toLowerCase();
+  } catch {
+    return undefined;
+  }
+}
+
+function isPersonalEmailDomain(domain?: string | null): boolean {
+  if (!domain) return false;
+  return PERSONAL_EMAIL_DOMAINS.has(domain.toLowerCase());
 }
 
 /**
@@ -352,10 +373,10 @@ async function processMboxFile(filePath: string, fileId: string) {
         logger.info(`Processed ${processed} emails from MBOX file`);
 
         // Update progress: 10% to 40% during parsing
-        if (total) {
-          const parseProgress = 10 + Math.round((processed / total) * 30);
-          await updateFileProgress(fileId, parseProgress);
-        }
+        const parseProgress = total
+          ? 10 + Math.round((processed / total) * 30)
+          : Math.min(40, 10 + Math.floor(processed / 200));
+        await updateFileProgress(fileId, parseProgress);
       }
     },
   });
@@ -382,13 +403,21 @@ async function processMboxFile(filePath: string, fileId: string) {
     let emailDomain: string | null = null;
 
     if (extractedDeal.source_email_domain) {
-      emailDomain = extractedDeal.source_email_domain;
-      extractedVendorName = domainToCompanyName(emailDomain);
-      logger.info('Extracted vendor from email domain', {
-        domain: emailDomain,
-        vendor: extractedVendorName,
-        from: extractedDeal.source_email_from
-      });
+      const normalizedDomain = extractedDeal.source_email_domain.toLowerCase();
+      if (!isPersonalEmailDomain(normalizedDomain)) {
+        emailDomain = normalizedDomain;
+        extractedVendorName = domainToCompanyName(emailDomain);
+        logger.info('Extracted vendor from email domain', {
+          domain: emailDomain,
+          vendor: extractedVendorName,
+          from: extractedDeal.source_email_from
+        });
+      } else {
+        logger.info('Skipping personal email domain for vendor inference', {
+          domain: normalizedDomain,
+          from: extractedDeal.source_email_from
+        });
+      }
     }
 
     // Fallback to end_user_name if no email domain available
@@ -470,6 +499,7 @@ async function processMboxFile(filePath: string, fileId: string) {
       confidence_score: extractedDeal.confidence_score || 0.5,
       extraction_method: 'mbox_email_thread',
       expected_close_date: extractedDeal.expected_close_date || null,
+      deal_stage: extractedDeal.deal_stage || null,
       product_name: extractedDeal.product_name || null,
       deal_name_features: dealNameResult.features,
       deal_name_candidates: dealNameResult.features.candidates?.slice(0, 5),
@@ -653,10 +683,12 @@ async function processTranscriptFile(filePath: string) {
 
   // Extract prospect/customer vendor (if different from partner)
   if (deal.prospect_company_name && deal.prospect_company_name !== deal.partner_company_name) {
+    const prospectHostname = safeHostnameFromUrl(deal.prospect_website);
+
     // Try to match to existing vendor first
     const matchResult = await matchVendor({
       extractedName: deal.prospect_company_name,
-      emailDomain: deal.prospect_website ? new URL(deal.prospect_website).hostname : undefined,
+      emailDomain: prospectHostname,
       existingVendors: existingVendors
     });
     const matchedVendor = matchResult.matched ? matchResult.vendor.name : null;
@@ -666,7 +698,7 @@ async function processTranscriptFile(filePath: string) {
     if (!matchedVendor && prospectVendorName && prospectVendorName !== partnerVendorName && !vendorSet.has(prospectVendorName)) {
       vendors.push({
         name: prospectVendorName,
-        email_domain: deal.prospect_website ? new URL(deal.prospect_website).hostname : null,
+        email_domain: prospectHostname || null,
         website: deal.prospect_website || null,
         industry: deal.industry || null,
       });
@@ -730,7 +762,7 @@ async function processTranscriptFile(filePath: string) {
     registration_date: new Date(),
     expected_close_date: deal.expected_close_date || null,
     status: 'registered',
-    deal_stage: null,
+    deal_stage: deal.deal_stage || null,
     probability: Math.round(deal.confidence_score * 100), // Convert 0-1 to 0-100
     notes: deal.deal_description || null,
     vendor_name: vendorNameForDeal,

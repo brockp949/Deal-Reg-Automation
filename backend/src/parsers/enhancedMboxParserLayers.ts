@@ -17,6 +17,8 @@ import { getEntityExtractor } from '../skills/SemanticEntityExtractor';
 import { isSkillEnabled } from '../config/claude';
 
 const MIN_BODY_LENGTH = 20;
+const SEMANTIC_MIN_BODY_LENGTH = 120;
+const SEMANTIC_MAX_BODY_LENGTH = 8000;
 
 function getMessageBody(message: ParsedEmailMessage): string {
   const cleaned = message.cleaned_body?.trim() || '';
@@ -39,6 +41,15 @@ function getKeywordScanText(message: ParsedEmailMessage): string {
     return `${subject}\n${body}`;
   }
   return subject || body || '';
+}
+
+function shouldUseSemanticExtraction(message: ParsedEmailMessage): boolean {
+  const combinedText = getKeywordScanText(message);
+  if (combinedText.length < SEMANTIC_MIN_BODY_LENGTH) {
+    return false;
+  }
+
+  return message.tier1_matches.length > 0 || message.tier2_matches.length > 0;
 }
 
 // ============================================================================
@@ -370,7 +381,10 @@ export async function applySemanticExtraction(message: ParsedEmailMessage): Prom
     logger.info('Using SemanticEntityExtractor skill for email entity extraction');
     const extractor = getEntityExtractor();
 
-    const text = `${getMessageBody(message)}\n\nSubject: ${message.subject}`;
+    const rawText = `${getMessageBody(message)}\n\nSubject: ${message.subject}`;
+    const text = rawText.length > SEMANTIC_MAX_BODY_LENGTH
+      ? rawText.slice(0, SEMANTIC_MAX_BODY_LENGTH)
+      : rawText;
 
     // Request comprehensive entity extraction
     const result = await extractor.extract({
@@ -792,7 +806,9 @@ export async function processThread(thread: EmailThread): Promise<ExtractedDeal[
     }
 
     // Apply Layer 2.5 (Semantic extraction with AI) - runs first for best results
-    const semanticData = await applySemanticExtraction(message);
+    const semanticData = shouldUseSemanticExtraction(message)
+      ? await applySemanticExtraction(message)
+      : {};
 
     // Apply Layer 2 (Regex extraction) - fallback for when semantic extraction is disabled
     const layer2Data = applyLayer2Extraction(message);

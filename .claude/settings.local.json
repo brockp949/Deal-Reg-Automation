@@ -66,7 +66,8 @@
       "Bash(npm run transcript:export:*)",
       "Bash(docker run:*)",
       "Bash(docker volume:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(npx eslint:*)"
     ],
     "deny": [],
     "ask": []

@@ -21,6 +21,9 @@ import { config } from '../config';
 import { getEntityExtractor } from '../skills/SemanticEntityExtractor';
 import { isSkillEnabled } from '../config/claude';
 
+const MAX_AI_TRANSCRIPT_CHARS = 20000;
+const MAX_SEMANTIC_ENTITY_CHARS = 12000;
+
 /**
  * Buying Signals Taxonomy
  * Used to identify if a transcript contains a registerable deal opportunity
@@ -292,7 +295,7 @@ export class TranscriptPreprocessor {
       if (!trimmed) continue;
 
       // 1. Check for timestamp + speaker label: [HH:MM:SS] Name: text or (HH:MM) Name: text
-      const timestampSpeakerMatch = trimmed.match(/^[[(\]?(\d{1,2}:\d{2}(?::\d{2})?)\])?\s*([^:]+):\s*(.*)$/);
+      const timestampSpeakerMatch = trimmed.match(/^[\[(]?(\d{1,2}:\d{2}(?::\d{2})?)[\])]?\s*([^:]+):\s*(.*)$/);
 
       // 2. Fallback: Check for speaker label only: Name: text or Name (Role): text
       const speakerOnlyMatch = trimmed.match(/^([^:]{2,50}):\s*(.*)$/);
@@ -367,11 +370,24 @@ export class TranscriptNER {
    */
   static async extractEntitiesSemantic(text: string, context?: any): Promise<ExtractedEntity[]> {
     const entities: ExtractedEntity[] = [];
+    const trimmedText = text.trim();
+
+    if (!trimmedText) {
+      return entities;
+    }
+
+    if (trimmedText.length > MAX_SEMANTIC_ENTITY_CHARS) {
+      logger.info('Transcript too long for semantic entity extraction; using regex fallback', {
+        length: trimmedText.length,
+        threshold: MAX_SEMANTIC_ENTITY_CHARS,
+      });
+      return TranscriptNER.extractEntities(trimmedText);
+    }
 
     // Check if skill is enabled
     if (!isSkillEnabled('semanticEntityExtractor')) {
       logger.debug('SemanticEntityExtractor skill disabled, falling back to regex');
-      return TranscriptNER.extractEntities(text);
+      return TranscriptNER.extractEntities(trimmedText);
     }
 
     try {
@@ -379,7 +395,7 @@ export class TranscriptNER {
       const extractor = getEntityExtractor();
 
       const result = await extractor.extract({
-        text,
+        text: trimmedText,
         entityTypes: [
           'organization', // Company names
           'person', // Person names
@@ -710,6 +726,14 @@ export class BuyingSignalDetector {
   static async calculateBuyingSignalScore(turns: SpeakerTurn[]): Promise<number> {
     // Build transcript text from turns
     const transcriptText = turns.map(t => `${t.speaker}: ${t.utterance}`).join('\n');
+
+    if (transcriptText.length > MAX_AI_TRANSCRIPT_CHARS) {
+      logger.info('Transcript too long for AI buying signal analysis; using regex fallback', {
+        length: transcriptText.length,
+        threshold: MAX_AI_TRANSCRIPT_CHARS,
+      });
+      return BuyingSignalDetector.calculateBuyingSignalScoreRegex(turns);
+    }
 
     // === AI-ENHANCED BUYING SIGNAL ANALYSIS ===
     try {

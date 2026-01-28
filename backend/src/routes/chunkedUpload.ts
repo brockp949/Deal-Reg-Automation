@@ -820,6 +820,7 @@ async function cleanupStaleUploads(): Promise<void> {
 }
 
 // Run cleanup every hour
-setInterval(cleanupStaleUploads, 60 * 60 * 1000);
+const cleanupInterval = setInterval(cleanupStaleUploads, 60 * 60 * 1000);
+cleanupInterval.unref();
 
 export default router;

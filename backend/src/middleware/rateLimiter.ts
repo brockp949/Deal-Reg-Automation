@@ -5,26 +5,35 @@ import { createClient } from 'redis';
 import { config } from '../config';
 import logger from '../utils/logger';
 
-// Create a Redis client
-const redisClient = createClient({
-  url: config.redisUrl,
-});
+const useRedisStore = config.env !== 'test';
+let redisClient: ReturnType<typeof createClient> | null = null;
 
-redisClient.on('error', (err) => {
-  logger.error('Redis Client Error for rate limiter', err);
-});
+if (useRedisStore) {
+  redisClient = createClient({
+    url: config.redisUrl,
+  });
 
-// Connect the client
-redisClient.connect().catch(logger.error);
+  redisClient.on('error', (err) => {
+    logger.error('Redis Client Error for rate limiter', err);
+  });
+
+  // Connect the client
+  redisClient.connect().catch(logger.error);
+}
 
 /**
  * Factory function to create a unique Redis store for each rate limiter.
  * This avoids the ERR_ERL_STORE_REUSE error in express-rate-limit v7+
  */
-const createRedisStore = (prefix: string) => new RedisStore({
-  sendCommand: (...args: string[]) => redisClient.sendCommand(args),
-  prefix: `rl:${prefix}:`,
-});
+const createRedisStore = (prefix: string) => {
+  if (!useRedisStore || !redisClient) {
+    return undefined;
+  }
+  return new RedisStore({
+    sendCommand: (...args: string[]) => redisClient!.sendCommand(args),
+    prefix: `rl:${prefix}:`,
+  });
+};
 
 // Use API Key for rate limiting, falling back to IP address
 // Note: We disable validation because we primarily use API keys, not IPs
@@ -136,4 +145,3 @@ export function createRateLimiter(options: {
     validate: false,
   });
 }
-
