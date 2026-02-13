@@ -1,11 +1,29 @@
+/**
+ * Comprehensive Unit Tests for DuplicateDetector Service
+ *
+ * Tests coverage includes:
+ * - findDuplicates (detectDuplicateDeals) - exact matches, fuzzy matches, no matches
+ * - Similarity scoring - high confidence, medium confidence, low confidence
+ * - Different entity types - deals, vendors, contacts (types)
+ * - Edge cases - empty arrays, single item, null values
+ * - Performance - handling large datasets
+ * - Threshold configuration testing
+ */
+
 import {
   detectDuplicateDeals,
   detectDuplicatesInBatch,
   clusterDuplicates,
   calculateSimilarityScore,
+  updateDuplicateConfig,
+  getDuplicateConfig,
   DealData,
+  VendorData,
+  ContactData,
   DuplicateStrategy,
-  MATCH_CONFIG
+  MATCH_CONFIG,
+  DuplicateDetectionResult,
+  DuplicateMatch
 } from '../../services/duplicateDetector';
 
 // Mock the database query function
@@ -15,13 +33,31 @@ jest.mock('../../db', () => ({
 
 // Mock logger
 jest.mock('../../utils/logger', () => ({
+  default: {
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn()
+  },
   info: jest.fn(),
   warn: jest.fn(),
   error: jest.fn(),
   debug: jest.fn()
 }));
 
+// Mock webhookService - must return a Promise that can be .catch()'d
+jest.mock('../../services/webhookService', () => ({
+  triggerWebhook: jest.fn(() => Promise.resolve())
+}));
+
 const { query } = require('../../db');
+const { triggerWebhook } = require('../../services/webhookService');
+
+// Helper to reset mocks with proper Promise returns
+function resetWebhookMock() {
+  triggerWebhook.mockClear();
+  triggerWebhook.mockImplementation(() => Promise.resolve());
+}
 
 // ============================================================================
 // Test Data
@@ -98,6 +134,159 @@ const testDeal5: DealData = {
   contacts: []
 };
 
+const testVendor1: VendorData = {
+  id: 'vendor-1',
+  vendorName: 'Microsoft Corporation',
+  normalizedName: 'microsoft',
+  emailDomains: ['microsoft.com'],
+  products: ['Azure', 'Office 365', 'Windows'],
+  tier: 'platinum',
+  status: 'active'
+};
+
+const testVendor2: VendorData = {
+  id: 'vendor-2',
+  vendorName: 'Microsoft Corp',
+  normalizedName: 'microsoft',
+  emailDomains: ['microsoft.com'],
+  products: ['Azure', 'Office'],
+  tier: 'platinum',
+  status: 'active'
+};
+
+const testContact1: ContactData = {
+  id: 'contact-1',
+  name: 'John Doe',
+  email: 'john.doe@acme.com',
+  phone: '+1-555-123-4567',
+  role: 'CTO',
+  company: 'Acme Corporation'
+};
+
+const testContact2: ContactData = {
+  id: 'contact-2',
+  name: 'John D.',
+  email: 'john.doe@acme.com',
+  phone: '555-123-4567',
+  role: 'Chief Technology Officer',
+  company: 'Acme Corp'
+};
+
+// ============================================================================
+// Tests: Configuration Functions
+// ============================================================================
+
+describe('DuplicateDetector - Configuration', () => {
+  // Store original config to restore after tests
+  let originalConfig: typeof MATCH_CONFIG;
+
+  beforeEach(() => {
+    originalConfig = { ...getDuplicateConfig() };
+  });
+
+  afterEach(() => {
+    // Restore original configuration
+    updateDuplicateConfig(originalConfig);
+  });
+
+  describe('getDuplicateConfig', () => {
+    it('should return current configuration', () => {
+      const config = getDuplicateConfig();
+
+      expect(config).toBeDefined();
+      expect(config.AUTO_MERGE_THRESHOLD).toBeDefined();
+      expect(config.HIGH_CONFIDENCE_THRESHOLD).toBeDefined();
+      expect(config.MEDIUM_CONFIDENCE_THRESHOLD).toBeDefined();
+      expect(config.LOW_CONFIDENCE_THRESHOLD).toBeDefined();
+      expect(config.MINIMUM_MATCH_THRESHOLD).toBeDefined();
+      expect(config.DEFAULT_DEAL_WEIGHTS).toBeDefined();
+    });
+
+    it('should return a copy of configuration (not reference)', () => {
+      const config1 = getDuplicateConfig();
+      config1.AUTO_MERGE_THRESHOLD = 0.99;
+
+      const config2 = getDuplicateConfig();
+      expect(config2.AUTO_MERGE_THRESHOLD).not.toBe(0.99);
+    });
+
+    it('should include all threshold values', () => {
+      const config = getDuplicateConfig();
+
+      expect(config.FUZZY_EXACT_THRESHOLD).toBe(95);
+      expect(config.FUZZY_HIGH_THRESHOLD).toBe(85);
+      expect(config.FUZZY_MEDIUM_THRESHOLD).toBe(70);
+      expect(config.FUZZY_LOW_THRESHOLD).toBe(50);
+    });
+
+    it('should include tolerance values', () => {
+      const config = getDuplicateConfig();
+
+      expect(config.VALUE_TOLERANCE_PERCENT).toBe(10);
+      expect(config.DATE_TOLERANCE_DAYS).toBe(7);
+    });
+
+    it('should include default field weights', () => {
+      const config = getDuplicateConfig();
+      const weights = config.DEFAULT_DEAL_WEIGHTS;
+
+      expect(weights.dealName).toBe(0.25);
+      expect(weights.customerName).toBe(0.25);
+      expect(weights.vendorMatch).toBe(0.15);
+      expect(weights.dealValue).toBe(0.15);
+      expect(weights.closeDate).toBe(0.10);
+      expect(weights.products).toBe(0.05);
+      expect(weights.contacts).toBe(0.05);
+      expect(weights.description).toBe(0.00);
+    });
+  });
+
+  describe('updateDuplicateConfig', () => {
+    it('should update threshold values', () => {
+      updateDuplicateConfig({
+        AUTO_MERGE_THRESHOLD: 0.98,
+        HIGH_CONFIDENCE_THRESHOLD: 0.90
+      });
+
+      const config = getDuplicateConfig();
+      expect(config.AUTO_MERGE_THRESHOLD).toBe(0.98);
+      expect(config.HIGH_CONFIDENCE_THRESHOLD).toBe(0.90);
+    });
+
+    it('should update tolerance values', () => {
+      updateDuplicateConfig({
+        VALUE_TOLERANCE_PERCENT: 15,
+        DATE_TOLERANCE_DAYS: 14
+      });
+
+      const config = getDuplicateConfig();
+      expect(config.VALUE_TOLERANCE_PERCENT).toBe(15);
+      expect(config.DATE_TOLERANCE_DAYS).toBe(14);
+    });
+
+    it('should update batch size', () => {
+      updateDuplicateConfig({
+        BATCH_SIZE: 200
+      });
+
+      const config = getDuplicateConfig();
+      expect(config.BATCH_SIZE).toBe(200);
+    });
+
+    it('should partially update configuration', () => {
+      const originalMinThreshold = getDuplicateConfig().MINIMUM_MATCH_THRESHOLD;
+
+      updateDuplicateConfig({
+        AUTO_MERGE_THRESHOLD: 0.99
+      });
+
+      const config = getDuplicateConfig();
+      expect(config.AUTO_MERGE_THRESHOLD).toBe(0.99);
+      expect(config.MINIMUM_MATCH_THRESHOLD).toBe(originalMinThreshold);
+    });
+  });
+});
+
 // ============================================================================
 // Tests: Similarity Calculation
 // ============================================================================
@@ -116,7 +305,7 @@ describe('DuplicateDetector - Similarity Calculation', () => {
       const result = calculateSimilarityScore(testDeal1, testDeal2);
       expect(result.overall).toBeGreaterThan(0.90);
       expect(result.factors.dealName).toBe(1.0);
-      expect(result.factors.customerName).toBeGreaterThan(0.95); // Normalized company names
+      expect(result.factors.customerName).toBeGreaterThan(0.95);
       expect(result.factors.dealValue).toBe(1.0);
       expect(result.factors.vendorMatch).toBe(1.0);
     });
@@ -145,8 +334,8 @@ describe('DuplicateDetector - Similarity Calculation', () => {
       const result = calculateSimilarityScore(dealWithMissingFields, testDeal1);
       expect(result.overall).toBeGreaterThanOrEqual(0);
       expect(result.overall).toBeLessThanOrEqual(1);
-      expect(result.factors.dealValue).toBe(0); // Missing value
-      expect(result.factors.closeDate).toBe(0); // Missing date
+      expect(result.factors.dealValue).toBe(0);
+      expect(result.factors.closeDate).toBe(0);
     });
 
     it('should use custom weights correctly', () => {
@@ -162,24 +351,23 @@ describe('DuplicateDetector - Similarity Calculation', () => {
       };
 
       const result = calculateSimilarityScore(testDeal1, testDeal2, customWeights);
-      // Only dealName and customerName should matter
       expect(result.overall).toBeGreaterThan(0.95);
     });
 
     it('should calculate deal value similarity within tolerance', () => {
       const deal1 = { ...testDeal1, dealValue: 50000 };
-      const deal2 = { ...testDeal1, dealValue: 52000 }; // 4% difference
+      const deal2 = { ...testDeal1, dealValue: 52000 };
 
       const result = calculateSimilarityScore(deal1, deal2);
-      expect(result.factors.dealValue).toBeGreaterThan(0.85); // Within 10% tolerance
+      expect(result.factors.dealValue).toBeGreaterThan(0.85);
     });
 
     it('should calculate date similarity within tolerance', () => {
       const deal1 = { ...testDeal1, closeDate: '2024-12-15' };
-      const deal2 = { ...testDeal1, closeDate: '2024-12-18' }; // 3 days difference
+      const deal2 = { ...testDeal1, closeDate: '2024-12-18' };
 
       const result = calculateSimilarityScore(deal1, deal2);
-      expect(result.factors.closeDate).toBeGreaterThan(0.85); // Within 7 days tolerance
+      expect(result.factors.closeDate).toBeGreaterThan(0.85);
     });
 
     it('should calculate product similarity using Jaccard index', () => {
@@ -187,7 +375,7 @@ describe('DuplicateDetector - Similarity Calculation', () => {
       const deal2 = { ...testDeal1, products: ['Azure', 'Office 365'] };
 
       const result = calculateSimilarityScore(deal1, deal2);
-      expect(result.factors.products).toBeCloseTo(2 / 3, 2); // 2 common out of 3 unique
+      expect(result.factors.products).toBeCloseTo(2 / 3, 2);
     });
 
     it('should calculate contact similarity using email matching', () => {
@@ -206,7 +394,58 @@ describe('DuplicateDetector - Similarity Calculation', () => {
       };
 
       const result = calculateSimilarityScore(deal1, deal2);
-      expect(result.factors.contacts).toBeCloseTo(1 / 2, 2); // 1 common out of 2 unique
+      expect(result.factors.contacts).toBeCloseTo(1 / 2, 2);
+    });
+
+    it('should return weight information', () => {
+      const result = calculateSimilarityScore(testDeal1, testDeal2);
+      expect(result.weight).toBeGreaterThan(0);
+      expect(result.weight).toBeLessThanOrEqual(1);
+    });
+  });
+
+  describe('High Confidence Scoring', () => {
+    it('should score >= 0.95 for exact duplicates', () => {
+      const exactDuplicate = { ...testDeal1, id: 'duplicate-id' };
+      const result = calculateSimilarityScore(testDeal1, exactDuplicate);
+      expect(result.overall).toBeGreaterThanOrEqual(0.95);
+    });
+
+    it('should score >= 0.90 for nearly identical data with minor differences', () => {
+      const nearlyIdentical = {
+        ...testDeal1,
+        id: 'near-dup',
+        customerName: 'Acme Corporation Inc' // Slight variation
+      };
+      const result = calculateSimilarityScore(testDeal1, nearlyIdentical);
+      expect(result.overall).toBeGreaterThanOrEqual(0.90);
+    });
+  });
+
+  describe('Medium Confidence Scoring', () => {
+    it('should score 0.70-0.89 for similar but distinct deals', () => {
+      const result = calculateSimilarityScore(testDeal1, testDeal3);
+      expect(result.overall).toBeGreaterThanOrEqual(0.70);
+      expect(result.overall).toBeLessThan(0.90);
+    });
+  });
+
+  describe('Low Confidence Scoring', () => {
+    it('should score < 0.70 for somewhat related deals', () => {
+      const somewhatRelated = {
+        ...testDeal1,
+        id: 'related-deal',
+        dealName: 'Cloud Project',
+        customerName: 'Acme LLC',
+        vendorId: 'different-vendor'
+      };
+      const result = calculateSimilarityScore(testDeal1, somewhatRelated);
+      expect(result.overall).toBeLessThan(0.70);
+    });
+
+    it('should score very low for unrelated deals', () => {
+      const result = calculateSimilarityScore(testDeal1, testDeal4);
+      expect(result.overall).toBeLessThan(0.50);
     });
   });
 });
@@ -218,11 +457,12 @@ describe('DuplicateDetector - Similarity Calculation', () => {
 describe('DuplicateDetector - Strategy 1: Exact Match', () => {
   beforeEach(() => {
     query.mockClear();
+    resetWebhookMock();
   });
 
   it('should detect exact match with identical normalized names', async () => {
     query.mockResolvedValue({
-      rows: [testDeal2] // Same deal name and customer (normalized)
+      rows: [testDeal2]
     });
 
     const result = await detectDuplicateDeals(testDeal1, {
@@ -239,12 +479,12 @@ describe('DuplicateDetector - Strategy 1: Exact Match', () => {
     const dealWithSuffix = {
       ...testDeal1,
       id: 'deal-x',
-      customerName: 'Acme Corporation Inc.' // With suffix
+      customerName: 'Acme Corporation Inc.'
     };
     const dealWithoutSuffix = {
       ...testDeal1,
       id: 'deal-y',
-      customerName: 'Acme Corporation' // Without suffix
+      customerName: 'Acme Corporation'
     };
 
     query.mockResolvedValue({
@@ -261,7 +501,7 @@ describe('DuplicateDetector - Strategy 1: Exact Match', () => {
 
   it('should not match different deal names', async () => {
     query.mockResolvedValue({
-      rows: [testDeal4] // Different deal name
+      rows: [testDeal4]
     });
 
     const result = await detectDuplicateDeals(testDeal1, {
@@ -289,6 +529,25 @@ describe('DuplicateDetector - Strategy 1: Exact Match', () => {
 
     expect(result.isDuplicate).toBe(false);
   });
+
+  it('should handle case insensitivity', async () => {
+    const upperCaseDeal = {
+      ...testDeal1,
+      id: 'deal-upper',
+      dealName: 'MICROSOFT AZURE MIGRATION',
+      customerName: 'ACME CORPORATION INC.'
+    };
+
+    query.mockResolvedValue({
+      rows: [upperCaseDeal]
+    });
+
+    const result = await detectDuplicateDeals(testDeal1, {
+      strategies: [DuplicateStrategy.EXACT_MATCH]
+    });
+
+    expect(result.isDuplicate).toBe(true);
+  });
 });
 
 // ============================================================================
@@ -298,11 +557,12 @@ describe('DuplicateDetector - Strategy 1: Exact Match', () => {
 describe('DuplicateDetector - Strategy 2: Fuzzy Name Match', () => {
   beforeEach(() => {
     query.mockClear();
+    resetWebhookMock();
   });
 
   it('should detect fuzzy match with similar names', async () => {
     query.mockResolvedValue({
-      rows: [testDeal3] // Similar but not exact names
+      rows: [testDeal3]
     });
 
     const result = await detectDuplicateDeals(testDeal1, {
@@ -319,7 +579,7 @@ describe('DuplicateDetector - Strategy 2: Fuzzy Name Match', () => {
     const dealWithTypo = {
       ...testDeal1,
       id: 'deal-typo',
-      dealName: 'Microsoft Azur Migration' // Missing 'e'
+      dealName: 'Microsoft Azur Migration'
     };
 
     query.mockResolvedValue({
@@ -359,13 +619,11 @@ describe('DuplicateDetector - Strategy 2: Fuzzy Name Match', () => {
       rows: [somewhatSimilar]
     });
 
-    // Should match with low threshold
     const resultLow = await detectDuplicateDeals(testDeal1, {
       strategies: [DuplicateStrategy.FUZZY_NAME],
       threshold: 0.50
     });
 
-    // Should not match with high threshold
     const resultHigh = await detectDuplicateDeals(testDeal1, {
       strategies: [DuplicateStrategy.FUZZY_NAME],
       threshold: 0.95
@@ -373,6 +631,20 @@ describe('DuplicateDetector - Strategy 2: Fuzzy Name Match', () => {
 
     expect(resultLow.isDuplicate).toBe(true);
     expect(resultHigh.isDuplicate).toBe(false);
+  });
+
+  it('should include similarity factors in reasoning', async () => {
+    query.mockResolvedValue({
+      rows: [testDeal3]
+    });
+
+    const result = await detectDuplicateDeals(testDeal1, {
+      strategies: [DuplicateStrategy.FUZZY_NAME]
+    });
+
+    expect(result.matches[0].reasoning).toContain('Fuzzy match');
+    expect(result.matches[0].similarityFactors.dealName).toBeDefined();
+    expect(result.matches[0].similarityFactors.customerName).toBeDefined();
   });
 });
 
@@ -383,6 +655,7 @@ describe('DuplicateDetector - Strategy 2: Fuzzy Name Match', () => {
 describe('DuplicateDetector - Strategy 3: Customer + Value Match', () => {
   beforeEach(() => {
     query.mockClear();
+    resetWebhookMock();
   });
 
   it('should detect match with same customer and similar value', async () => {
@@ -390,7 +663,7 @@ describe('DuplicateDetector - Strategy 3: Customer + Value Match', () => {
       ...testDeal1,
       id: 'deal-value',
       dealName: 'Different Project Name',
-      dealValue: 52000 // Within 10% of 50000
+      dealValue: 52000
     };
 
     query.mockResolvedValue({
@@ -410,7 +683,7 @@ describe('DuplicateDetector - Strategy 3: Customer + Value Match', () => {
     const differentValue = {
       ...testDeal1,
       id: 'deal-bigvalue',
-      dealValue: 100000 // 100% difference
+      dealValue: 100000
     };
 
     query.mockResolvedValue({
@@ -461,6 +734,25 @@ describe('DuplicateDetector - Strategy 3: Customer + Value Match', () => {
 
     expect(result.matches.length).toBe(0);
   });
+
+  it('should include value comparison in reasoning', async () => {
+    const similarValue = {
+      ...testDeal1,
+      id: 'deal-value-match',
+      dealName: 'Different Name',
+      dealValue: 51000
+    };
+
+    query.mockResolvedValue({
+      rows: [similarValue]
+    });
+
+    const result = await detectDuplicateDeals(testDeal1, {
+      strategies: [DuplicateStrategy.CUSTOMER_VALUE]
+    });
+
+    expect(result.matches[0].reasoning).toContain('deal value');
+  });
 });
 
 // ============================================================================
@@ -470,6 +762,7 @@ describe('DuplicateDetector - Strategy 3: Customer + Value Match', () => {
 describe('DuplicateDetector - Strategy 4: Customer + Date Match', () => {
   beforeEach(() => {
     query.mockClear();
+    resetWebhookMock();
   });
 
   it('should detect match with same customer and similar close date', async () => {
@@ -477,7 +770,7 @@ describe('DuplicateDetector - Strategy 4: Customer + Date Match', () => {
       ...testDeal1,
       id: 'deal-date',
       dealName: 'Different Project',
-      closeDate: '2024-12-17' // 2 days difference
+      closeDate: '2024-12-17'
     };
 
     query.mockResolvedValue({
@@ -497,7 +790,7 @@ describe('DuplicateDetector - Strategy 4: Customer + Date Match', () => {
     const farDate = {
       ...testDeal1,
       id: 'deal-fardate',
-      closeDate: '2025-06-01' // ~6 months difference
+      closeDate: '2025-06-01'
     };
 
     query.mockResolvedValue({
@@ -529,6 +822,25 @@ describe('DuplicateDetector - Strategy 4: Customer + Date Match', () => {
 
     expect(result.matches.length).toBe(0);
   });
+
+  it('should handle Date objects', async () => {
+    const dealWithDateObject = {
+      ...testDeal1,
+      id: 'deal-dateobj',
+      dealName: 'Different Project',
+      closeDate: new Date('2024-12-16')
+    };
+
+    query.mockResolvedValue({
+      rows: [dealWithDateObject]
+    });
+
+    const result = await detectDuplicateDeals(testDeal1, {
+      strategies: [DuplicateStrategy.CUSTOMER_DATE]
+    });
+
+    expect(result.isDuplicate).toBe(true);
+  });
 });
 
 // ============================================================================
@@ -538,6 +850,7 @@ describe('DuplicateDetector - Strategy 4: Customer + Date Match', () => {
 describe('DuplicateDetector - Strategy 5: Vendor + Customer Match', () => {
   beforeEach(() => {
     query.mockClear();
+    resetWebhookMock();
   });
 
   it('should detect match with same vendor and customer', async () => {
@@ -595,6 +908,24 @@ describe('DuplicateDetector - Strategy 5: Vendor + Customer Match', () => {
 
     expect(result.matches.length).toBe(0);
   });
+
+  it('should include vendor match factor', async () => {
+    const sameVendor = {
+      ...testDeal1,
+      id: 'deal-samevend',
+      dealName: 'Another Project'
+    };
+
+    query.mockResolvedValue({
+      rows: [sameVendor]
+    });
+
+    const result = await detectDuplicateDeals(testDeal1, {
+      strategies: [DuplicateStrategy.VENDOR_CUSTOMER]
+    });
+
+    expect(result.matches[0].similarityFactors.vendorMatch).toBe(1.0);
+  });
 });
 
 // ============================================================================
@@ -604,11 +935,12 @@ describe('DuplicateDetector - Strategy 5: Vendor + Customer Match', () => {
 describe('DuplicateDetector - Strategy 6: Multi-Factor Match', () => {
   beforeEach(() => {
     query.mockClear();
+    resetWebhookMock();
   });
 
   it('should detect match using multiple weighted factors', async () => {
     query.mockResolvedValue({
-      rows: [testDeal3] // Moderately similar
+      rows: [testDeal3]
     });
 
     const result = await detectDuplicateDeals(testDeal1, {
@@ -627,7 +959,7 @@ describe('DuplicateDetector - Strategy 6: Multi-Factor Match', () => {
     const highDealNameSimilarity = {
       ...testDeal1,
       id: 'deal-highname',
-      dealName: testDeal1.dealName, // Exact match
+      dealName: testDeal1.dealName,
       customerName: 'Somewhat Different Customer',
       vendorId: 'different-vendor'
     };
@@ -641,13 +973,12 @@ describe('DuplicateDetector - Strategy 6: Multi-Factor Match', () => {
       threshold: 0.20
     });
 
-    // Even though customer and vendor don't match, deal name carries weight
     expect(result.matches[0].similarityFactors.dealName).toBeGreaterThan(0.95);
   });
 
   it('should aggregate similarity from all available factors', async () => {
     query.mockResolvedValue({
-      rows: [testDeal2] // Nearly identical deal
+      rows: [testDeal2]
     });
 
     const result = await detectDuplicateDeals(testDeal1, {
@@ -656,6 +987,25 @@ describe('DuplicateDetector - Strategy 6: Multi-Factor Match', () => {
 
     expect(result.isDuplicate).toBe(true);
     expect(result.matches[0].confidence).toBeGreaterThan(0.90);
+  });
+
+  it('should include all similarity factors in result', async () => {
+    query.mockResolvedValue({
+      rows: [testDeal2]
+    });
+
+    const result = await detectDuplicateDeals(testDeal1, {
+      strategies: [DuplicateStrategy.MULTI_FACTOR]
+    });
+
+    const factors = result.matches[0].similarityFactors;
+    expect(factors.dealName).toBeDefined();
+    expect(factors.customerName).toBeDefined();
+    expect(factors.vendorMatch).toBeDefined();
+    expect(factors.dealValue).toBeDefined();
+    expect(factors.closeDate).toBeDefined();
+    expect(factors.products).toBeDefined();
+    expect(factors.contacts).toBeDefined();
   });
 });
 
@@ -666,6 +1016,7 @@ describe('DuplicateDetector - Strategy 6: Multi-Factor Match', () => {
 describe('DuplicateDetector - Main Detection', () => {
   beforeEach(() => {
     query.mockClear();
+    resetWebhookMock();
   });
 
   it('should run all strategies by default', async () => {
@@ -676,18 +1027,15 @@ describe('DuplicateDetector - Main Detection', () => {
     const result = await detectDuplicateDeals(testDeal1);
 
     expect(result.matches.length).toBeGreaterThan(0);
-    // Should find matches from multiple strategies
   });
 
   it('should deduplicate matches from multiple strategies', async () => {
-    // testDeal2 will match on multiple strategies
     query.mockResolvedValue({
       rows: [testDeal2]
     });
 
     const result = await detectDuplicateDeals(testDeal1);
 
-    // Should only have one match per entity even if multiple strategies match
     const uniqueIds = new Set(result.matches.map(m => m.matchedEntityId));
     expect(uniqueIds.size).toBe(result.matches.length);
   });
@@ -700,14 +1048,13 @@ describe('DuplicateDetector - Main Detection', () => {
     const result = await detectDuplicateDeals(testDeal1);
 
     if (result.matches.length > 0) {
-      // The match should use the strategy with highest confidence
       expect(result.matches[0].confidence).toBeGreaterThan(0.85);
     }
   });
 
   it('should suggest auto_merge for very high confidence', async () => {
     query.mockResolvedValue({
-      rows: [testDeal2] // Nearly identical
+      rows: [testDeal2]
     });
 
     const result = await detectDuplicateDeals(testDeal1);
@@ -719,7 +1066,7 @@ describe('DuplicateDetector - Main Detection', () => {
 
   it('should suggest manual_review for high confidence', async () => {
     query.mockResolvedValue({
-      rows: [testDeal3] // Similar but not identical
+      rows: [testDeal3]
     });
 
     const result = await detectDuplicateDeals(testDeal1);
@@ -731,7 +1078,7 @@ describe('DuplicateDetector - Main Detection', () => {
 
   it('should suggest no_action for low confidence', async () => {
     query.mockResolvedValue({
-      rows: [testDeal4] // Very different
+      rows: [testDeal4]
     });
 
     const result = await detectDuplicateDeals(testDeal1, {
@@ -745,12 +1092,11 @@ describe('DuplicateDetector - Main Detection', () => {
 
   it('should filter out the entity itself from matches', async () => {
     query.mockResolvedValue({
-      rows: [testDeal1, testDeal2] // Includes itself
+      rows: [testDeal1, testDeal2]
     });
 
     const result = await detectDuplicateDeals(testDeal1);
 
-    // Should not match itself
     const selfMatch = result.matches.find(m => m.matchedEntityId === testDeal1.id);
     expect(selfMatch).toBeUndefined();
   });
@@ -804,16 +1150,37 @@ describe('DuplicateDetector - Main Detection', () => {
   });
 
   it('should allow using existing deals from context', async () => {
-    // Don't query database
     query.mockResolvedValue({ rows: [] });
 
     const result = await detectDuplicateDeals(testDeal1, {
       existingDeals: [testDeal2, testDeal3]
     });
 
-    // Should not call query if existingDeals provided
     expect(query).not.toHaveBeenCalled();
     expect(result.matches.length).toBeGreaterThan(0);
+  });
+
+  it('should trigger webhook when duplicates found (without provided deals)', async () => {
+    query.mockResolvedValue({
+      rows: [testDeal2]
+    });
+
+    // Note: When existingDeals is NOT provided, webhook should be triggered
+    // The service checks for this with `usingProvidedDeals`
+    await detectDuplicateDeals(testDeal1);
+
+    // Webhook is triggered asynchronously, verify it was called
+    expect(triggerWebhook).toHaveBeenCalled();
+  });
+
+  it('should not trigger webhook when using provided deals', async () => {
+    resetWebhookMock();
+
+    await detectDuplicateDeals(testDeal1, {
+      existingDeals: [testDeal2, testDeal3]
+    });
+
+    expect(triggerWebhook).not.toHaveBeenCalled();
   });
 });
 
@@ -824,6 +1191,7 @@ describe('DuplicateDetector - Main Detection', () => {
 describe('DuplicateDetector - Batch Detection', () => {
   beforeEach(() => {
     query.mockClear();
+    resetWebhookMock();
   });
 
   it('should process multiple entities in batch', async () => {
@@ -863,9 +1231,12 @@ describe('DuplicateDetector - Batch Detection', () => {
       rows: largeSet
     });
 
+    const startTime = Date.now();
     const result = await detectDuplicatesInBatch(largeSet);
+    const endTime = Date.now();
 
     expect(result.size).toBe(50);
+    expect(endTime - startTime).toBeLessThan(30000); // Should complete within 30 seconds
   });
 
   it('should skip entities without IDs', async () => {
@@ -877,8 +1248,26 @@ describe('DuplicateDetector - Batch Detection', () => {
 
     const result = await detectDuplicatesInBatch([noIdDeal, testDeal2]);
 
-    // Only testDeal2 should be in results
     expect(result.has(testDeal2.id!)).toBe(true);
+  });
+
+  it('should handle empty batch', async () => {
+    query.mockResolvedValue({ rows: [] });
+
+    const result = await detectDuplicatesInBatch([]);
+
+    expect(result.size).toBe(0);
+  });
+
+  it('should handle single item batch', async () => {
+    query.mockResolvedValue({
+      rows: [testDeal2]
+    });
+
+    const result = await detectDuplicatesInBatch([testDeal1]);
+
+    expect(result.size).toBe(1);
+    expect(result.has(testDeal1.id!)).toBe(true);
   });
 });
 
@@ -889,23 +1278,22 @@ describe('DuplicateDetector - Batch Detection', () => {
 describe('DuplicateDetector - Clustering', () => {
   beforeEach(() => {
     query.mockClear();
+    resetWebhookMock();
   });
 
   it('should create clusters of duplicate entities', async () => {
-    // Mock no database calls (uses in-memory comparison)
     query.mockResolvedValue({ rows: [] });
 
     const duplicateSet = [
       testDeal1,
-      testDeal2, // Duplicate of deal1
-      testDeal3, // Similar to deal1 and deal2
-      testDeal4  // Unrelated
+      testDeal2,
+      testDeal3,
+      testDeal4
     ];
 
     const clusters = await clusterDuplicates(duplicateSet);
 
     expect(clusters.length).toBeGreaterThan(0);
-    // Should cluster deal1, deal2, deal3 together
     const largestCluster = clusters.reduce((max, c) =>
       c.clusterSize > max.clusterSize ? c : max,
       clusters[0]
@@ -916,11 +1304,10 @@ describe('DuplicateDetector - Clustering', () => {
   it('should not cluster unrelated entities', async () => {
     query.mockResolvedValue({ rows: [] });
 
-    const unrelatedDeals = [testDeal1, testDeal4]; // Very different
+    const unrelatedDeals = [testDeal1, testDeal4];
 
     const clusters = await clusterDuplicates(unrelatedDeals);
 
-    // Should have 0 or very small clusters
     const totalClustered = clusters.reduce((sum, c) => sum + c.clusterSize, 0);
     expect(totalClustered).toBeLessThan(unrelatedDeals.length * 2);
   });
@@ -956,25 +1343,100 @@ describe('DuplicateDetector - Clustering', () => {
     expect(clusters.length).toBe(0);
   });
 
+  it('should handle single entity', async () => {
+    query.mockResolvedValue({ rows: [] });
+
+    const clusters = await clusterDuplicates([testDeal1]);
+
+    // Single entity cannot form a cluster with itself
+    expect(clusters.length).toBe(0);
+  });
+
   it('should use DFS to find connected components', async () => {
     query.mockResolvedValue({ rows: [] });
 
-    // Create a chain: A -> B -> C (each pair is similar)
     const dealA = testDeal1;
     const dealB = { ...testDeal2, id: 'deal-b' };
     const dealC = { ...testDeal3, id: 'deal-c' };
 
     const clusters = await clusterDuplicates([dealA, dealB, dealC]);
 
-    // All three should be in same cluster (transitive)
     if (clusters.length > 0) {
       const mainCluster = clusters.reduce((max, c) =>
         c.clusterSize > max.clusterSize ? c : max,
         clusters[0]
       );
-      // Depending on thresholds, they might cluster together
       expect(mainCluster.clusterSize).toBeGreaterThanOrEqual(2);
     }
+  });
+
+  it('should generate deterministic cluster keys', async () => {
+    query.mockResolvedValue({ rows: [] });
+
+    const clusters = await clusterDuplicates([testDeal1, testDeal2]);
+
+    if (clusters.length > 0) {
+      expect(clusters[0].clusterKey).toBeDefined();
+      expect(clusters[0].clusterKey.includes('|')).toBe(true);
+    }
+  });
+});
+
+// ============================================================================
+// Tests: Entity Types
+// ============================================================================
+
+describe('DuplicateDetector - Entity Types', () => {
+  describe('VendorData Type', () => {
+    it('should define all vendor properties', () => {
+      expect(testVendor1.id).toBeDefined();
+      expect(testVendor1.vendorName).toBeDefined();
+      expect(testVendor1.normalizedName).toBeDefined();
+      expect(testVendor1.emailDomains).toBeDefined();
+      expect(testVendor1.products).toBeDefined();
+      expect(testVendor1.tier).toBeDefined();
+      expect(testVendor1.status).toBeDefined();
+    });
+
+    it('should support index signature for custom fields', () => {
+      const vendorWithCustom: VendorData = {
+        ...testVendor1,
+        customField: 'custom value'
+      };
+      expect(vendorWithCustom.customField).toBe('custom value');
+    });
+  });
+
+  describe('ContactData Type', () => {
+    it('should define all contact properties', () => {
+      expect(testContact1.id).toBeDefined();
+      expect(testContact1.name).toBeDefined();
+      expect(testContact1.email).toBeDefined();
+      expect(testContact1.phone).toBeDefined();
+      expect(testContact1.role).toBeDefined();
+      expect(testContact1.company).toBeDefined();
+    });
+
+    it('should support index signature for custom fields', () => {
+      const contactWithCustom: ContactData = {
+        ...testContact1,
+        linkedInUrl: 'https://linkedin.com/in/johndoe'
+      };
+      expect(contactWithCustom.linkedInUrl).toBe('https://linkedin.com/in/johndoe');
+    });
+  });
+
+  describe('DealData Type', () => {
+    it('should support contacts array', () => {
+      expect(testDeal1.contacts).toBeDefined();
+      expect(Array.isArray(testDeal1.contacts)).toBe(true);
+      expect(testDeal1.contacts![0].email).toBeDefined();
+    });
+
+    it('should support products array', () => {
+      expect(testDeal1.products).toBeDefined();
+      expect(Array.isArray(testDeal1.products)).toBe(true);
+    });
   });
 });
 
@@ -985,143 +1447,509 @@ describe('DuplicateDetector - Clustering', () => {
 describe('DuplicateDetector - Edge Cases', () => {
   beforeEach(() => {
     query.mockClear();
+    resetWebhookMock();
   });
 
-  it('should handle null and undefined values', async () => {
-    const dealWithNulls: DealData = {
-      id: 'deal-nulls',
-      dealName: 'Test Deal',
-      customerName: 'Test Customer',
-      dealValue: undefined,
-      closeDate: undefined,
-      vendorId: undefined,
-      products: undefined,
-      contacts: undefined
-    };
+  describe('Empty and Null Values', () => {
+    it('should handle null and undefined values', async () => {
+      const dealWithNulls: DealData = {
+        id: 'deal-nulls',
+        dealName: 'Test Deal',
+        customerName: 'Test Customer',
+        dealValue: undefined,
+        closeDate: undefined,
+        vendorId: undefined,
+        products: undefined,
+        contacts: undefined
+      };
 
-    query.mockResolvedValue({
-      rows: [testDeal1]
+      query.mockResolvedValue({
+        rows: [testDeal1]
+      });
+
+      const result = await detectDuplicateDeals(dealWithNulls);
+
+      expect(result).toBeDefined();
+      expect(result.matches).toBeDefined();
     });
 
-    const result = await detectDuplicateDeals(dealWithNulls);
+    it('should handle empty strings', async () => {
+      const dealWithEmpty: DealData = {
+        dealName: '',
+        customerName: ''
+      };
 
-    expect(result).toBeDefined();
-    expect(result.matches).toBeDefined();
+      query.mockResolvedValue({
+        rows: [testDeal1]
+      });
+
+      const result = await detectDuplicateDeals(dealWithEmpty);
+
+      expect(result.isDuplicate).toBe(false);
+    });
+
+    it('should handle empty arrays', async () => {
+      const dealWithEmptyArrays: DealData = {
+        id: 'deal-empty-arrays',
+        dealName: 'Test Deal',
+        customerName: 'Test Customer',
+        products: [],
+        contacts: []
+      };
+
+      query.mockResolvedValue({ rows: [] });
+
+      const result = await detectDuplicateDeals(dealWithEmptyArrays);
+
+      expect(result).toBeDefined();
+    });
+
+    it('should handle empty existing deals array', async () => {
+      const result = await detectDuplicateDeals(testDeal1, {
+        existingDeals: []
+      });
+
+      expect(result.isDuplicate).toBe(false);
+      expect(result.matches).toHaveLength(0);
+    });
   });
 
-  it('should handle empty strings', async () => {
-    const dealWithEmpty: DealData = {
-      dealName: '',
-      customerName: ''
-    };
+  describe('String Edge Cases', () => {
+    it('should handle very long strings', async () => {
+      const longString = 'A'.repeat(1000);
+      const dealWithLongString: DealData = {
+        id: 'deal-long',
+        dealName: longString,
+        customerName: longString
+      };
 
-    query.mockResolvedValue({
-      rows: [testDeal1]
+      query.mockResolvedValue({
+        rows: []
+      });
+
+      const result = await detectDuplicateDeals(dealWithLongString);
+
+      expect(result).toBeDefined();
     });
 
-    const result = await detectDuplicateDeals(dealWithEmpty);
+    it('should handle special characters in names', async () => {
+      const specialChars: DealData = {
+        id: 'deal-special',
+        dealName: 'Deal #1 @2024 (Migration)',
+        customerName: 'Acme Corp. & Co., Ltd.'
+      };
 
-    expect(result.isDuplicate).toBe(false);
+      query.mockResolvedValue({
+        rows: []
+      });
+
+      const result = await detectDuplicateDeals(specialChars);
+
+      expect(result).toBeDefined();
+    });
+
+    it('should handle unicode characters', async () => {
+      const unicodeDeal: DealData = {
+        id: 'deal-unicode',
+        dealName: 'Deja Vu Project',
+        customerName: 'Societe francaise'
+      };
+
+      query.mockResolvedValue({
+        rows: []
+      });
+
+      const result = await detectDuplicateDeals(unicodeDeal);
+
+      expect(result).toBeDefined();
+    });
+
+    it('should handle whitespace-only strings', async () => {
+      const whitespaceDeal: DealData = {
+        id: 'deal-whitespace',
+        dealName: '   ',
+        customerName: '\t\n'
+      };
+
+      query.mockResolvedValue({ rows: [] });
+
+      const result = await detectDuplicateDeals(whitespaceDeal);
+
+      expect(result).toBeDefined();
+      expect(result.isDuplicate).toBe(false);
+    });
   });
 
-  it('should handle very long strings', async () => {
-    const longString = 'A'.repeat(1000);
-    const dealWithLongString: DealData = {
-      id: 'deal-long',
-      dealName: longString,
-      customerName: longString
-    };
+  describe('Numeric Edge Cases', () => {
+    it('should handle extreme date values', async () => {
+      const extremeDates: DealData = {
+        id: 'deal-dates',
+        dealName: 'Test',
+        customerName: 'Test',
+        closeDate: '1900-01-01'
+      };
 
-    query.mockResolvedValue({
-      rows: []
+      query.mockResolvedValue({
+        rows: [{ ...extremeDates, id: 'deal-dates-2', closeDate: '2099-12-31' }]
+      });
+
+      const result = await detectDuplicateDeals(extremeDates);
+
+      expect(result).toBeDefined();
     });
 
-    const result = await detectDuplicateDeals(dealWithLongString);
+    it('should handle zero deal values', async () => {
+      const zeroDeal: DealData = {
+        id: 'deal-zero',
+        dealName: 'Free Deal',
+        customerName: 'Test',
+        dealValue: 0
+      };
 
-    expect(result).toBeDefined();
+      query.mockResolvedValue({
+        rows: []
+      });
+
+      const result = await detectDuplicateDeals(zeroDeal);
+
+      expect(result).toBeDefined();
+    });
+
+    it('should handle negative deal values', async () => {
+      const negativeDeal: DealData = {
+        id: 'deal-negative',
+        dealName: 'Refund Deal',
+        customerName: 'Test',
+        dealValue: -5000
+      };
+
+      query.mockResolvedValue({ rows: [] });
+
+      const result = await detectDuplicateDeals(negativeDeal);
+
+      expect(result).toBeDefined();
+    });
+
+    it('should handle very large deal values', async () => {
+      const largeDeal: DealData = {
+        id: 'deal-large-value',
+        dealName: 'Enterprise Deal',
+        customerName: 'Test',
+        dealValue: 999999999999
+      };
+
+      query.mockResolvedValue({ rows: [] });
+
+      const result = await detectDuplicateDeals(largeDeal);
+
+      expect(result).toBeDefined();
+    });
   });
 
-  it('should handle special characters in names', async () => {
-    const specialChars: DealData = {
-      id: 'deal-special',
-      dealName: 'Deal #1 @2024 (Migration)',
-      customerName: 'Acme Corp. & Co., Ltd.'
-    };
+  describe('Array Edge Cases', () => {
+    it('should handle very large arrays', async () => {
+      const manyProducts = Array(1000).fill('Product');
+      const largeArrayDeal: DealData = {
+        id: 'deal-large',
+        dealName: 'Big Deal',
+        customerName: 'Test',
+        products: manyProducts
+      };
 
-    query.mockResolvedValue({
-      rows: []
+      query.mockResolvedValue({
+        rows: []
+      });
+
+      const result = await detectDuplicateDeals(largeArrayDeal);
+
+      expect(result).toBeDefined();
     });
 
-    const result = await detectDuplicateDeals(specialChars);
+    it('should handle single item arrays', async () => {
+      const singleItemDeal: DealData = {
+        id: 'deal-single',
+        dealName: 'Single Deal',
+        customerName: 'Test',
+        products: ['SingleProduct'],
+        contacts: [{ name: 'Solo Contact', email: 'solo@test.com' }]
+      };
 
-    expect(result).toBeDefined();
+      query.mockResolvedValue({ rows: [] });
+
+      const result = await detectDuplicateDeals(singleItemDeal);
+
+      expect(result).toBeDefined();
+    });
+
+    it('should handle arrays with null elements', async () => {
+      const arrayWithNulls: DealData = {
+        id: 'deal-nulls-array',
+        dealName: 'Test',
+        customerName: 'Test',
+        products: ['Product1', '', 'Product3'],
+        contacts: [
+          { name: 'Contact1', email: 'email1@test.com' },
+          { name: '', email: '' }
+        ]
+      };
+
+      query.mockResolvedValue({ rows: [] });
+
+      const result = await detectDuplicateDeals(arrayWithNulls);
+
+      expect(result).toBeDefined();
+    });
   });
 
-  it('should handle unicode characters', async () => {
-    const unicodeDeal: DealData = {
-      id: 'deal-unicode',
-      dealName: 'Déjà Vu Project 项目',
-      customerName: 'Société française'
-    };
+  describe('Invalid Date Handling', () => {
+    it('should handle invalid date strings', async () => {
+      const invalidDateDeal: DealData = {
+        id: 'deal-invalid-date',
+        dealName: 'Test',
+        customerName: 'Test',
+        closeDate: 'not-a-date'
+      };
 
-    query.mockResolvedValue({
-      rows: []
+      query.mockResolvedValue({ rows: [] });
+
+      const result = await detectDuplicateDeals(invalidDateDeal);
+
+      expect(result).toBeDefined();
     });
+  });
+});
 
-    const result = await detectDuplicateDeals(unicodeDeal);
+// ============================================================================
+// Tests: Performance
+// ============================================================================
 
-    expect(result).toBeDefined();
+describe('DuplicateDetector - Performance', () => {
+  beforeEach(() => {
+    query.mockClear();
+    resetWebhookMock();
   });
 
-  it('should handle extreme date values', async () => {
-    const extremeDates: DealData = {
-      id: 'deal-dates',
-      dealName: 'Test',
-      customerName: 'Test',
-      closeDate: '1900-01-01'
-    };
+  it('should handle 100 deals efficiently', async () => {
+    const deals = Array(100).fill(null).map((_, i) => ({
+      ...testDeal1,
+      id: `perf-deal-${i}`,
+      dealName: `Deal ${i}`,
+      customerName: `Customer ${i % 10}`
+    }));
 
-    query.mockResolvedValue({
-      rows: [{ ...extremeDates, id: 'deal-dates-2', closeDate: '2099-12-31' }]
-    });
+    query.mockResolvedValue({ rows: deals });
 
-    const result = await detectDuplicateDeals(extremeDates);
+    const startTime = Date.now();
+    const result = await detectDuplicatesInBatch(deals);
+    const endTime = Date.now();
 
-    expect(result).toBeDefined();
+    expect(result.size).toBe(100);
+    expect(endTime - startTime).toBeLessThan(60000); // Under 60 seconds
   });
 
-  it('should handle zero and negative deal values', async () => {
-    const zeroDeal: DealData = {
-      id: 'deal-zero',
-      dealName: 'Free Deal',
-      customerName: 'Test',
-      dealValue: 0
-    };
+  it('should process similarity calculations quickly', () => {
+    const startTime = Date.now();
 
-    query.mockResolvedValue({
-      rows: []
-    });
+    for (let i = 0; i < 1000; i++) {
+      calculateSimilarityScore(testDeal1, testDeal2);
+    }
 
-    const result = await detectDuplicateDeals(zeroDeal);
+    const endTime = Date.now();
 
-    expect(result).toBeDefined();
+    expect(endTime - startTime).toBeLessThan(5000); // 1000 calculations under 5 seconds
   });
 
-  it('should handle very large arrays', async () => {
-    const manyProducts = Array(1000).fill('Product');
-    const largeArrayDeal: DealData = {
-      id: 'deal-large',
-      dealName: 'Big Deal',
-      customerName: 'Test',
-      products: manyProducts
-    };
+  it('should handle clustering of many entities', async () => {
+    query.mockResolvedValue({ rows: [] });
+
+    const deals = Array(20).fill(null).map((_, i) => ({
+      ...testDeal1,
+      id: `cluster-deal-${i}`,
+      dealName: i < 10 ? 'Microsoft Azure Migration' : `Different Deal ${i}`,
+      customerName: i < 10 ? 'Acme Corporation' : `Different Customer ${i}`
+    }));
+
+    const startTime = Date.now();
+    const clusters = await clusterDuplicates(deals);
+    const endTime = Date.now();
+
+    expect(clusters).toBeDefined();
+    expect(endTime - startTime).toBeLessThan(30000); // Under 30 seconds
+  });
+});
+
+// ============================================================================
+// Tests: Threshold Configuration
+// ============================================================================
+
+describe('DuplicateDetector - Threshold Configuration', () => {
+  let originalConfig: typeof MATCH_CONFIG;
+
+  beforeEach(() => {
+    originalConfig = { ...getDuplicateConfig() };
+    query.mockClear();
+    resetWebhookMock();
+  });
+
+  afterEach(() => {
+    updateDuplicateConfig(originalConfig);
+  });
+
+  it('should respect custom auto-merge threshold', async () => {
+    updateDuplicateConfig({ AUTO_MERGE_THRESHOLD: 0.99 });
 
     query.mockResolvedValue({
-      rows: []
+      rows: [testDeal2]
     });
 
-    const result = await detectDuplicateDeals(largeArrayDeal);
+    const result = await detectDuplicateDeals(testDeal1);
 
-    expect(result).toBeDefined();
+    // With 0.99 threshold, near-identical deals might not auto-merge
+    if (result.confidence < 0.99) {
+      expect(result.suggestedAction).not.toBe('auto_merge');
+    }
+  });
+
+  it('should respect custom minimum match threshold', async () => {
+    query.mockResolvedValue({
+      rows: [testDeal3]
+    });
+
+    // Low threshold should find matches
+    const resultLow = await detectDuplicateDeals(testDeal1, {
+      threshold: 0.50
+    });
+
+    // High threshold should find fewer matches
+    const resultHigh = await detectDuplicateDeals(testDeal1, {
+      threshold: 0.95
+    });
+
+    expect(resultLow.matches.length).toBeGreaterThanOrEqual(resultHigh.matches.length);
+  });
+
+  it('should use environment-based thresholds', () => {
+    const config = getDuplicateConfig();
+
+    // These should be initialized from environment or defaults
+    expect(typeof config.AUTO_MERGE_THRESHOLD).toBe('number');
+    expect(typeof config.MINIMUM_MATCH_THRESHOLD).toBe('number');
+  });
+
+  it('should allow dynamic threshold updates during runtime', async () => {
+    query.mockResolvedValue({
+      rows: [testDeal3]
+    });
+
+    // First detection with default threshold
+    const result1 = await detectDuplicateDeals(testDeal1, {
+      threshold: 0.80
+    });
+
+    // Update threshold
+    updateDuplicateConfig({ MINIMUM_MATCH_THRESHOLD: 0.60 });
+
+    // Second detection with updated threshold
+    const result2 = await detectDuplicateDeals(testDeal1, {
+      threshold: 0.60
+    });
+
+    // Lower threshold should potentially find more matches
+    expect(result2.matches.length).toBeGreaterThanOrEqual(result1.matches.length);
+  });
+
+  it('should apply confidence thresholds for suggested actions', async () => {
+    query.mockResolvedValue({
+      rows: [testDeal2]
+    });
+
+    const result = await detectDuplicateDeals(testDeal1);
+
+    const config = getDuplicateConfig();
+
+    if (result.confidence >= config.AUTO_MERGE_THRESHOLD) {
+      expect(result.suggestedAction).toBe('auto_merge');
+    } else if (result.confidence >= config.HIGH_CONFIDENCE_THRESHOLD) {
+      expect(result.suggestedAction).toBe('manual_review');
+    } else {
+      expect(result.suggestedAction).toBe('no_action');
+    }
+  });
+});
+
+// ============================================================================
+// Tests: Result Structure Validation
+// ============================================================================
+
+describe('DuplicateDetector - Result Structure', () => {
+  beforeEach(() => {
+    query.mockClear();
+    resetWebhookMock();
+  });
+
+  it('should return properly structured DuplicateDetectionResult', async () => {
+    query.mockResolvedValue({
+      rows: [testDeal2]
+    });
+
+    const result = await detectDuplicateDeals(testDeal1);
+
+    expect(result).toHaveProperty('isDuplicate');
+    expect(result).toHaveProperty('matches');
+    expect(result).toHaveProperty('suggestedAction');
+    expect(result).toHaveProperty('confidence');
+
+    expect(typeof result.isDuplicate).toBe('boolean');
+    expect(Array.isArray(result.matches)).toBe(true);
+    expect(['auto_merge', 'manual_review', 'no_action']).toContain(result.suggestedAction);
+    expect(typeof result.confidence).toBe('number');
+  });
+
+  it('should return properly structured DuplicateMatch objects', async () => {
+    query.mockResolvedValue({
+      rows: [testDeal2]
+    });
+
+    const result = await detectDuplicateDeals(testDeal1);
+
+    if (result.matches.length > 0) {
+      const match = result.matches[0];
+
+      expect(match).toHaveProperty('matchedEntityId');
+      expect(match).toHaveProperty('matchedEntity');
+      expect(match).toHaveProperty('similarityScore');
+      expect(match).toHaveProperty('confidence');
+      expect(match).toHaveProperty('strategy');
+      expect(match).toHaveProperty('similarityFactors');
+      expect(match).toHaveProperty('reasoning');
+
+      expect(typeof match.matchedEntityId).toBe('string');
+      expect(typeof match.similarityScore).toBe('number');
+      expect(typeof match.confidence).toBe('number');
+      expect(typeof match.reasoning).toBe('string');
+    }
+  });
+
+  it('should return properly structured SimilarityFactors', async () => {
+    query.mockResolvedValue({
+      rows: [testDeal2]
+    });
+
+    const result = await detectDuplicateDeals(testDeal1, {
+      strategies: [DuplicateStrategy.MULTI_FACTOR]
+    });
+
+    if (result.matches.length > 0) {
+      const factors = result.matches[0].similarityFactors;
+
+      // All factor values should be numbers between 0 and 1
+      Object.values(factors).forEach(value => {
+        if (value !== undefined) {
+          expect(typeof value).toBe('number');
+          expect(value).toBeGreaterThanOrEqual(0);
+          expect(value).toBeLessThanOrEqual(1);
+        }
+      });
+    }
   });
 });

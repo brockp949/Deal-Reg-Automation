@@ -67,7 +67,8 @@
       "Bash(docker run:*)",
       "Bash(docker volume:*)",
       "Bash(find:*)",
-      "Bash(npx eslint:*)"
+      "Bash(npx eslint:*)",
+      "Bash(npx jest:*)"
     ],
     "deny": [],
     "ask": []

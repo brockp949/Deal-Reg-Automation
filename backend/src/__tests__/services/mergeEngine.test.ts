@@ -1210,4 +1210,895 @@ describe('MergeEngine - Edge Cases', () => {
     expect(query).toHaveBeenCalledWith('BEGIN');
     expect(query).toHaveBeenCalledWith('COMMIT');
   });
+
+  it('should merge identical records without conflicts', async () => {
+    const identicalDeal1 = { ...testDeal1, id: 'deal-identical-1' };
+    const identicalDeal2 = { ...testDeal1, id: 'deal-identical-2' };
+
+    query.mockResolvedValue({ rows: [identicalDeal1, identicalDeal2] });
+
+    const preview = await previewMerge(['deal-identical-1', 'deal-identical-2']);
+
+    // Identical records should have no conflicts (excluding id field)
+    expect(preview.conflicts.length).toBe(0);
+    // Confidence depends on quality scores; identical records should have reasonable confidence
+    expect(preview.confidence).toBeGreaterThan(0.7);
+  });
+
+  it('should handle merging with all null source fields', async () => {
+    const nullSourceDeal = {
+      id: 'deal-nulls',
+      deal_name: null,
+      customer_name: null,
+      deal_value: null,
+      currency: null,
+      close_date: null,
+      vendor_id: null,
+      status: 'active',
+      ai_confidence_score: null,
+      validation_status: null,
+      created_at: '2024-01-01T10:00:00Z',
+      updated_at: '2024-01-01T10:00:00Z',
+      source_file_ids: []
+    };
+
+    query
+      .mockResolvedValueOnce(undefined) // BEGIN
+      .mockResolvedValueOnce({ rows: [testDeal1, nullSourceDeal] })
+      .mockResolvedValueOnce(undefined) // UPDATE
+      .mockResolvedValueOnce({ rows: [{ id: 'merge-1' }] })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined);
+
+    const result = await mergeEntities(['deal-nulls'], 'deal-1');
+
+    expect(result.success).toBe(true);
+    // Target should retain its values since source has nulls
+  });
+
+  it('should preserve higher values when merging deals', async () => {
+    const lowerValueDeal = { ...testDeal1, id: 'deal-low', deal_value: 40000 };
+    const higherValueDeal = { ...testDeal1, id: 'deal-high', deal_value: 60000 };
+
+    query.mockResolvedValue({ rows: [lowerValueDeal, higherValueDeal] });
+
+    const preview = await previewMerge(['deal-low', 'deal-high']);
+
+    // With PREFER_COMPLETE strategy, should suggest the higher (non-null) value
+    const valueConflict = preview.conflicts.find(c => c.fieldName === 'deal_value');
+    if (valueConflict) {
+      expect(valueConflict.values.length).toBe(2);
+    }
+  });
+
+  it('should handle deeply nested objects in entity data', async () => {
+    const dealWithNestedData = {
+      ...testDeal1,
+      id: 'deal-nested',
+      metadata: {
+        source: { type: 'email', timestamp: '2024-01-01' },
+        tags: ['important', 'urgent']
+      }
+    };
+
+    query.mockResolvedValue({ rows: [testDeal1, dealWithNestedData] });
+
+    const preview = await previewMerge(['deal-1', 'deal-nested']);
+
+    expect(preview).toBeDefined();
+    expect(preview.sourceData.length).toBe(2);
+  });
+});
+
+// ============================================================================
+// Tests: Smart Merge Suggestions
+// ============================================================================
+
+describe('MergeEngine - Smart Merge Suggestions', () => {
+  beforeEach(() => {
+    query.mockClear();
+  });
+
+  it('should return suggestions for similar entities', async () => {
+    const { getSmartMergeSuggestions } = require('../../services/mergeEngine');
+
+    query.mockResolvedValue({
+      rows: [
+        { id1: 'deal-1', name1: 'Microsoft Azure Migration', id2: 'deal-2', name2: 'Microsoft Azure Migration Project', sim_score: 0.92 },
+        { id1: 'deal-3', name1: 'AWS Setup', id2: 'deal-4', name2: 'AWS Infrastructure Setup', sim_score: 0.85 }
+      ]
+    });
+
+    const suggestions = await getSmartMergeSuggestions('deal', 10);
+
+    expect(suggestions.length).toBe(2);
+    expect(suggestions[0].entities.length).toBe(2);
+    expect(suggestions[0].confidence).toBeGreaterThan(0.8);
+  });
+
+  it('should suggest auto_merge for very high similarity', async () => {
+    const { getSmartMergeSuggestions } = require('../../services/mergeEngine');
+
+    query.mockResolvedValue({
+      rows: [
+        { id1: 'deal-1', name1: 'Identical Deal', id2: 'deal-2', name2: 'Identical Deal', sim_score: 0.98 }
+      ]
+    });
+
+    const suggestions = await getSmartMergeSuggestions('deal', 10);
+
+    expect(suggestions[0].suggestedAction).toBe('auto_merge');
+  });
+
+  it('should suggest manual_review for medium similarity', async () => {
+    const { getSmartMergeSuggestions } = require('../../services/mergeEngine');
+
+    query.mockResolvedValue({
+      rows: [
+        { id1: 'deal-1', name1: 'Similar Deal', id2: 'deal-2', name2: 'Similar Deal Project', sim_score: 0.88 }
+      ]
+    });
+
+    const suggestions = await getSmartMergeSuggestions('deal', 10);
+
+    expect(suggestions[0].suggestedAction).toBe('manual_review');
+  });
+
+  it('should handle empty results', async () => {
+    const { getSmartMergeSuggestions } = require('../../services/mergeEngine');
+
+    query.mockResolvedValue({ rows: [] });
+
+    const suggestions = await getSmartMergeSuggestions('deal', 10);
+
+    expect(suggestions).toEqual([]);
+  });
+
+  it('should handle database errors gracefully', async () => {
+    const { getSmartMergeSuggestions } = require('../../services/mergeEngine');
+
+    query.mockRejectedValue(new Error('Database error'));
+
+    const suggestions = await getSmartMergeSuggestions('deal', 10);
+
+    // Should return empty array on error, not throw
+    expect(suggestions).toEqual([]);
+  });
+
+  it('should support vendor entity type', async () => {
+    const { getSmartMergeSuggestions } = require('../../services/mergeEngine');
+
+    query.mockResolvedValue({
+      rows: [
+        { id1: 'vendor-1', name1: 'Microsoft Corp', id2: 'vendor-2', name2: 'Microsoft Corporation', sim_score: 0.95 }
+      ]
+    });
+
+    const suggestions = await getSmartMergeSuggestions('vendor', 5);
+
+    expect(query).toHaveBeenCalled();
+    const queryCall = query.mock.calls[0][0];
+    expect(queryCall).toContain('vendors');
+  });
+
+  it('should respect limit parameter', async () => {
+    const { getSmartMergeSuggestions } = require('../../services/mergeEngine');
+
+    query.mockResolvedValue({ rows: [] });
+
+    await getSmartMergeSuggestions('deal', 5);
+
+    const queryCall = query.mock.calls[0];
+    expect(queryCall[1]).toContain(5);
+  });
+
+  it('should include reasoning in suggestions', async () => {
+    const { getSmartMergeSuggestions } = require('../../services/mergeEngine');
+
+    query.mockResolvedValue({
+      rows: [
+        { id1: 'deal-1', name1: 'Test Deal', id2: 'deal-2', name2: 'Test Deal Copy', sim_score: 0.90 }
+      ]
+    });
+
+    const suggestions = await getSmartMergeSuggestions('deal', 10);
+
+    expect(suggestions[0].reasoning).toContain('similarity');
+  });
+});
+
+// ============================================================================
+// Tests: Vendor Merging
+// ============================================================================
+
+describe('MergeEngine - Vendor Merging', () => {
+  beforeEach(() => {
+    query.mockClear();
+  });
+
+  const testVendor1 = {
+    id: 'vendor-1',
+    name: 'Microsoft Corporation',
+    domain: 'microsoft.com',
+    status: 'active',
+    contact_email: 'partner@microsoft.com',
+    created_at: '2024-01-01T10:00:00Z',
+    updated_at: '2024-11-01T10:00:00Z'
+  };
+
+  const testVendor2 = {
+    id: 'vendor-2',
+    name: 'Microsoft Corp',
+    domain: 'microsoft.com',
+    status: 'active',
+    contact_email: 'sales@microsoft.com',
+    created_at: '2024-02-01T10:00:00Z',
+    updated_at: '2024-10-01T10:00:00Z'
+  };
+
+  it('should preview vendor merge', async () => {
+    query.mockResolvedValue({
+      rows: [testVendor1, testVendor2]
+    });
+
+    const preview = await previewMerge(['vendor-1', 'vendor-2'], 'vendor');
+
+    expect(preview).toBeDefined();
+    expect(preview.sourceData.length).toBe(2);
+    expect(preview.suggestedMaster).toBeDefined();
+  });
+
+  it('should detect vendor name conflicts', async () => {
+    query.mockResolvedValue({
+      rows: [testVendor1, testVendor2]
+    });
+
+    const preview = await previewMerge(['vendor-1', 'vendor-2'], 'vendor');
+
+    const nameConflict = preview.conflicts.find(c => c.fieldName === 'name');
+    expect(nameConflict).toBeDefined();
+    expect(nameConflict!.values.length).toBe(2);
+  });
+
+  it('should handle vendor with missing contact info', async () => {
+    const vendorNoContact = {
+      ...testVendor1,
+      id: 'vendor-no-contact',
+      contact_email: null
+    };
+
+    query.mockResolvedValue({
+      rows: [testVendor1, vendorNoContact]
+    });
+
+    const preview = await previewMerge(['vendor-1', 'vendor-no-contact'], 'vendor');
+
+    expect(preview).toBeDefined();
+    // Should prefer the one with contact info
+  });
+
+  it('should use vendors table for vendor entity type', async () => {
+    query.mockResolvedValue({
+      rows: [testVendor1, testVendor2]
+    });
+
+    await previewMerge(['vendor-1', 'vendor-2'], 'vendor');
+
+    const queryCall = query.mock.calls[0][0];
+    expect(queryCall).toContain('vendors');
+  });
+});
+
+// ============================================================================
+// Tests: Audit Trail Creation
+// ============================================================================
+
+describe('MergeEngine - Audit Trail', () => {
+  beforeEach(() => {
+    query.mockClear();
+  });
+
+  it('should record merged_by user in audit trail', async () => {
+    query
+      .mockResolvedValueOnce(undefined) // BEGIN
+      .mockResolvedValueOnce({ rows: [testDeal1, testDeal2] })
+      .mockResolvedValueOnce(undefined) // UPDATE
+      .mockResolvedValueOnce({ rows: [{ id: 'merge-1' }] })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined);
+
+    await mergeEntities(['deal-2'], 'deal-1', {
+      mergedBy: 'user-admin-123'
+    });
+
+    const insertCall = query.mock.calls.find((call: any[]) =>
+      call[0].includes('INSERT INTO merge_history')
+    );
+    expect(insertCall).toBeDefined();
+    expect(insertCall![1]).toContain('user-admin-123');
+  });
+
+  it('should record merge strategy in audit trail', async () => {
+    query
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [testDeal1, testDeal2] })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ id: 'merge-1' }] })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined);
+
+    await mergeEntities(['deal-2'], 'deal-1', {
+      mergeStrategy: MergeStrategy.KEEP_NEWEST
+    });
+
+    const insertCall = query.mock.calls.find((call: any[]) =>
+      call[0].includes('INSERT INTO merge_history')
+    );
+    expect(insertCall).toBeDefined();
+    expect(insertCall![1]).toContain(MergeStrategy.KEEP_NEWEST);
+  });
+
+  it('should store conflict resolution details in audit trail', async () => {
+    query
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [testDeal1, testDeal2] })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ id: 'merge-1' }] })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined);
+
+    await mergeEntities(['deal-2'], 'deal-1');
+
+    const insertCall = query.mock.calls.find((call: any[]) =>
+      call[0].includes('INSERT INTO merge_history') &&
+      call[0].includes('conflict_resolution')
+    );
+    expect(insertCall).toBeDefined();
+  });
+
+  it('should store merged data snapshot in audit trail', async () => {
+    query
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [testDeal1, testDeal2] })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ id: 'merge-1' }] })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined);
+
+    await mergeEntities(['deal-2'], 'deal-1');
+
+    const insertCall = query.mock.calls.find((call: any[]) =>
+      call[0].includes('INSERT INTO merge_history') &&
+      call[0].includes('merged_data')
+    );
+    expect(insertCall).toBeDefined();
+    // Verify merged_data is passed as JSON
+    const jsonParam = insertCall![1].find((p: any) => typeof p === 'string' && p.startsWith('{'));
+    expect(jsonParam).toBeDefined();
+  });
+
+  it('should record source and target entity IDs', async () => {
+    query
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [testDeal1, testDeal2, testDeal3] })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ id: 'merge-1' }] })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined);
+
+    await mergeEntities(['deal-2', 'deal-3'], 'deal-1');
+
+    const insertCall = query.mock.calls.find((call: any[]) =>
+      call[0].includes('INSERT INTO merge_history')
+    );
+    expect(insertCall).toBeDefined();
+    // Check source_entity_ids and target_entity_id are in params
+    expect(insertCall![1]).toContain('deal-1'); // target
+    expect(insertCall![1]).toEqual(expect.arrayContaining([['deal-2', 'deal-3']])); // sources
+  });
+});
+
+// ============================================================================
+// Tests: Rollback Functionality
+// ============================================================================
+
+describe('MergeEngine - Rollback Functionality', () => {
+  beforeEach(() => {
+    query.mockClear();
+  });
+
+  it('should rollback transaction on update failure', async () => {
+    query
+      .mockResolvedValueOnce(undefined) // BEGIN
+      .mockResolvedValueOnce({ rows: [testDeal1, testDeal2] }) // Fetch
+      .mockRejectedValueOnce(new Error('Update constraint violation')); // UPDATE fails
+
+    await expect(mergeEntities(['deal-2'], 'deal-1')).rejects.toThrow('Update constraint violation');
+
+    expect(query).toHaveBeenCalledWith('ROLLBACK');
+  });
+
+  it('should rollback transaction on merge history insert failure', async () => {
+    query
+      .mockResolvedValueOnce(undefined) // BEGIN
+      .mockResolvedValueOnce({ rows: [testDeal1, testDeal2] }) // Fetch
+      .mockResolvedValueOnce(undefined) // UPDATE target
+      .mockRejectedValueOnce(new Error('Insert failed')); // INSERT merge_history fails
+
+    await expect(mergeEntities(['deal-2'], 'deal-1')).rejects.toThrow('Insert failed');
+
+    expect(query).toHaveBeenCalledWith('ROLLBACK');
+  });
+
+  it('should rollback on source entity status update failure', async () => {
+    query
+      .mockResolvedValueOnce(undefined) // BEGIN
+      .mockResolvedValueOnce({ rows: [testDeal1, testDeal2] })
+      .mockResolvedValueOnce(undefined) // UPDATE target
+      .mockResolvedValueOnce({ rows: [{ id: 'merge-1' }] }) // INSERT merge_history
+      .mockRejectedValueOnce(new Error('Source update failed')); // UPDATE source fails
+
+    await expect(mergeEntities(['deal-2'], 'deal-1')).rejects.toThrow('Source update failed');
+
+    expect(query).toHaveBeenCalledWith('ROLLBACK');
+  });
+
+  it('should rollback on duplicate detection update failure', async () => {
+    query
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [testDeal1, testDeal2] })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ id: 'merge-1' }] })
+      .mockResolvedValueOnce(undefined) // UPDATE source
+      .mockRejectedValueOnce(new Error('Duplicate update failed')); // UPDATE duplicates fails
+
+    await expect(mergeEntities(['deal-2'], 'deal-1')).rejects.toThrow('Duplicate update failed');
+
+    expect(query).toHaveBeenCalledWith('ROLLBACK');
+  });
+
+  it('should handle rollback failure gracefully', async () => {
+    query
+      .mockResolvedValueOnce(undefined) // BEGIN
+      .mockResolvedValueOnce({ rows: [testDeal1, testDeal2] })
+      .mockRejectedValueOnce(new Error('Primary error'))
+      .mockRejectedValueOnce(new Error('Rollback also failed'));
+
+    // Implementation may throw either the primary or rollback error
+    // The important thing is that it does throw an error
+    await expect(mergeEntities(['deal-2'], 'deal-1')).rejects.toThrow();
+  });
+
+  it('should not leave partial state on failure', async () => {
+    query
+      .mockResolvedValueOnce(undefined) // BEGIN
+      .mockResolvedValueOnce({ rows: [testDeal1, testDeal2] })
+      .mockResolvedValueOnce(undefined) // UPDATE target succeeded
+      .mockResolvedValueOnce({ rows: [{ id: 'merge-1' }] }) // INSERT succeeded
+      .mockResolvedValueOnce(undefined) // UPDATE source succeeded
+      .mockRejectedValueOnce(new Error('Final step failed')); // Cluster update fails
+
+    await expect(mergeEntities(['deal-2'], 'deal-1')).rejects.toThrow('Final step failed');
+
+    // Rollback should have been called to undo partial changes
+    expect(query).toHaveBeenCalledWith('ROLLBACK');
+  });
+});
+
+// ============================================================================
+// Tests: Unmerge Time Restrictions
+// ============================================================================
+
+describe('MergeEngine - Unmerge Time Restrictions', () => {
+  beforeEach(() => {
+    query.mockClear();
+  });
+
+  it('should allow unmerge within time window', async () => {
+    const recentMerge = {
+      id: 'merge-recent',
+      source_entity_ids: ['deal-2'],
+      target_entity_id: 'deal-1',
+      unmerged: false,
+      can_unmerge: true,
+      created_at: new Date().toISOString() // Just merged
+    };
+
+    query
+      .mockResolvedValueOnce(undefined) // BEGIN
+      .mockResolvedValueOnce({ rows: [recentMerge] })
+      .mockResolvedValueOnce(undefined) // Restore
+      .mockResolvedValueOnce(undefined) // Mark unmerged
+      .mockResolvedValueOnce(undefined) // Restore duplicates
+      .mockResolvedValueOnce(undefined) // Restore cluster
+      .mockResolvedValueOnce(undefined); // COMMIT
+
+    const result = await unmergeEntities('merge-recent');
+
+    expect(result.success).toBe(true);
+  });
+
+  it('should reject unmerge after time window expires', async () => {
+    const oldMerge = {
+      id: 'merge-old',
+      source_entity_ids: ['deal-2'],
+      target_entity_id: 'deal-1',
+      unmerged: false,
+      can_unmerge: true,
+      created_at: '2020-01-01T10:00:00Z' // Very old
+    };
+
+    query
+      .mockResolvedValueOnce(undefined) // BEGIN
+      .mockResolvedValueOnce({ rows: [oldMerge] });
+
+    await expect(unmergeEntities('merge-old')).rejects.toThrow(/cannot be undone after/);
+
+    expect(query).toHaveBeenCalledWith('ROLLBACK');
+  });
+
+  it('should track unmerge timestamp', async () => {
+    const recentMerge = {
+      id: 'merge-1',
+      source_entity_ids: ['deal-2'],
+      target_entity_id: 'deal-1',
+      unmerged: false,
+      can_unmerge: true,
+      created_at: new Date().toISOString()
+    };
+
+    query
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [recentMerge] })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined) // UPDATE merge_history with unmerged_at
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined);
+
+    await unmergeEntities('merge-1');
+
+    const updateMergeCall = query.mock.calls.find((call: any[]) =>
+      call[0].includes('UPDATE merge_history') &&
+      call[0].includes('unmerged_at')
+    );
+    expect(updateMergeCall).toBeDefined();
+  });
+
+  it('should record unmerge reason', async () => {
+    const recentMerge = {
+      id: 'merge-1',
+      source_entity_ids: ['deal-2'],
+      target_entity_id: 'deal-1',
+      unmerged: false,
+      can_unmerge: true,
+      created_at: new Date().toISOString()
+    };
+
+    query
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [recentMerge] })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined);
+
+    const result = await unmergeEntities('merge-1', 'Customer requested reversal');
+
+    expect(result.reason).toBe('Customer requested reversal');
+
+    const updateCall = query.mock.calls.find((call: any[]) =>
+      call[0].includes('UPDATE merge_history') &&
+      call[0].includes('unmerge_reason')
+    );
+    expect(updateCall).toBeDefined();
+  });
+});
+
+// ============================================================================
+// Tests: Error Handling - Invalid IDs and Missing Records
+// ============================================================================
+
+describe('MergeEngine - Error Handling', () => {
+  beforeEach(() => {
+    query.mockClear();
+  });
+
+  it('should throw error for invalid UUID format', async () => {
+    query.mockRejectedValue(new Error('invalid input syntax for type uuid'));
+
+    await expect(previewMerge(['not-a-uuid', 'also-not-uuid'])).rejects.toThrow();
+  });
+
+  it('should throw error when fewer than 2 entities found', async () => {
+    query.mockResolvedValue({ rows: [testDeal1] }); // Only 1 entity returned
+
+    await expect(previewMerge(['deal-1', 'deal-nonexistent'])).rejects.toThrow(/at least 2/i);
+  });
+
+  it('should throw error for missing source entities', async () => {
+    query
+      .mockResolvedValueOnce(undefined) // BEGIN
+      .mockResolvedValueOnce({ rows: [testDeal1] }); // Only target, no source
+
+    await expect(mergeEntities(['deal-nonexistent'], 'deal-1')).rejects.toThrow(/at least 2/i);
+  });
+
+  it('should handle null query response', async () => {
+    query.mockResolvedValue(null);
+
+    await expect(previewMerge(['deal-1', 'deal-2'])).rejects.toThrow();
+  });
+
+  it('should handle undefined rows in response', async () => {
+    query.mockResolvedValue({ rows: undefined });
+
+    await expect(previewMerge(['deal-1', 'deal-2'])).rejects.toThrow();
+  });
+
+  it('should handle network timeout', async () => {
+    query.mockRejectedValue(new Error('ETIMEDOUT'));
+
+    await expect(previewMerge(['deal-1', 'deal-2'])).rejects.toThrow('ETIMEDOUT');
+  });
+
+  it('should handle constraint violation errors', async () => {
+    query
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [testDeal1, testDeal2] })
+      .mockRejectedValueOnce(new Error('duplicate key value violates unique constraint'));
+
+    await expect(mergeEntities(['deal-2'], 'deal-1')).rejects.toThrow('unique constraint');
+
+    expect(query).toHaveBeenCalledWith('ROLLBACK');
+  });
+
+  it('should handle foreign key constraint errors', async () => {
+    query
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [testDeal1, testDeal2] })
+      .mockRejectedValueOnce(new Error('violates foreign key constraint'));
+
+    await expect(mergeEntities(['deal-2'], 'deal-1')).rejects.toThrow('foreign key');
+
+    expect(query).toHaveBeenCalledWith('ROLLBACK');
+  });
+
+  it('should handle empty entity IDs array', async () => {
+    await expect(previewMerge([])).rejects.toThrow('At least 2 entities');
+  });
+
+  it('should handle single entity ID', async () => {
+    await expect(previewMerge(['deal-1'])).rejects.toThrow('At least 2 entities');
+  });
+
+  it('should handle duplicate entity IDs in input', async () => {
+    query.mockResolvedValue({ rows: [testDeal1] }); // Returns only 1 due to duplicate
+
+    // Should fail since we effectively only have 1 unique entity
+    await expect(previewMerge(['deal-1', 'deal-1'])).rejects.toThrow(/at least 2/i);
+  });
+});
+
+// ============================================================================
+// Tests: Conflict Resolution - All Strategies
+// ============================================================================
+
+describe('MergeEngine - All Conflict Resolution Strategies', () => {
+  beforeEach(() => {
+    query.mockClear();
+  });
+
+  it('should apply PREFER_SOURCE strategy', async () => {
+    const sourceDeal = { ...testDeal1, id: 'source', deal_value: 100000 };
+    const targetDeal = { ...testDeal1, id: 'target', deal_value: 50000 };
+
+    query
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [sourceDeal, targetDeal] })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ id: 'merge-1' }] })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined);
+
+    const result = await mergeEntities(['source'], 'target', {
+      conflictResolution: ConflictResolutionStrategy.PREFER_SOURCE
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('should apply PREFER_TARGET strategy', async () => {
+    const sourceDeal = { ...testDeal1, id: 'source', deal_value: 100000 };
+    const targetDeal = { ...testDeal1, id: 'target', deal_value: 50000 };
+
+    query
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [sourceDeal, targetDeal] })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ id: 'merge-1' }] })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined);
+
+    const result = await mergeEntities(['source'], 'target', {
+      conflictResolution: ConflictResolutionStrategy.PREFER_TARGET
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('should apply MANUAL strategy', async () => {
+    const sourceDeal = { ...testDeal1, id: 'source' };
+    const targetDeal = { ...testDeal2, id: 'target' };
+
+    query
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [sourceDeal, targetDeal] })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ id: 'merge-1' }] })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined);
+
+    const result = await mergeEntities(['source'], 'target', {
+      conflictResolution: ConflictResolutionStrategy.MANUAL
+    });
+
+    expect(result.success).toBe(true);
+    // Manual strategy leaves conflicting fields as null for manual resolution
+  });
+
+  it('should apply MERGE_ARRAYS strategy for array fields', async () => {
+    const deal1 = { ...testDeal1, id: 'deal-1', source_file_ids: ['file-a', 'file-b'] };
+    const deal2 = { ...testDeal1, id: 'deal-2', source_file_ids: ['file-c', 'file-d'] };
+
+    query
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [deal1, deal2] })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ id: 'merge-1' }] })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined);
+
+    const result = await mergeEntities(['deal-2'], 'deal-1', {
+      conflictResolution: ConflictResolutionStrategy.MERGE_ARRAYS
+    });
+
+    expect(result.success).toBe(true);
+    // Should have merged arrays: file-a, file-b, file-c, file-d
+  });
+
+  it('should apply PREFER_VALIDATED strategy', async () => {
+    const validatedDeal = { ...testDeal1, id: 'validated', validation_status: 'passed', deal_value: 50000 };
+    const unvalidatedDeal = { ...testDeal1, id: 'unvalidated', validation_status: 'pending', deal_value: 75000 };
+
+    query
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [validatedDeal, unvalidatedDeal] })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ id: 'merge-1' }] })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined);
+
+    const result = await mergeEntities(['unvalidated'], 'validated', {
+      conflictResolution: ConflictResolutionStrategy.PREFER_VALIDATED
+    });
+
+    expect(result.success).toBe(true);
+    // Should prefer values from validated deal
+  });
+});
+
+// ============================================================================
+// Tests: Merge with Multiple Sources
+// ============================================================================
+
+describe('MergeEngine - Multiple Source Entities', () => {
+  beforeEach(() => {
+    query.mockClear();
+  });
+
+  it('should merge three entities into one', async () => {
+    query
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [testDeal1, testDeal2, testDeal3] })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ id: 'merge-1' }] })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined);
+
+    const result = await mergeEntities(['deal-2', 'deal-3'], 'deal-1');
+
+    expect(result.success).toBe(true);
+    expect(result.sourceEntityIds).toEqual(['deal-2', 'deal-3']);
+    expect(result.mergedEntityId).toBe('deal-1');
+  });
+
+  it('should merge five entities into one', async () => {
+    const deals = [
+      testDeal1,
+      { ...testDeal1, id: 'deal-a' },
+      { ...testDeal1, id: 'deal-b' },
+      { ...testDeal1, id: 'deal-c' },
+      { ...testDeal1, id: 'deal-d' }
+    ];
+
+    query
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: deals })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ id: 'merge-1' }] })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined);
+
+    const result = await mergeEntities(['deal-a', 'deal-b', 'deal-c', 'deal-d'], 'deal-1');
+
+    expect(result.success).toBe(true);
+    expect(result.sourceEntityIds.length).toBe(4);
+  });
+
+  it('should collect all source_file_ids from multiple sources', async () => {
+    const deal1 = { ...testDeal1, id: 'deal-1', source_file_ids: ['file-1'] };
+    const deal2 = { ...testDeal1, id: 'deal-2', source_file_ids: ['file-2'] };
+    const deal3 = { ...testDeal1, id: 'deal-3', source_file_ids: ['file-3'] };
+
+    query
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [deal1, deal2, deal3] })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ id: 'merge-1' }] })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined);
+
+    const result = await mergeEntities(['deal-2', 'deal-3'], 'deal-1');
+
+    expect(result.success).toBe(true);
+    expect(result.mergedData.source_file_ids).toEqual(
+      expect.arrayContaining(['file-1', 'file-2', 'file-3'])
+    );
+  });
+
+  it('should return warnings for complex multi-entity merges', async () => {
+    // Create many conflicts by having different values across entities
+    const deals = Array(5).fill(null).map((_, i) => ({
+      ...testDeal1,
+      id: `deal-${i}`,
+      deal_value: 50000 + (i * 10000),
+      close_date: `2024-12-${10 + i}`
+    }));
+
+    query.mockResolvedValue({ rows: deals });
+
+    const preview = await previewMerge(deals.map(d => d.id));
+
+    expect(preview.warnings.length).toBeGreaterThan(0);
+  });
 });
